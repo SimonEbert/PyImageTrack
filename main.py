@@ -2,7 +2,9 @@ import rasterio
 import shapely
 import geopandas as gpd
 import matplotlib.pyplot as plt
+import rasterio.plot
 
+import PixelMatching
 from CreateGeometries.CreateGeometries import grid_points_on_polygon
 from dataloader import read_files
 from PixelMatching import find_matching_area
@@ -20,10 +22,14 @@ polygon = polygon.to_crs(crs=3035)
 
 points = grid_points_on_polygon(polygon=polygon, number_of_points=100)
 
+PixelMatching.get_overlapping_area(file1, file2)
 
 #optimal_match = find_matching_area(file1, file2, points.iloc[[0]], matching_radius=2)
 
-trial_area1 = get_buffer_around_point(file1, points.iloc[[50]], 200)[0][0]
-trial_area2 = get_buffer_around_point(file2, points.iloc[[50]], 200)[0][0]
-print(trial_area1[1000:1018, 1000:1018])
-print(trial_area2[1000:1018, 1000:1018])
+#trial_area1 = get_buffer_around_point(file1, points.iloc[[30]], 20)
+#trial_area2 = get_buffer_around_point(file2, points.iloc[[50]], 200)
+
+
+
+#print(trial_area1[1000:1018, 1000:1018])
+#print(trial_area2[1000:1018, 1000:1018])

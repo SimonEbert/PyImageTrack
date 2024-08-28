@@ -1,9 +1,14 @@
+
+import matplotlib.pyplot as plt
 import geopandas as gpd
+import fiona
 import rasterio.mask
 import rasterio.plot
+import rasterio.coords
 import numpy as np
 import shapely
 import numpy.linalg as la
+from rasterio.coords import BoundingBox
 
 
 def get_buffer_around_point(raster_image, center_point: gpd.GeoDataFrame, buffer_radius: int = 30):
@@ -14,13 +19,53 @@ def get_buffer_around_point(raster_image, center_point: gpd.GeoDataFrame, buffer
 
     masking_shape_matching_area = center_point.buffer(distance=buffer_radius)
     matching_area, matching_area_transform = rasterio.mask.mask(dataset=raster_image,
-                                                                shapes=masking_shape_matching_area, crop=True)
+                                                                shapes=masking_shape_matching_area,
+                                                                crop=True,
+                                                                all_touched=True)
+    raster_matrix = matching_area[0]
 
-    return matching_area, matching_area_transform
+    buffered_raster_image = rasterio.open(
+        "./temporal.tif",
+        mode="w",
+        driver="GTiff",
+        height=matching_area.shape[0],
+        width=matching_area.shape[1],
+        count=1,
+        dtype=matching_area.dtype,
+        crs=raster_image.crs,
+        transform=matching_area_transform)
+    buffered_raster_image.write(raster_matrix, 1)
+    buffered_raster_image.close()
+    buffered_raster_image = rasterio.open("./temporal.tif", mode="r")
+    return buffered_raster_image
+
+
+
+def get_overlapping_area(file1, file2):
+    bbox1 = file1.bounds
+    bbox2 = file2.bounds
+    minbbox = BoundingBox(left=max(bbox1[0], bbox2[0]),
+                          bottom=max(bbox1[1], bbox2[1]),
+                          right=min(bbox1[2], bbox2[2]),
+                          top=min(bbox1[3], bbox2[3])
+                          )
+
+    minbbox = [shapely.Polygon((
+                (minbbox[0], minbbox[1]),
+                (minbbox[0], minbbox[3]),
+                (minbbox[2], minbbox[3]),
+                (minbbox[2], minbbox[1])
+              ))]
+    array_file_1, _ = rasterio.mask.mask(file1, shapes=minbbox, crop=True)
+    array_file_2, _ = rasterio.mask.mask(file2, shapes=minbbox, crop=True)
+    array_file_1, array_file_2 = array_file_1[0], array_file_2[0]
+    print(array_file_1.shape)
+    print(array_file_2.shape)
+
 
 
 def find_matching_area(tracked_image, search_image, tracked_point: gpd.GeoDataFrame, matching_radius: int = 5, search_radius: int = 10):
-    global optimal_match_point
+    """global optimal_match_point
     tracked_point = tracked_point.to_crs(tracked_image.crs)
 
     if len(tracked_point) != 1:
@@ -59,4 +104,6 @@ def find_matching_area(tracked_image, search_image, tracked_point: gpd.GeoDataFr
                 best_loss = loss
                 optimal_match_point = [lon, lat]
     return optimal_match_point
+    """
+
 
