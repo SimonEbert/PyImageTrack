@@ -56,15 +56,32 @@ def get_overlapping_area(file1, file2):
                 (minbbox[2], minbbox[3]),
                 (minbbox[2], minbbox[1])
               ))]
-    array_file_1, _ = rasterio.mask.mask(file1, shapes=minbbox, crop=True)
-    array_file_2, _ = rasterio.mask.mask(file2, shapes=minbbox, crop=True)
-    array_file_1, array_file_2 = array_file_1[0], array_file_2[0]
-    print(array_file_1.shape)
-    print(array_file_2.shape)
+    array_file1, array_file1_transform = rasterio.mask.mask(file1, shapes=minbbox, crop=True)
+    array_file2, array_file2_transform = rasterio.mask.mask(file2, shapes=minbbox, crop=True)
+    array_file1, array_file2 = array_file1[0], array_file2[0]
+    return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
 
 
+def get_submatrix(shape, upper_left_index, matrix):
+    submatrix = matrix[upper_left_index[0]:upper_left_index[0]+shape[0], upper_left_index[1]:upper_left_index[1]+shape[1]]
+    return submatrix
+
+
+def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
+    height_tracked_cell = tracked_cell_matrix.shape[0]
+    width_tracked_cell = tracked_cell_matrix.shape[1]
+    height_search_cell = search_cell_matrix.shape[0]
+    width_search_cell = search_cell_matrix.shape[1]
+    for i in np.arange(0, height_search_cell-height_tracked_cell):
+        for j in np.arange(0, width_search_cell-width_tracked_cell):
+            search_subcell_matrix = get_submatrix(tracked_cell_matrix.shape, [i,j], search_cell_matrix)
+            tracked_vector = tracked_cell_matrix.reshape(1)
+            search_subcell_vector = search_subcell_matrix.reshape(1)
+            corr = np.corrcoef(tracked_vector, search_subcell_vector)
+            print(corr)
 
 def find_matching_area(tracked_image, search_image, tracked_point: gpd.GeoDataFrame, matching_radius: int = 5, search_radius: int = 10):
+
     """global optimal_match_point
     tracked_point = tracked_point.to_crs(tracked_image.crs)
 

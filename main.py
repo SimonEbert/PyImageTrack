@@ -22,7 +22,7 @@ polygon = polygon.to_crs(crs=3035)
 
 points = grid_points_on_polygon(polygon=polygon, number_of_points=100)
 
-PixelMatching.get_overlapping_area(file1, file2)
+[trial_area1_matrix, trial_area1_transform], [trial_area2_matrix, trial_area2_transform] = PixelMatching.get_overlapping_area(file1, file2)
 
 #optimal_match = find_matching_area(file1, file2, points.iloc[[0]], matching_radius=2)
 
@@ -30,6 +30,3 @@ PixelMatching.get_overlapping_area(file1, file2)
 #trial_area2 = get_buffer_around_point(file2, points.iloc[[50]], 200)
 
 
-
-#print(trial_area1[1000:1018, 1000:1018])
-#print(trial_area2[1000:1018, 1000:1018])
