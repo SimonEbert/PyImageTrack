@@ -2,6 +2,7 @@ import geopandas as gpd
 import shapely
 import numpy as np
 import math
+import rasterio.transform
 
 
 def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10):
@@ -40,3 +41,10 @@ def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10
     points = points[points.intersects(polygon.loc[0, "geometry"])]
     print("Created ", len(points), " points on the polygon.")
     return points
+
+
+def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_transform):
+    xs = points["geometry"].x.to_list()
+    ys = points["geometry"].y.to_list()
+    rows, cols = rasterio.transform.rowcol(raster_matrix_transform, xs, ys)
+    return rows, cols
