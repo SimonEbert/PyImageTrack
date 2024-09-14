@@ -23,6 +23,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                                                           y=point_movement.loc[:, "row"]))
     points.insert(3, "movement_distance",
                   np.linalg.norm(points.loc[:, ["movement_row_direction", "movement_column_direction"]], axis=1))
-    points.plot(ax=ax, c=points.loc[:, "movement_distance"], legend=True)
-    ax.legend()
+    # points.plot(ax=ax, c=points.loc[:, "movement_distance"], legend=True)
+    points.plot(ax=ax, column="movement_distance", legend=True)
+    plt.title("Movement Distance of the Rock glacier in Pixels")
     plt.show()
