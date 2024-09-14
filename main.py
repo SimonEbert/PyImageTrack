@@ -12,8 +12,8 @@ from CreateGeometries.CreateGeometries import get_raster_indices_from_points
 from dataloader import read_files
 from Plots.MakePlots import plot_raster_and_geometry
 from Plots.MakePlots import plot_movement_of_points
-from PixelMatching import find_matching_area
 from PixelMatching import get_buffer_around_point
+from PixelMatchingOptimizer import get_pixel_movements_optimizer
 from datetime import datetime
 
 start_time = datetime.now()
@@ -42,30 +42,29 @@ polygon_inside_RG = gpd.read_file("../Test_Data/Area_inside_rock_glacier.shp")
 polygon_inside_RG = polygon_inside_RG.to_crs(crs=32632)
 
 points = grid_points_on_polygon(polygon=polygon_inside_RG, number_of_points=500)
-print(points.crs, polygon_inside_RG.crs, file1.crs)
 
 [trial_area1_matrix, trial_area1_transform], [trial_area2_matrix,
                                               trial_area2_transform] = PixelMatching.get_overlapping_area(file1, file2)
 rows, cols = get_raster_indices_from_points(points, trial_area2_transform)
 tracked_points_pixels = np.array([rows, cols]).transpose()
 
-
+get_pixel_movements_optimizer(trial_area1_matrix, trial_area2_matrix)
 
 tracked_pixels = pd.DataFrame()
-for central_index in tracked_points_pixels:
-    track_cell1 = PixelMatching.get_submatrix_symmetric(central_index=central_index, shape=(20, 20),
-                                                        matrix=trial_area1_matrix)
-    print("Calculate tracking for pixel ", central_index)
-    search_area2 = PixelMatching.get_submatrix_symmetric(central_index=central_index, shape=(50, 50),
-                                                         matrix=trial_area2_matrix)
-    match = PixelMatching.track_cell(track_cell1, search_area2)
-    print("Pixel movement: ", match)
-    tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
-                                                             "column": central_index[1],
-                                                             "movement_row_direction": match[0],
-                                                             "movement_column_direction": match[1]},
-                                                             index=[len(tracked_pixels)])])
-    # target_cell2 = PixelMatching.get_submatrix_symmetric((central_index[0] + match[0], central_index[1] + match[1]), (20, 20), trial_area2_matrix)
-plot_movement_of_points(trial_area1_matrix, trial_area1_transform, tracked_pixels)
-
-print(datetime.now() - start_time)
+# for central_index in tracked_points_pixels:
+#     track_cell1 = PixelMatching.get_submatrix_symmetric(central_index=central_index, shape=(20, 20),
+#                                                         matrix=trial_area1_matrix)
+#     print("Calculate tracking for pixel ", central_index)
+#     search_area2 = PixelMatching.get_submatrix_symmetric(central_index=central_index, shape=(50, 50),
+#                                                          matrix=trial_area2_matrix)
+#     match = PixelMatching.track_cell(track_cell1, search_area2)
+#     print("Pixel movement: ", match)
+#     tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
+#                                                              "column": central_index[1],
+#                                                              "movement_row_direction": match[0],
+#                                                              "movement_column_direction": match[1]},
+#                                                              index=[len(tracked_pixels)])])
+#     # target_cell2 = PixelMatching.get_submatrix_symmetric((central_index[0] + match[0], central_index[1] + match[1]), (20, 20), trial_area2_matrix)
+# plot_movement_of_points(trial_area1_matrix, trial_area1_transform, tracked_pixels)
+#
+# print(datetime.now() - start_time)
