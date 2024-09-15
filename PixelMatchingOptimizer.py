@@ -1,8 +1,7 @@
 import numpy as np
 import torch
 import rasterio.plot
-
-def optimize_NN(model):
+from LossFunctions.LossFunctions import square_error_around_pixel
 
 
 
@@ -24,5 +23,8 @@ def get_pixel_movements_optimizer(matrix1: np.ndarray, matrix2: np.ndarray):
     matrix2 = np.multiply(overlap_matrix, matrix2)
     rasterio.plot.show(matrix1)
     rasterio.plot.show(matrix2)
+    movement_matrix = np.zeros((matrix1.shape[0], matrix1.shape[1],2))
+
+
 
 
