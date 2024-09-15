@@ -2,6 +2,15 @@ import numpy as np
 import torch
 import rasterio.plot
 
+def optimize_NN(model):
+
+
+
+def build_NN_model(matrix1, matrix2):
+    vector1_torch = torch.tensor(matrix1)
+    vector2_torch = torch.tensor(matrix2)
+
+
 
 
 def get_pixel_movements_optimizer(matrix1: np.ndarray, matrix2: np.ndarray):
@@ -15,4 +24,5 @@ def get_pixel_movements_optimizer(matrix1: np.ndarray, matrix2: np.ndarray):
     matrix2 = np.multiply(overlap_matrix, matrix2)
     rasterio.plot.show(matrix1)
     rasterio.plot.show(matrix2)
+
 
