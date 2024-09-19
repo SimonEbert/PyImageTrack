@@ -48,7 +48,13 @@ points = grid_points_on_polygon(polygon=polygon_inside_RG, number_of_points=500)
 rows, cols = get_raster_indices_from_points(points, trial_area2_transform)
 tracked_points_pixels = np.array([rows, cols]).transpose()
 
-movement_matrix = get_pixel_movements_optimizer(trial_area1_matrix, trial_area2_matrix)
+row_weights, column_weights = get_pixel_movements_optimizer(trial_area1_matrix, trial_area2_matrix)
+rasterio.plot.show(row_weights)
+rasterio.plot.show(column_weights)
+print(row_weights.max())
+
+print(datetime.now()-start_time)
+
 
 tracked_pixels = pd.DataFrame()
 # for central_index in tracked_points_pixels:
