@@ -15,6 +15,7 @@ from CreateGeometries.CreateGeometries import grid_points_on_polygon
 from CreateGeometries.CreateGeometries import get_raster_indices_from_points
 import scipy
 from rasterio import features
+import time
 
 def get_buffer_around_point(raster_image, center_point: gpd.GeoDataFrame, buffer_radius: int = 30):
     center_point = center_point.to_crs(raster_image.crs)
@@ -99,6 +100,7 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     best_correlation = 0
     best_correlation_coordinates = [search_cell_matrix.shape[-2]/2, search_cell_matrix.shape[-1]/2]
     tracked_vector = tracked_cell_matrix.flatten()
+    tracked_vector = tracked_vector-np.mean(tracked_vector)
     tracked_vector = tracked_vector/np.linalg.norm(tracked_vector)
 
 
@@ -106,8 +108,8 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
         for j in np.arange(np.ceil(width_tracked_cell/2), width_search_cell-np.ceil(width_tracked_cell/2)):
             search_subcell_matrix = get_submatrix_symmetric([i, j], (tracked_cell_matrix.shape[-2], tracked_cell_matrix.shape[-1]), search_cell_matrix)
             search_subcell_vector = search_subcell_matrix.flatten()
+            search_subcell_vector = search_subcell_vector - np.mean(search_subcell_vector)
             search_subcell_vector = search_subcell_vector/np.linalg.norm(search_subcell_vector)
-
 
             corr = 0
             if method == "corrcoeff":
@@ -120,6 +122,8 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
             if corr > best_correlation:
                 best_correlation = corr
                 best_correlation_coordinates = [i, j]
+    if best_correlation < 0.2:
+        return [np.nan, np.nan]
     best_correlation_coordinates = np.floor(np.subtract(best_correlation_coordinates, [search_cell_matrix.shape[-2]/2,
                                                                                       search_cell_matrix.shape[-1]/2]))
     return best_correlation_coordinates
@@ -169,14 +173,27 @@ def lsm_loss_function_rotation(coefficients, tracked_cell_matrix: np.ndarray, in
 
 
 
-def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, initial_shift_values = None):
+def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, initial_shift_values = None, return_full_coefficients=False, tracking_area_index=None):
     """Assume matrices to be quadratic"""
     if len(tracked_cell_matrix.shape) == 2: # For one channel images
+        # tracked_cell_matrix_shape = tracked_cell_matrix.shape
+        # tracked_cell_matrix = tracked_cell_matrix.flatten()
+        # tracked_cell_matrix = tracked_cell_matrix - np.mean(tracked_cell_matrix)
+        # tracked_cell_matrix = tracked_cell_matrix/np.linalg.norm(tracked_cell_matrix)
+        # tracked_cell_matrix = tracked_cell_matrix.reshape(tracked_cell_matrix_shape)
+        #
+        # search_cell_matrix_shape = search_cell_matrix.shape
+        # search_cell_matrix = search_cell_matrix.flatten()
+        # search_cell_matrix = search_cell_matrix - np.mean(search_cell_matrix)
+        # search_cell_matrix = search_cell_matrix / np.linalg.norm(search_cell_matrix)
+        # search_cell_matrix = search_cell_matrix.reshape(search_cell_matrix_shape)
+
+
         interpolator_search_cell = scipy.interpolate.RegularGridInterpolator(
             (np.arange(0, search_cell_matrix.shape[0]), np.arange(0, search_cell_matrix.shape[1])),
             search_cell_matrix, fill_value=None, bounds_error=False)
         if len(tracked_cell_matrix[0]) == 0:
-            return [0, 0]
+            return [np.nan, np.nan]
         # assign indices in respect to indexing in the search cell matrix
         central_row = np.round(search_cell_matrix.shape[0] / 2)
         central_column = np.round(search_cell_matrix.shape[1] / 2)
@@ -189,23 +206,32 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                            ).T.reshape(-1, 2).T
         if initial_shift_values is None:
             [initial_shift_rows, initial_shift_columns] = track_cell(tracked_cell_matrix, search_cell_matrix)
+            if initial_shift_rows == np.nan:
+                return [np.nan, np.nan]
         else:
             [initial_shift_rows, initial_shift_columns] = initial_shift_values
 
         solution_global = opt.minimize(lsm_loss_function_rotation, x0=np.array([1, 0, 0, 1, initial_shift_rows, initial_shift_columns]),
-                                                 args=(tracked_cell_matrix, interpolator_search_cell, [central_row, central_column], indices), bounds=((None, None), (None, None), (None, None), (None, None), (None, None), (None, None))) # (initial_shift_rows -5, initial_shift_rows +5), (initial_shift_columns -5, initial_shift_columns +5)
-        # solution_global = opt.least_squares(lsm_loss_function_rotation, x0=np.array([1, 0, 0, 1, initial_shift_rows, initial_shift_columns]),
-        #                                     args=(tracked_cell_matrix, interpolator_search_cell, [central_row, central_column], indices))
-        t1, t2, t3, t4, shift_rows, shift_columns = solution_global.x
+                                                 args=(tracked_cell_matrix, interpolator_search_cell, [central_row, central_column], indices), method="Powell")
+        t1, t2, t3, t4, b1, b2 = solution_global.x
         #What to do if the optimization did not work
         if not solution_global.success:
+            print("did not converge")
             return[np.nan, np.nan]
         transformation_matrix = np.array([[t1, t2], [t3, t4]])
 
         if np.abs(np.linalg.det(transformation_matrix) - 1) >= 0.2:
             print("Warning: Transformation matrix has unrealistic determinant: ", np.linalg.det(transformation_matrix))
             return [np.nan, np.nan]
-
+        if return_full_coefficients:
+            return [t1, t2, t3, t4, b1, b2]
+        [new_central_row, new_central_column] = np.matmul(transformation_matrix, np.array([central_row, central_column])) + np.array([b1, b2])
+        [shift_rows, shift_columns] = [new_central_row-central_row, new_central_column-central_column]
+        # if tracking_area_index[0] <= 1500 and tracking_area_index[1] <= 1800:
+        #     rasterio.plot.show(tracked_cell_matrix, title=[initial_shift_rows, initial_shift_columns, solution_global.success, tracking_area_index[0], tracking_area_index[1]])
+        #     rasterio.plot.show(move_cell_rotation_approach([t1, t2, t3, t4, b1, b2], tracked_cell_matrix, interpolator_search_cell, [central_row, central_column], indices), title=[np.round([t1, t2, t3, t4, b1, b2], decimals=2)])
+        #     # rasterio.plot.show(search_cell_matrix, title=[tracking_area_index[0], tracking_area_index[1]])
+        #     time.sleep(5)
         return [shift_rows, shift_columns]
     else: # MULTIBAND
         interpolator_search_cell_list = list()
@@ -232,7 +258,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                                                args=(tracked_cell_matrix, interpolator_search_cell_list,
                                                      [central_row, central_column], indices), bounds=(
                     (None, None), (None, None), (None, None), (None, None), (None, None), (None, None)))
-        t1, t2, t3, t4, shift_rows, shift_columns = solution_global.x
+        t1, t2, t3, t4, b1, b2 = solution_global.x
         # What to do if the optimization did not work
         if not solution_global.success:
             return [np.nan, np.nan]
@@ -241,6 +267,14 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         if np.abs(np.linalg.det(transformation_matrix) - 1) >= 0.2:
             print("Warning: Transformation matrix has unrealistic determinant: ", np.linalg.det(transformation_matrix))
             return [np.nan, np.nan]
+        if return_full_coefficients:
+            return [t1, t2, t3, t4, b1, b2]
+        [new_central_row, new_central_column] = np.matmul(transformation_matrix,
+                                                          np.array([central_row, central_column])) + np.array(
+            [b1, b2])
+        [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
+
+
 
         return [shift_rows, shift_columns]
 
@@ -304,7 +338,7 @@ def remove_outlying_tracked_pixels(tracked_pixels, only_rotation = False):
         movement_vector_central_length = np.linalg.norm(movement_vector_central)
         movement_angle_central = np.arccos(
             np.dot(movement_vector_central.T, np.array([1, 0])) / movement_vector_central_length)
-        if np.abs(average_movement_angle - movement_angle_central) >= np.pi/6:
+        if np.abs(average_movement_angle - movement_angle_central) >= np.pi/2:
             print("removed pixel", row, col, "for rotation reasons")
             tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance"]] = np.nan
 
@@ -356,21 +390,23 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
 
         track_cell1 = get_submatrix_symmetric(central_index=central_index, shape=(cell_size, cell_size),
                                               matrix=image1_matrix)
-        if track_cell1.any() == 0:
-            print("Skipping this cell for unavailable data")
-            tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
-                                                                      "column": central_index[1],
-                                                                      "movement_row_direction": np.nan,
-                                                                      "movement_column_direction": np.nan},
-                                                                     index=[len(tracked_pixels)])])
-            continue
+        # if (track_cell1 == 0).any():
+        #     print("Skipping this cell for unavailable data")
+        #
+        #     tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
+        #                                                               "column": central_index[1],
+        #                                                               "movement_row_direction": np.nan,
+        #                                                               "movement_column_direction": np.nan},
+        #                                                              index=[len(tracked_pixels)])])
+        #     continue
+
 
         search_area2 = get_submatrix_symmetric(central_index=central_index,
                                                shape=(tracking_area_size, tracking_area_size),
                                                matrix=image2_matrix)
 
         if tracking_method == "lsm":#MULTIBANDCHANGE
-            match = track_cell_lsm(track_cell1, search_area2)
+            match = track_cell_lsm(track_cell1, search_area2, tracking_area_index=central_index)
         else:
             match = track_cell(track_cell1, search_area2)
 
@@ -395,7 +431,23 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
 
 def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_control_points: int, cell_size: int = 40,
                  tracking_area_size: int = 60, select_bands=None, image_alignment_via_lsm=False):
-    """Assume the transform of the first matrix to be correct ("adjust" the second transform)"""
+
+    """
+    Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
+
+    Parameters
+    ----------
+    image1 :
+        A raster image opened in the rasterio package to be aligned with the second image.
+    image2 :
+        A raster image opened in the rasterio package to be aligned with the first image. The alignment takes
+        place via an adjustment of the transform of the second raster image, which means that the first image is
+        assumed to be correctly georeferenced.
+    reference_area : gpd.GeoDataFrame
+        A single-element GeoDataFrame, containing a polygon for specifying the reference area used for the alignment.
+        This is the area, where no movement is suspected.
+
+    """
 
 
     [image1_matrix, image_transform], [image2_matrix, _] = get_overlapping_area(image1, image2)
@@ -472,16 +524,15 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
         else:
             masked_matrix1 = np.ma.masked_array(image1_matrix, mask=mask_matrix)
             masked_matrix2 = np.ma.masked_array(image2_matrix, mask=mask_matrix)
+        print(row_movements, column_movements)
 
-        rasterio.plot.show(masked_matrix1)
-        rasterio.plot.show(masked_matrix2)
+        matching = track_cell_lsm(masked_matrix1, masked_matrix2, initial_shift_values=[0, 0], return_full_coefficients=True)
 
-        matching = track_cell_lsm(masked_matrix1, masked_matrix2, initial_shift_values=[row_movements, column_movements])
-        row_movements, column_movements = matching
-        print(matching)
+    else:
+        matching = [1,0,0,1, row_movements, column_movements]
+    print("Transformation matrix coefficients for image:", matching, "to match optimally in the reference area.")
+    new_matrix2 = move_cell_rotation_approach(matching, image1_matrix, interpolator_image2_matrix, [central_row, central_column], indices)
 
-
-    new_matrix2 = move_cell_rotation_approach([1,0,0,1, row_movements, column_movements], image1_matrix, interpolator_image2_matrix, [central_row, central_column], indices)
 
     return [image1_matrix, new_matrix2, image_transform]
 

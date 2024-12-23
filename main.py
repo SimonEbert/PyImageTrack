@@ -18,6 +18,8 @@ from datetime import datetime
 import scipy
 
 
+plt.rcParams['figure.dpi'] = 300
+
 path1 = "../Test_Data/KBT_hillshade_2019-07.tif"
 path2 = "../Test_Data/KBT_hillshade_2021-08.tif"
 # path1 = "../Test_Data/2017-08-30-00_00_2017-08-30-23_59_Sentinel-2_L2A_True_color32632.tiff"
@@ -47,17 +49,21 @@ polygon_inside_RG = polygon_inside_RG.to_crs(crs=32632)
 polygon_inside_RG_unbuffered = gpd.read_file("../Test_Data/Area_inside_rock_glacier.shp")
 polygon_inside_RG_unbuffered = polygon_inside_RG_unbuffered.to_crs(crs=32632)
 
+polygon_inside_RG_detail = gpd.read_file("../Test_Data/Area_inside_rock_glacier_detail.shp")
+polygon_inside_RG_detail = polygon_inside_RG_detail.to_crs(crs=32632)
+
 start_time = datetime.now()
 
 
 
-[image1_matrix, image2_matrix, image_transform] = PixelMatching.align_images(file1, file2, polygon_outside_RG, 100, select_bands=0, image_alignment_via_lsm=True)
+[image1_matrix, image2_matrix, image_transform] = PixelMatching.align_images(file1, file2, polygon_outside_RG, image_alignment_via_lsm=True, number_of_control_points=100, select_bands=0)
 
 
 # tracked_pixels = PixelMatchingOptimizer.move_pixels_global(image1_matrix, image2_matrix)
 
 
-tracked_pixels = PixelMatching.track_movement(image1_matrix, image2_matrix, image_transform, polygon_inside_RG, 2000, tracking_area_size=70, cell_size=40, remove_outliers=True, retry_matching=True, tracking_method="lsm")
+tracked_pixels = PixelMatching.track_movement(image1_matrix, image2_matrix, image_transform, polygon_inside_RG_unbuffered, 2000, tracking_area_size=80, cell_size=30, remove_outliers=False, retry_matching=True, tracking_method="lsm")
+print(tracked_pixels)
 print("Finished assembling movement data frame")
 plot_movement_of_points(file1.read(1), file1.transform, tracked_pixels, polygon_inside_RG_unbuffered)
 # print(tracked_pixels.head(20))
