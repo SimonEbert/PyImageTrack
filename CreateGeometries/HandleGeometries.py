@@ -86,8 +86,8 @@ def get_overlapping_area(file1, file2):
         array_file2 = np.pad(array_file2, pad_width=((0,0),(0,0), (0, array_file1.shape[-1] - array_file2.shape[-1])), constant_values=(0, 0))
 
 
-    array_file1[array_file2 == 0] = 0
-    array_file2[array_file1 == 0] = 0
+    #array_file1[array_file2 == 0] = 0
+    #array_file2[array_file1 == 0] = 0
     return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
 
 

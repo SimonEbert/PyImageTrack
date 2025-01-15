@@ -65,7 +65,7 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
             if corr > best_correlation:
                 best_correlation = corr
                 best_correlation_coordinates = [i, j]
-    if best_correlation < 0.2:
+    if best_correlation < 0.5:
         return [np.nan, np.nan]
     movement_for_best_correlation = np.floor(np.subtract(best_correlation_coordinates, [search_cell_matrix.shape[-2]/2,
                                                                                       search_cell_matrix.shape[-1]/2]))
@@ -83,7 +83,6 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     #                             search_cell_matrix), cmap="Greys", title="The best fitting cell from the second image")
     return movement_for_best_correlation
 
-# WE DON'T NEED THE WHOLE TRACKED MATRIX; JUST ITS SHAPE
 def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpolator_search_cell, indices):
     """Don't need central_indices"""
     if len(tracked_cell_matrix_shape) == 2:
@@ -149,7 +148,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                            ).T.reshape(-1, 2).T
         if initial_shift_values is None:
             [initial_shift_rows, initial_shift_columns] = track_cell(tracked_cell_matrix, search_cell_matrix)
-            if initial_shift_rows == np.nan:
+            if np.isnan(initial_shift_rows):
                 return [np.nan, np.nan]
         else:
             [initial_shift_rows, initial_shift_columns] = initial_shift_values
@@ -160,10 +159,10 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         #What to do if the optimization did not work
         if not solution_global.success:
             print("did not converge")
-            return[np.nan, np.nan]
+            return [np.nan, np.nan]
         transformation_matrix = np.array([[t1, t2], [t3, t4]])
 
-        if np.abs(np.linalg.det(transformation_matrix) - 1) >= 0.5:
+        if np.abs(np.linalg.det(transformation_matrix) - 1) >= 0.2:
             print("Warning: Transformation matrix has unrealistic determinant: ", np.linalg.det(transformation_matrix))
             return [np.nan, np.nan]
         if return_full_coefficients:
@@ -268,6 +267,8 @@ def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, f
         neighbouring_pixels = get_tracked_pixels_square(tracked_pixels, [row, col])
         central_pixel = tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)]
         neighbouring_pixels = neighbouring_pixels[(neighbouring_pixels["row"] != row) | (neighbouring_pixels["column"] != col)]
+        neighbouring_pixels = neighbouring_pixels[~neighbouring_pixels["movement_row_direction"].isna()]
+
         # print(np.abs(neighbouring_pixels["movement_row_direction"]-central_pixel["movement_row_direction"]))
         # print((np.abs(neighbouring_pixels["movement_row_direction"]-central_pixel["movement_row_direction"]).any() >= 15))
         # Check if more than three neigbouring pixels have a more than 5 pixel difference movement
@@ -284,19 +285,19 @@ def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, f
             average_movement_angle += np.arccos(np.dot(movement_vector, np.array([1,0]))/movement_vector_length)
         if len(neighbouring_pixels) > 0:
             average_movement_angle /= len(neighbouring_pixels)
-        movement_vector_central = np.array([central_pixel["movement_row_direction"],
-                                   central_pixel["movement_column_direction"]])
+            movement_vector_central = np.array([central_pixel["movement_row_direction"],
+                                       central_pixel["movement_column_direction"]])
 
-        movement_vector_central_length = np.linalg.norm(movement_vector_central)
-        movement_angle_central = np.arccos(
-            np.dot(movement_vector_central.T, np.array([1, 0])) / movement_vector_central_length)
-        if (np.abs(average_movement_angle - movement_angle_central) >= np.pi/2) & from_rotation:
-            print("removed pixel", row, col, "for rotation reasons")
-            tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = np.nan# -0.001
-        if (central_pixel["movement_distance_pixels"].values > 2*np.nanmean(neighbouring_pixels["movement_distance_pixels"].values)) & from_velocity:
-            print("removed pixel", row, col, "for velocity reasons")
-            tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = np.nan# -0.002
-        # if (central_pixel["movement_distance_pixels"].values >= 2 * np.mean(
+            movement_vector_central_length = np.linalg.norm(movement_vector_central)
+            movement_angle_central = np.arccos(
+                np.dot(movement_vector_central.T, np.array([1, 0])) / movement_vector_central_length)
+            if (np.abs(average_movement_angle - movement_angle_central) > np.pi/2) & from_rotation: # & (not (float(central_pixel.tail(1)["movement_row_direction"].values) in [-0.001, -0.002, -0.003]))
+                print("removed pixel", row, col, "for rotation reasons")
+                tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = np.nan# -0.001
+            if (central_pixel["movement_distance_pixels"].values > 2*np.nanmean(neighbouring_pixels["movement_distance_pixels"].values)) & from_velocity: # & (not (float(central_pixel.tail(1)["movement_row_direction"].values) in [-0.001, -0.002, -0.003]))
+                print("removed pixel", row, col, "for velocity reasons")
+                tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = np.nan# -0.002
+            # if (central_pixel["movement_distance_pixels"].values >= 2 * np.mean(
         #         neighbouring_pixels["movement_distance_pixels"].values)) & from_velocity & (np.abs(average_movement_angle - movement_angle_central) >= np.pi/2):
         #     tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = -0.003
 
@@ -312,22 +313,26 @@ def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, f
 def retrack_wrong_matching_pixels(tracked_pixels, track_matrix, search_matrix, cell_size : int, tracking_area_size : int, fallback_on_cross_correlation : bool = False):
     for [row, col] in zip(tracked_pixels["row"].tolist(), tracked_pixels["column"].tolist()):
         central_pixel = tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)]
+
         if np.isnan(central_pixel["movement_row_direction"].values) & np.isnan(central_pixel["movement_column_direction"].values):
             neighbouring_pixels = get_tracked_pixels_square(tracked_pixels, [row, col])
-            neighbouring_pixels = neighbouring_pixels[(neighbouring_pixels["row"] != row) | (neighbouring_pixels["column"] != col)]
-            movement_row_direction_neighbours_mean = np.nanmean(neighbouring_pixels["movement_row_direction"].values)
-            movement_column_direction_neighbours_mean = np.nanmean(neighbouring_pixels["movement_column_direction"].values)
-            track_cell1 = get_submatrix_symmetric(central_index=[row, col], shape=(cell_size, cell_size),
-                                                  matrix=track_matrix)
 
-            search_area2 = get_submatrix_symmetric(central_index=[row, col],
-                                                   shape=(tracking_area_size, tracking_area_size),
-                                                   matrix=search_matrix)
-            match = track_cell_lsm(track_cell1, search_area2, initial_shift_values=[movement_row_direction_neighbours_mean, movement_column_direction_neighbours_mean])
-            if np.isnan(match[0]) & fallback_on_cross_correlation:
-                print("Falling back on cross correlation for pixel", [row, col])
-                match = track_cell(track_cell1, search_area2)
-            tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)] = [row, col, match[0], match[1], np.linalg.norm([match[0], match[1]])]
+            neighbouring_pixels = neighbouring_pixels[(neighbouring_pixels["row"] != row) | (neighbouring_pixels["column"] != col)]
+            neighbouring_pixels = neighbouring_pixels[~neighbouring_pixels["movement_row_direction"].isna()]
+            if len(neighbouring_pixels) > 0:
+                movement_row_direction_neighbours_mean = np.nanmean(neighbouring_pixels["movement_row_direction"].values)
+                movement_column_direction_neighbours_mean = np.nanmean(neighbouring_pixels["movement_column_direction"].values)
+                track_cell1 = get_submatrix_symmetric(central_index=[row, col], shape=(cell_size, cell_size),
+                                                      matrix=track_matrix)
+
+                search_area2 = get_submatrix_symmetric(central_index=[row, col],
+                                                       shape=(tracking_area_size, tracking_area_size),
+                                                       matrix=search_matrix)
+                match = track_cell_lsm(track_cell1, search_area2, initial_shift_values=[movement_row_direction_neighbours_mean, movement_column_direction_neighbours_mean])
+                if np.isnan(match[0]) & fallback_on_cross_correlation:
+                    print("Falling back on cross correlation for pixel", [row, col])
+                    match = track_cell(track_cell1, search_area2)
+                tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)] = [row, col, match[0], match[1], np.linalg.norm([match[0], match[1]])]
     return tracked_pixels
 
 def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area: gpd.GeoDataFrame, number_of_tracked_points: int, cell_size: int = 40,
@@ -382,8 +387,7 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
         elif tracking_method == "cross-correlation":
             match = track_cell(track_cell1, search_area2)
         else:
-            raise ValueError("Tracking method not recognized")
-
+            raise ValueError("Tracking method not recognized.")
         tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
                                                                   "column": central_index[1],
                                                                   "movement_row_direction": match[0],
@@ -391,6 +395,11 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
                                                                  index=[len(tracked_pixels)])])
     tracked_pixels.insert(4, "movement_distance_pixels",
                   np.linalg.norm(tracked_pixels.loc[:, ["movement_row_direction", "movement_column_direction"]], axis=1))
+    # tracked_pixels.loc[((tracked_pixels["movement_row_direction"] == -0.001) | (tracked_pixels["movement_row_direction"] == -0.002) | (tracked_pixels["movement_row_direction"] == -0.003)| (tracked_pixels["movement_row_direction"] == -0.004)| (tracked_pixels["movement_row_direction"] == -0.005)), "movement_distance_pixels"] = np.nan
+
+
+
+
 
 
     if remove_outliers:

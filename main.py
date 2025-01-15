@@ -30,7 +30,7 @@ control_cell_size = 40
 tracking_method = "lsm"
 number_of_tracked_points = 2000
 movement_tracking_area_size = 80
-movement_cell_size = 5
+movement_cell_size = 30
 remove_outliers = True
 retry_matching = True
 years_between_observations = 2.083# 10 for Winnebach, 2.083 for Kaiserberg
@@ -97,8 +97,9 @@ tracked_pixels = PixelMatching.track_movement(image1_matrix, image2_matrix, imag
 print("Finished assembling movement data frame")
 tracked_pixels = georeference_tracked_points(tracked_pixels, image_transform, crs=32632, years_between_observations=years_between_observations)
 
-HandleFiles.write_results(tracked_pixels, parameter_dict, folder_path=output_folder_path)
+# tracked_pixels = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_15_23_31_12/tracking_results.geojson")
 
+HandleFiles.write_results(tracked_pixels, parameter_dict, folder_path=output_folder_path)
 
 plot_movement_of_points(image1_matrix, image_transform, tracked_pixels, save_path=output_folder_path + "/point_movement_" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S") + ".png")
 
