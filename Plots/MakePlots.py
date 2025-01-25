@@ -22,8 +22,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         masking_polygon = masking_polygon.to_crs(crs=point_movement.crs)
         point_movement = gpd.overlay(point_movement, masking_polygon, how="intersection")
 
-    point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=8, marker="s", alpha=1.0,
-    # # #             # vmin=0, vmax=5,
+    point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=6, marker="s", alpha=1.0,
+                 vmin=0, vmax=2.1,
                  )
 
     rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
@@ -51,11 +51,11 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
             if not arrow_point.empty:
                 arrow_point = arrow_point.iloc[0]
                 plt.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
-                          arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
-                          -arrow_point["movement_row_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
+                          arrow_point["movement_column_direction"] * 3 / arrow_point["movement_distance"],
+                          -arrow_point["movement_row_direction"] * 3 / arrow_point["movement_distance"],
                           head_width=10, head_length=10, color="black", alpha=1)
     plt.title("Movement Distance in " + point_movement.crs.axis_info[0].unit_name + " per year")
-    plt.title("Reasons for invalid matching of points")
+    # plt.title("Reasons for invalid matching of points")
     if show_figure:
         fig.show()
     if save_path is not None:

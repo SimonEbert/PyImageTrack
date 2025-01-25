@@ -68,7 +68,7 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     if best_correlation < 0.5:
         return [np.nan, np.nan]
     movement_for_best_correlation = np.floor(np.subtract(best_correlation_coordinates, [search_cell_matrix.shape[-2]/2,
-                                                                                      search_cell_matrix.shape[-1]/2]))
+                                                                                      search_cell_matrix.shape[-1]/2])) # is +1 reasonable?
 
     # Visualization for the thesis
     # rasterio.plot.show(tracked_cell_matrix, cmap="Greys", title="The tracked cell from the first image")
@@ -83,8 +83,8 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     #                             search_cell_matrix), cmap="Greys", title="The best fitting cell from the second image")
     return movement_for_best_correlation
 
+
 def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpolator_search_cell, indices):
-    """Don't need central_indices"""
     if len(tracked_cell_matrix_shape) == 2:
         # central_row, central_column = central_indices[0], central_indices[1]
         t1, t2, t3, t4, shift_rows, shift_columns = coefficients
@@ -102,11 +102,12 @@ def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpo
         return moved_cell_matrix
     else:
         t1, t2, t3, t4, shift_rows, shift_columns = coefficients
-
         rotation_matrix = np.array([[t1, t2], [t3, t4]])
         # shift_vector = np.repeat(np.array([[shift_rows], [shift_columns]]), tracked_cell_matrix.shape[0] ** 2, axis=1) # ALIGN CHANGE
         shift_vector = np.repeat(np.array([[shift_rows], [shift_columns]]),
                                  tracked_cell_matrix_shape[-2] * tracked_cell_matrix_shape[-1], axis=1)
+        # if tracked_cell_matrix_shape != (3,89,89):
+        #     rasterio.plot.show()
 
         moved_indices = np.matmul(rotation_matrix, indices) + shift_vector
         try:
@@ -118,7 +119,7 @@ def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpo
         return moved_cell_matrix
 
 def lsm_loss_function_rotation(coefficients, tracked_cell_matrix: np.ndarray, interpolator_search_cell, indices):
-    moved_cell_matrix = move_cell_rotation_approach(coefficients, tracked_cell_matrix.shape, interpolator_search_cell, indices)
+    moved_cell_matrix = move_cell_rotation_approach(coefficients=coefficients, tracked_cell_matrix_shape=tracked_cell_matrix.shape, interpolator_search_cell=interpolator_search_cell, indices=indices)
     return np.sum((tracked_cell_matrix-moved_cell_matrix)**2)
 
 
@@ -133,7 +134,8 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
 
         interpolator_search_cell = scipy.interpolate.RegularGridInterpolator(
             (np.arange(0, search_cell_matrix.shape[0]), np.arange(0, search_cell_matrix.shape[1])),
-            search_cell_matrix, fill_value=None, bounds_error=False)
+            search_cell_matrix, fill_value=0, bounds_error=False)
+
         if len(tracked_cell_matrix[0]) == 0:
             return [np.nan, np.nan]
         # assign indices in respect to indexing in the search cell matrix
@@ -152,7 +154,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                 return [np.nan, np.nan]
         else:
             [initial_shift_rows, initial_shift_columns] = initial_shift_values
-
         solution_global = opt.minimize(lsm_loss_function_rotation, x0=np.array([1, 0, 0, 1, initial_shift_rows, initial_shift_columns]),
                                                  args=(tracked_cell_matrix, interpolator_search_cell, indices), method="Powell")
         t1, t2, t3, t4, b1, b2 = solution_global.x
@@ -186,32 +187,38 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         [shift_rows, shift_columns] = [new_central_row-central_row, new_central_column-central_column]
         return [shift_rows, shift_columns]
     else: # MULTIBAND
+
+
         interpolator_search_cell_list = list()
         for band in range(tracked_cell_matrix.shape[0]):
             interpolator_search_cell_list.append(scipy.interpolate.RegularGridInterpolator(
                 (np.arange(0, search_cell_matrix.shape[-2]), np.arange(0, search_cell_matrix.shape[-1])),
-                search_cell_matrix[band, :, :], fill_value=None, bounds_error=False
+                search_cell_matrix[band, :, :], fill_value=0, bounds_error=False
             ))
             # assign indices in respect to indexing in the search cell matrix
-        central_row = np.round(search_cell_matrix.shape[0] / 2)
-        central_column = np.round(search_cell_matrix.shape[1] / 2)
+        central_row = np.round(search_cell_matrix.shape[-2] / 2)
+        central_column = np.round(search_cell_matrix.shape[-1] / 2)
+
 
         indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - tracked_cell_matrix.shape[-2] / 2),
                                                      np.ceil(central_row + tracked_cell_matrix.shape[-2] / 2)),
                                            np.arange(np.ceil(central_column - tracked_cell_matrix.shape[-1] / 2),
                                                      np.ceil(central_column + tracked_cell_matrix.shape[-1] / 2)))
                                ).T.reshape(-1, 2).T
+
         if initial_shift_values is None:
                 [initial_shift_rows, initial_shift_columns] = track_cell(tracked_cell_matrix, search_cell_matrix)
         else:
             [initial_shift_rows, initial_shift_columns] = initial_shift_values
+
         solution_global = opt.minimize(lsm_loss_function_rotation,
                                                x0=np.array([1, 0, 0, 1, initial_shift_rows, initial_shift_columns]),
-                                               args=(tracked_cell_matrix, interpolator_search_cell_list,indices),
-                                       bounds=((None, None), (None, None), (None, None), (None, None), (None, None), (None, None)))
+                                               args=(tracked_cell_matrix, interpolator_search_cell_list, indices), method="Powell")
         t1, t2, t3, t4, b1, b2 = solution_global.x
+
         # What to do if the optimization did not work
         if not solution_global.success:
+            print("did not converge")
             return [np.nan, np.nan]
         # Check if the transformation matrix is singular
         transformation_matrix = np.array([[t1, t2], [t3, t4]])
@@ -440,22 +447,7 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
     if len(image1_matrix.shape) == 3:
         image1_matrix = image1_matrix[select_bands, :, :]
         image2_matrix = image2_matrix[select_bands, :, :]
-    # control_points = grid_points_on_polygon(polygon=reference_area, number_of_points=number_of_control_points)
-    # rows, cols = get_raster_indices_from_points(control_points, image1_transform)
-    # control_points_pixels = np.array([rows, cols]).transpose()
-    # row_movements = 0
-    # column_movements = 0
-    # for central_index in control_points:
-    #     track_cell1 = get_submatrix_symmetric(central_index=central_index, shape=(cell_size, cell_size),
-    #                                           matrix=image1_matrix)
-    #     search_area2 = get_submatrix_symmetric(central_index=central_index,
-    #                                            shape=(tracking_area_size, tracking_area_size),
-    #                                            matrix=image2_matrix)
-    #     match = track_cell_lsm(track_cell1, search_area2)
-    #     row_movements += match[0]
-    #     column_movements += match[1]
-    # row_movements /= number_of_control_points
-    # column_movements /= number_of_control_points
+
 
     tracked_control_pixels = track_movement(image1_matrix, image2_matrix, image_transform, tracking_area=reference_area, number_of_tracked_points=number_of_control_points, tracking_method="cross-correlation", cell_size=cell_size, tracking_area_size=tracking_area_size, remove_outliers=False)
     row_movements = np.nanmean(tracked_control_pixels["movement_row_direction"])
@@ -466,13 +458,13 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
     if len(image1_matrix.shape) == 2:
         interpolator_image2_matrix = scipy.interpolate.RegularGridInterpolator(
         (np.arange(0, image2_matrix.shape[0]), np.arange(0, image2_matrix.shape[1])),
-        image2_matrix, fill_value=None, bounds_error=False)
+        image2_matrix, fill_value=0, bounds_error=False)
     else:
         interpolator_image2_matrix = list()
         for band in range(image1_matrix.shape[0]):
             interpolator_image2_matrix.append(scipy.interpolate.RegularGridInterpolator(
                 (np.arange(0, image2_matrix.shape[-2]), np.arange(0, image2_matrix.shape[-1])),
-                image2_matrix[band, :, :], fill_value=None, bounds_error=False
+                image2_matrix[band, :, :], fill_value=0, bounds_error=False
             ))
     central_row = np.round(image2_matrix.shape[-2] / 2)
     central_column = np.round(image2_matrix.shape[-1] / 2)
@@ -484,6 +476,7 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
 
 
     if image_alignment_via_lsm:
+
         inverse_transform = (~image_transform).to_shapely()
         transformation_matrix = np.array(inverse_transform)
         transformed_polygon = reference_area
@@ -493,27 +486,45 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
 
         mask_matrix = -mask_matrix+1
         if len(image1_matrix.shape) == 3:
-            # mask_matrix = np.expand_dims(mask_matrix, 0)
-            # mask_matrix = np.repeat(mask_matrix, image1_matrix.shape[0], axis=0)
-            # print(mask_matrix.shape)
-            masked_matrix1 = np.zeros(image1_matrix.shape)
-            masked_matrix2 = np.zeros(image1_matrix.shape)
 
-            for i in range(image1_matrix.shape[0]):
-                masked_matrix1[i, :, :] = np.ma.masked_array(image1_matrix[i, :, :], mask=mask_matrix)
-                masked_matrix2[i, :, :] = np.ma.masked_array(image2_matrix[i, :, :], mask=mask_matrix)
 
-        else:
+
+
+            mask_matrix = np.repeat(mask_matrix[np.newaxis, :, :], image1_matrix.shape[0], axis=0)
             masked_matrix1 = np.ma.masked_array(image1_matrix, mask=mask_matrix)
             masked_matrix2 = np.ma.masked_array(image2_matrix, mask=mask_matrix)
-        print(row_movements, column_movements)
-        # TODO: Crop the masked images to their masking extent for efficient calculation
-        matching = track_cell_lsm(masked_matrix1, masked_matrix2, initial_shift_values=[0, 0], return_full_coefficients=True)
 
+            # masked_matrix1[masked_matrix1.mask] = 0
+            # masked_matrix2[masked_matrix2.mask] = 0
+
+            # masked_matrix1 = masked_matrix1.astype(float)
+            # masked_matrix2 = masked_matrix2.astype(float)
+
+        else:
+
+            masked_matrix1 = np.ma.masked_array(image1_matrix, mask=mask_matrix)
+            masked_matrix2 = np.ma.masked_array(image2_matrix, mask=mask_matrix)
+
+        # TODO: Crop the masked images to their masking extent for efficient calculation using for example the extent of the reference area
+        print(row_movements, column_movements)
+
+        matching = track_cell_lsm(masked_matrix1, masked_matrix2, initial_shift_values=[row_movements, column_movements], return_full_coefficients=True)
     else:
         matching = [1,0,0,1, row_movements, column_movements]
+
+
     print("Transformation matrix coefficients for image:", matching, "to match optimally in the reference area.")
+
+
     new_matrix2 = move_cell_rotation_approach(matching, image1_matrix.shape, interpolator_image2_matrix, indices)
+    image1_matrix[new_matrix2 == 0] = 0
+    new_matrix2[image1_matrix == 0] = 0
+
+
+    # plt.imshow(image1_matrix.transpose(1,2,0), cmap="Greys")
+    # plt.show()
+    # plt.imshow(new_matrix2.transpose(1,2,0), cmap="Greys")
+    # plt.show()
 
 
 
