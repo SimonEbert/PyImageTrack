@@ -1,20 +1,16 @@
-import time
 
-import rasterio
 import shapely
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import rasterio.plot
 import numpy as np
-import pandas as pd
 
 import PixelMatching
 from CreateGeometries.HandleGeometries import georeference_tracked_points
 from dataloader import HandleFiles
 from Plots.MakePlots import plot_movement_of_points
 from datetime import datetime
-import scipy
-
+import skimage.exposure
 
 plt.rcParams['figure.dpi'] = 300
 
@@ -22,7 +18,7 @@ plt.rcParams['figure.dpi'] = 300
 output_folder_path = "../Output_results/Kaiserberg/" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
 # Set parameters
-alignment_via_lsm = True
+alignment_via_lsm = False
 number_of_control_points = 100
 image_bands = 0
 control_tracking_area_size = 60
@@ -41,6 +37,8 @@ years_between_observations = 2.083# 10 for Winnebach, 2.083 for Kaiserberg, 2.83
 
 path1 = "../Test_Data/KBT_hillshade_2019-07.tif"
 path2 = "../Test_Data/KBT_hillshade_2021-08.tif"
+# path1 = "../Test_Data/Orthophotos_Kaiserberg/Long_time_series/1953_modified.tif"
+# path2 = "../Test_Data/Orthophotos_Kaiserberg/Long_time_series/1971_modified.tif"
 # path1 = "../Test_Data/Orthophotos_Kaiserberg/new_try/Orthophoto_2020_modified.tif"
 # path2 = "../Test_Data/Orthophotos_Kaiserberg/new_try/Orthophoto_2023_modified.tif"
 # path1 = "../Test_Data/Winnebachgebiet/DEM_2006_2007_modified.tif"
@@ -76,6 +74,14 @@ start_time = datetime.now()
 # good parameters:
 # polygon_outside_RG, number_of_control_points=100
 [image1_matrix, image2_matrix, image_transform] = PixelMatching.align_images(file1, file2, reference_area=polygon_outside_RG, image_alignment_via_lsm=alignment_via_lsm, number_of_control_points=number_of_control_points, select_bands=image_bands, tracking_area_size=control_tracking_area_size, cell_size=control_cell_size)#True, 100, 0, 60, 40
+
+#
+# image1_matrix = skimage.exposure.equalize_adapthist(image=image1_matrix.astype(int), kernel_size=movement_tracking_area_size, clip_limit=0.9)
+# image2_matrix = skimage.exposure.equalize_adapthist(image=image2_matrix.astype(int), kernel_size=movement_tracking_area_size, clip_limit=0.9)
+# rasterio.plot.show(image1_matrix)
+# rasterio.plot.show(image2_matrix)
+
+
 
 # good parameters:
 # polygon_inside_RG_unbuffered, number_of_tracked_points = 2000, tracking_area_size=80, cell_size=30

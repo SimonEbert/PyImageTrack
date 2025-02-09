@@ -1,7 +1,6 @@
 import geopandas as gpd
 import shapely
 import numpy as np
-import math
 import rasterio.transform
 import pandas as pd
 import rasterio.mask
@@ -31,8 +30,8 @@ def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10
     number_of_longitude_points = (length_longitude/length_latitude*number_of_latitude_points)
     number_of_latitude_points *= np.sqrt(area_ratio)
     number_of_longitude_points *= np.sqrt(area_ratio)
-    number_of_latitude_points = math.ceil(number_of_latitude_points)
-    number_of_longitude_points = math.ceil(number_of_longitude_points)
+    number_of_latitude_points = np.ceil(number_of_latitude_points)
+    number_of_longitude_points = np.ceil(number_of_longitude_points)
 
     points = []
     for lat in np.arange(minlatitude, maxlatitude, length_latitude/number_of_latitude_points):

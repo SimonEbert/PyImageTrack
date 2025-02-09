@@ -2,8 +2,6 @@ import numpy as np
 import geopandas as gpd
 import rasterio.plot
 import matplotlib.pyplot as plt
-import pandas as pd
-import rasterio.fill
 
 
 def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geometry: gpd.GeoDataFrame, alpha=0.6):
@@ -23,7 +21,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         point_movement = gpd.overlay(point_movement, masking_polygon, how="intersection")
 
     point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=6, marker="s", alpha=1.0,
-                 vmin=0, vmax=2.1,
+                 # vmin=0, vmax=2.1,
                  )
 
     rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")

@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+import geopandas as gpd
 import rasterio.plot
 import matplotlib
 import matplotlib.pyplot as plt
@@ -7,24 +8,17 @@ from dataloader import HandleFiles
 import rasterio.mask
 import shapely
 from Plots.MakePlots import plot_movement_of_points
+from CreateGeometries.HandleGeometries import get_overlapping_area
 plt.rcParams['figure.dpi'] = 600
 
 
 
 # VISUALIZATION of Outlier reasons for a full tracking
-# result_data = pd.read_csv("../Output_results/Kaiserberg/2025_01_15_23_31_12/tracking_results.csv")
-# print(len(result_data))
-#
-# outlier_points = result_data[(result_data["movement_row_direction"] == -0.001) | (result_data["movement_row_direction"] == -0.002) | (result_data["movement_row_direction"] == -0.003)| (result_data["movement_row_direction"] == -0.004)| (result_data["movement_row_direction"] == -0.005)]
-# valid_points = result_data[~((result_data["movement_row_direction"] == -0.001) | (result_data["movement_row_direction"] == -0.002) | (result_data["movement_row_direction"] == -0.003)| (result_data["movement_row_direction"] == -0.004)| (result_data["movement_row_direction"] == -0.005))]
-#
-# outlier_points = outlier_points.astype({'movement_row_direction': str})
-# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.001", "movement_row_direction"] = "Cross-correlation\nyielded no result"
-# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.002", "movement_row_direction"] = "Optimization did\nnot converge"
-# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.003", "movement_row_direction"] = "Unrealistic\nTransformation\ndeterminant"
-# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.004", "movement_row_direction"] = "Rotation\noutlier"
-# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.005", "movement_row_direction"] = "Velocity\noutlier"
 
+
+# valid_points = pd.read_csv("../Output_results/Kaiserberg/2025_01_16_18_26_28/tracking_results.csv")
+#
+#
 # matplotlib.rcParams.update({'font.size': 13})
 # plt.rc('figure', titlesize=15)
 #
@@ -35,23 +29,69 @@ plt.rcParams['figure.dpi'] = 600
 # ax.set_yscale('log')
 #
 # ax.set_ylim(None, 1000)
+# ax.set_xlabel('Distance (m/yr)')
+# ax.set_ylabel('Frequency (logarithmic)')
 # ax.set_title('Movement rates of valid matched points in m/yr')
 # plt.show()
+#
+#
+#
+#
+#
+#
+# result_data = pd.read_csv("../Output_results/Kaiserberg/2025_02_09_13_53_25/tracking_results.csv")
+# print(len(result_data))
+#
+# outlier_points = result_data[(result_data["movement_row_direction"] == -0.001) | (result_data["movement_row_direction"] == -0.002) | (result_data["movement_row_direction"] == -0.003)| (result_data["movement_row_direction"] == -0.004)| (result_data["movement_row_direction"] == -0.005)]
+# valid_points = result_data[~((result_data["movement_row_direction"] == -0.001) | (result_data["movement_row_direction"] == -0.002) | (result_data["movement_row_direction"] == -0.003)| (result_data["movement_row_direction"] == -0.004)| (result_data["movement_row_direction"] == -0.005))]
+#
+# outlier_points = outlier_points.astype({'movement_row_direction': str})
+# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.001", "movement_row_direction"] = "Cross-correlation\nyielded no\nvalid result"
+# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.002", "movement_row_direction"] = "Optimization did\nnot converge"
+# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.003", "movement_row_direction"] = "Unrealistic\ntransformation\ndeterminant"
+# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.004", "movement_row_direction"] = "Rotation\noutlier"
+# outlier_points.loc[outlier_points["movement_row_direction"] == "-0.005", "movement_row_direction"] = "Velocity\noutlier"
+#
+#
 #
 # fig, ax = plt.subplots()
 # fig.subplots_adjust(bottom=0.2)
 # reasons_for_removal = outlier_points['movement_row_direction'].value_counts().index
 # counts_of_reasons = outlier_points['movement_row_direction'].value_counts().values
-# ax.bar(x=[0,1,2], tick_label=reasons_for_removal, height=counts_of_reasons, width=0.1, color="Orange", alpha=0.8)
+# ax.bar(x=[0,1,2,3], tick_label=reasons_for_removal, height=counts_of_reasons, width=0.1, color="Orange", alpha=0.8)
 # # ax.tick_params(axis='x', labelrotation=90)
 # ax.set_yscale('log')
 # ax.set_title('Reasons for outlier removal')
-#
+# ax.set_ylabel('Frequency (logarithmic)')
 # ax.set_ylim(None, 1000)
 #
 # plt.show()
 
 
+# OUTLIER MAP
+# fig, ax = plt.subplots()
+#
+# background_rock_glacier = rasterio.open("../Test_Data/KBT_hillshade_2019-07.tif")
+# background_rock_glacier_1 = rasterio.open("../Test_Data/KBT_hillshade_2021-08.tif")
+# [background_rock_glacier, background_rock_glacier_transform], [_, _] = get_overlapping_area(background_rock_glacier, background_rock_glacier_1)
+# rasterio.plot.show(background_rock_glacier, transform=background_rock_glacier_transform, ax=ax, cmap="Greys")
+#
+# outlier_geographical_data = gpd.read_file("../Output_results/Kaiserberg/2025_02_09_13_53_25/tracking_results.geojson")
+# outlier_geographical_data = outlier_geographical_data[(outlier_geographical_data["movement_row_direction"] == -0.001) | (outlier_geographical_data["movement_row_direction"] == -0.002) | (outlier_geographical_data["movement_row_direction"] == -0.003)| (outlier_geographical_data["movement_row_direction"] == -0.004)| (outlier_geographical_data["movement_row_direction"] == -0.005)]
+#
+#
+#
+# # outlier_geographical_data = outlier_geographical_data.astype({'movement_row_direction': str})
+# outlier_geographical_data.loc[outlier_geographical_data["movement_row_direction"] == -0.001, "movement_row_direction"] = "Cross-correlation yielded no valid result"
+# outlier_geographical_data.loc[outlier_geographical_data["movement_row_direction"] == -0.002, "movement_row_direction"] = "Optimization did not converge"
+# outlier_geographical_data.loc[outlier_geographical_data["movement_row_direction"] == -0.003, "movement_row_direction"] = "Unrealistic Transformation determinant"
+# outlier_geographical_data.loc[outlier_geographical_data["movement_row_direction"] == -0.004, "movement_row_direction"] = "Rotation outlier"
+# outlier_geographical_data.loc[outlier_geographical_data["movement_row_direction"] == -0.005, "movement_row_direction"] = "Velocity outlier"
+#
+# outlier_geographical_data.plot(categorical=True, ax=ax, column="movement_row_direction", markersize=8, marker="o", alpha=1.0, legend=True, legend_kwds={"loc": "lower left", "fontsize": "small", "reverse": True}, cmap="plasma")
+# plt.title("Reasons for invalid matching of points")
+
+plt.show()
 
 #CORRELATION coefficient map
 # data_with_correlation_coefficients = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_15_18_38_46/tracking_results.geojson")
@@ -197,7 +237,7 @@ import matplotlib as mpl
 # matplotlib.rcParams.update({'font.size': 12})
 #
 # ax.set_title("Difference between yearly movement rates in m")
-# plt.tight_layout()
+# #plt.tight_layout()
 # plt.show()
 #
 # #
@@ -222,27 +262,27 @@ import matplotlib as mpl
 #     return x/2050*100
 # def reverse_percentage(x):
 #     return x/100*2050
-# fig, ax = plt.subplots()
-#
+# fig, ax = plt.subplots(layout='constrained')
 # ax.plot([10, 20, 30, 40, 50], [invalid_matching_size_10, invalid_matching_size_20, invalid_matching_size_30, invalid_matching_size_40, invalid_matching_size_50])
-# ax.set_xticks([10, 20, 30, 40, 50], ["10", "20", "30", "40", "50"])
-# ax.set_xlabel("Size of the tracked cell")
-# ax.set_ylabel("Number of points with invalid matchings\ndetected by the Implementation")
+# ax.set_xticks([10, 20, 30, 40, 50], ["10", "20", "30", "40", "50"], fontsize=14)
+# ax.set_xlabel("Size of the tracked cell", fontsize=14)
+# ax.set_ylabel("Number of points with invalid matchings\ndetected by the Implementation", fontsize=14)
 # secax_y2 = ax.secondary_yaxis('right', functions=(calculate_percentage, reverse_percentage))
-# secax_y2.set_ylabel("Percentage of invalid matchings\ndetected by the Implementation")
-# secax_y2.set_yticks([2, 3, 4, 5, 6, 7,8], ["2%", "3%", "4%", "5%", "6%",  "7%", "8%"])
-# plt.title("Invalid matchings for different tracked cell sizes")
+# secax_y2.set_ylabel("Percentage of invalid matchings\ndetected by the Implementation", fontsize=14)
+# secax_y2.set_yticks([2, 3, 4, 5, 6, 7,8], ["2%", "3%", "4%", "5%", "6%",  "7%", "8%"], fontsize=14)
+# plt.title("Invalid matchings for different tracked cell sizes", fontsize=16)
 # plt.show()
 
 
 # RUNTIME plots (data assembled from differeent parts)
-# fig, ax = plt.subplots()
+#
+# fig, ax = plt.subplots(layout='constrained')
 # ax.plot([70, 80, 100, 120, 140], [597, 541, 664, 852, 1072], label="Single-band hillshade image")
 # ax.plot([70, 80, 100, 120, 140], [2661, 2464, 2612, 2869, 3210], label="Multi-band image")
 # ax.legend(loc='upper left')
-# ax.set_xlabel("search area size")
-# ax.set_ylabel("Computation time in seconds")
-# ax.set_title("Computational time for different search area sizes")
+# ax.set_xlabel("search area size", fontsize=14)
+# ax.set_ylabel("Computation time in seconds", fontsize=14)
+# ax.set_title("Computational time for different search area sizes", fontsize=16)
 # plt.show()
 
 
@@ -254,36 +294,36 @@ import matplotlib as mpl
 
 
 
-results_true_color = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_23_17_24_14/tracking_results.geojson")
+# results_true_color = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_23_17_24_14/tracking_results.geojson")
 
-results_hillshade = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_16_18_26_28/tracking_results.geojson")
-
-
-
-results_true_color['movement_angle'] = np.arctan2(-results_true_color['movement_row_direction'], results_true_color['movement_column_direction'])
-
-results_hillshade['movement_angle'] = np.arctan2(-results_hillshade['movement_row_direction'], results_hillshade['movement_column_direction'])
-
-
-results_true_color.loc[results_true_color['movement_angle']<0, 'movement_angle'] = results_true_color['movement_angle'] + 2*np.pi
-results_hillshade.loc[results_hillshade['movement_angle']<0, 'movement_angle'] = results_hillshade['movement_angle'] + 2*np.pi
-
-results_true_color['movement_angle'] = np.degrees(results_true_color['movement_angle'])
-results_hillshade['movement_angle'] = np.degrees(results_hillshade['movement_angle'])
-
-
-direction_difference = results_true_color['movement_angle'] - results_hillshade['movement_angle']
-direction_difference[direction_difference < -180] += 360
-direction_difference[direction_difference > 180] -= 360
+# results_hillshade = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_16_18_26_28/tracking_results.geojson")
 #
-
-velocity_difference = results_true_color['movement_distance_per_year'] - results_hillshade['movement_distance_per_year']
-
-plt.hist(velocity_difference, bins='auto')
-plt.title("Movement rate deviations between hillshade and orthophoto data")
-plt.xlabel("Movement rate deviations in meter/year")
-plt.ylabel("Frequency")
-plt.show()
+#
+#
+# results_true_color['movement_angle'] = np.arctan2(-results_true_color['movement_row_direction'], results_true_color['movement_column_direction'])
+#
+# results_hillshade['movement_angle'] = np.arctan2(-results_hillshade['movement_row_direction'], results_hillshade['movement_column_direction'])
+#
+#
+# results_true_color.loc[results_true_color['movement_angle']<0, 'movement_angle'] = results_true_color['movement_angle'] + 2*np.pi
+# results_hillshade.loc[results_hillshade['movement_angle']<0, 'movement_angle'] = results_hillshade['movement_angle'] + 2*np.pi
+#
+# results_true_color['movement_angle'] = np.degrees(results_true_color['movement_angle'])
+# results_hillshade['movement_angle'] = np.degrees(results_hillshade['movement_angle'])
+#
+#
+# direction_difference = results_true_color['movement_angle'] - results_hillshade['movement_angle']
+# direction_difference[direction_difference < -180] += 360
+# direction_difference[direction_difference > 180] -= 360
+# #
+#
+# velocity_difference = results_true_color['movement_distance_per_year'] - results_hillshade['movement_distance_per_year']
+#
+# plt.hist(velocity_difference, bins='auto')
+# plt.title("Movement rate deviations between hillshade and orthophoto data")
+# plt.xlabel("Movement rate deviations in meter/year")
+# plt.ylabel("Frequency")
+# plt.show()
 
 
 
@@ -325,4 +365,13 @@ plt.show()
 # rasterio.plot.show(raster_image, ax=ax)
 # rasterio.plot.show(interpolated_results.transpose(), ax=ax)
 # plt.show()
+
+
+# MEAN calculation for the perfect matching parameters
+# results_hillshade = HandleFiles.read_tracking_results("../Output_results/Kaiserberg/2025_01_16_18_26_28/tracking_results.geojson")
+#
+# mean_velocity = np.nanmean(results_hillshade['movement_distance_per_year'])
+#
+# print(mean_velocity)
+
 
