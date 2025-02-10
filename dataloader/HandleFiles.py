@@ -3,6 +3,7 @@ import rasterio.plot
 import geopandas as gpd
 import os
 
+
 def read_two_image_files(path1: str, path2: str):
     """Reads two .tiff files from the given paths and returns them as rasterio objects"""
     file1 = rasterio.open(path1)

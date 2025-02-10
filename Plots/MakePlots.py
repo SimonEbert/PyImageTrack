@@ -21,8 +21,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         point_movement = gpd.overlay(point_movement, masking_polygon, how="intersection")
 
     point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=6, marker="s", alpha=1.0,
-                 # vmin=0, vmax=2.1,
-                 )
+                        # vmin=0, vmax=2.1,
+                        )
 
     rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
@@ -37,7 +37,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     # outlier_points.loc[outlier_points["movement_row_direction"] == -0.003, "movement_row_direction"] = "Unrealistic Transformation determinant"
     # outlier_points.loc[outlier_points["movement_row_direction"] == -0.004, "movement_row_direction"] = "Rotation outlier"
     # outlier_points.loc[outlier_points["movement_row_direction"] == -0.005, "movement_row_direction"] = "Velocity or rotation outlier"
-
 
     # outlier_points.plot(categorical=True, column = "movement_row_direction", ax=ax, markersize=8, marker="o", alpha=1.0, legend=True, legend_kwds={"loc": "lower left", "fontsize": "small", "reverse": True}, cmap="plasma")
 
@@ -58,4 +57,3 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         fig.show()
     if save_path is not None:
         fig.savefig(save_path, bbox_inches='tight')
-
