@@ -3,12 +3,6 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-
-import skimage.exposure
-import rasterio.plot
-from matplotlib.patches import Patch
-from matplotlib.lines import Line2D
-
 #import functions
 import PixelMatching
 from CreateGeometries.HandleGeometries import georeference_tracked_points
@@ -24,22 +18,20 @@ output_folder_path = "../Output_results/Kaiserberg/" + datetime.now().strftime("
 # Set parameters
 alignment_via_lsm = True
 number_of_control_points = 100
-image_bands = None
+image_bands = 0
 control_tracking_area_size = 60
 control_cell_size = 40
 tracking_method = "lsm"
 number_of_tracked_points = 2000
-movement_tracking_area_size = 120
-movement_cell_size = 70
+movement_tracking_area_size = 80
+movement_cell_size = 30
 remove_outliers = True
 retry_matching = True
-years_between_observations = 2.83
+years_between_observations = 2.083
 
 # set paths for the two image files
 path1 = "../Test_Data/KBT_hillshade_2019-07.tif"
 path2 = "../Test_Data/KBT_hillshade_2021-08.tif"
-path1 = "../Test_Data/Orthophotos_Kaiserberg/new_try/Orthophoto_2020_modified.tif"
-path2 = "../Test_Data/Orthophotos_Kaiserberg/new_try/Orthophoto_2023_modified.tif"
 
 file1, file2 = HandleFiles.read_two_image_files(path1, path2)
 
@@ -65,11 +57,6 @@ start_time = datetime.now()
 
 
 
-image1_matrix = skimage.exposure.equalize_adapthist(image=image1_matrix.astype(int), kernel_size=movement_tracking_area_size, clip_limit=0.9)
-image2_matrix = skimage.exposure.equalize_adapthist(image=image2_matrix.astype(int), kernel_size=movement_tracking_area_size, clip_limit=0.9)
-rasterio.plot.show(image1_matrix)
-rasterio.plot.show(image2_matrix)
-
 
 tracked_pixels = PixelMatching.track_movement(image1_matrix, image2_matrix, image_transform,
                                               tracking_area=polygon_inside_RG_unbuffered,
@@ -82,7 +69,6 @@ tracked_pixels = georeference_tracked_points(tracked_pixels, image_transform, cr
                                              years_between_observations=years_between_observations)
 
 # read tracking results instead of performing the tracking
-
 # tracked_pixels = HandleFiles.read_tracking_results(
 # "../Output_results/Kaiserberg/2025_01_19_22_29_31/tracking_results.geojson")
 
@@ -114,33 +100,6 @@ plot_movement_of_points(image1_matrix, image_transform, tracked_pixels,
                         save_path=output_folder_path + "/point_movement_" + datetime.now().strftime(
                            "%Y_%m_%d_%H_%M_%S") + ".png")
 
-
-
-
-#
-# fig, ax = plt.subplots()
-# background = rasterio.open("../Test_Data/Orthophotos_Kaiserberg/new_try/Orthophoto_2020_modified.tif")
-# rasterio.plot.show(background, ax=ax)
-#
-# polygon_inside_RG_unbuffered.plot(ax=ax, alpha=0.2, color="blue")
-# polygon_inside_RG_unbuffered.boundary.plot(ax=ax, color="black", alpha=0.2)
-#
-#
-# tracked_pixels.plot(ax=ax, alpha=0.5, color="orange", marker="s", markersize=200)
-# tracked_pixels.plot(ax=ax, color="yellow", marker="o", markersize=5)
-#
-#
-# # Create custom legend handles
-# polygon_handle = Patch(color='blue', label='Rock glacier area', alpha=0.2)
-# point_handle = Line2D([0], [0], marker='o', markerfacecolor='yellow', markersize=5, label='Tracked points', linestyle='', markeredgewidth=0)
-# image_section_handle = Patch(color='orange', label='Image section used for tracking', alpha=0.5)
-#
-#
-# # Add the legend to the plot
-# ax.legend(handles=[polygon_handle, point_handle, image_section_handle], loc='lower right', fontsize='small')
-# ax.set_title("Area-based feature tracking")
-# plt.tight_layout()
-# plt.show()
 
 
 
