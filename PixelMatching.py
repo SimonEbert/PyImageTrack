@@ -32,7 +32,7 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     height_search_cell = search_cell_matrix.shape[-2]
     width_search_cell = search_cell_matrix.shape[-1]
     best_correlation = 0
-    # for multiband images, flattening ensures that always the same band is being compared
+    # for multichannel images, flattening ensures that always the same band is being compared
     tracked_vector = tracked_cell_matrix.flatten()
     # normalize the tracked vector
     tracked_vector = tracked_vector - np.mean(tracked_vector)
@@ -64,18 +64,6 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
                                                          [search_cell_matrix.shape[-2] / 2,
                                                           search_cell_matrix.shape[-1] / 2]))
 
-    # Visualization for the thesis
-    # rasterio.plot.show(tracked_cell_matrix, cmap="Greys", title="The tracked cell from the first image")
-    # rasterio.plot.show(
-    #     get_submatrix_symmetric([search_cell_matrix.shape[-2]/2, search_cell_matrix.shape[-1]/2],
-    #                             (tracked_cell_matrix.shape[-2], tracked_cell_matrix.shape[-1]),
-    #                             search_cell_matrix), cmap="Greys",
-    #     title="The section of the second image at the position\nof the tracked cell from the first image")
-    # rasterio.plot.show(
-    #     get_submatrix_symmetric([best_correlation_coordinates[0], best_correlation_coordinates[1]],
-    #                             (tracked_cell_matrix.shape[-2], tracked_cell_matrix.shape[-1]),
-    #                             search_cell_matrix),
-    #     cmap="Greys", title="The best fitting cell from the second image")
     return movement_for_best_correlation
 
 
@@ -86,6 +74,8 @@ def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpo
         t1, t2, t3, t4, shift_rows, shift_columns = coefficients
 
         rotation_matrix = np.array([[t1, t2], [t3, t4]])
+
+        # repeat the shift vector for adequate addition of index vectors
         shift_vector = np.repeat(np.array([[shift_rows], [shift_columns]]),
                                  tracked_cell_matrix_shape[0] * tracked_cell_matrix_shape[1], axis=1)
 
@@ -107,6 +97,8 @@ def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpo
                                  tracked_cell_matrix_shape[-2] * tracked_cell_matrix_shape[-1], axis=1)
 
         moved_indices = np.matmul(rotation_matrix, indices) + shift_vector
+
+        # try to access interpolated values from the search cell
         try:
             moved_cell_matrix = np.full(tracked_cell_matrix_shape, 0)
             # fill the moved matrix channel-wise
@@ -171,20 +163,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         if return_full_coefficients:
             return [t1, t2, t3, t4, b1, b2]
 
-        # Thesis visualization
-        # rasterio.plot.show(tracked_cell_matrix, cmap="Greys", title="The tracked cell from the first image")
-        # rasterio.plot.show(move_cell_rotation_approach([t1, t2, t3, t4, b1, b2], tracked_cell_matrix,
-        #                                                interpolator_search_cell,
-        #                                                [central_row, central_column], indices),
-        #                    cmap="Greys", title="The best fitting cell from the second image")
-        # rasterio.plot.show(move_cell_rotation_approach([1, 0, 0, 1, 0, 0], tracked_cell_matrix,
-        #                                                interpolator_search_cell,
-        #                                                [central_row, central_column], indices),
-        #                    cmap="Greys",
-        #                    title="The section of the second image at the position\nof the tracked cell "
-        #                          "from the first image")
-        # time.sleep(5)
-
         # find the impact from the transformation on the central index coordinates
         [new_central_row, new_central_column] = (np.matmul(transformation_matrix,
                                                            np.array([central_row, central_column]))
@@ -240,33 +218,19 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
 
         return [shift_rows, shift_columns]
 
-    # rotation_angle, shift_rows, shift_columns = solution.x
-    # rotation_matrix = np.array([[np.cos(rotation_angle), -np.sin(rotation_angle)],
-    #                             [np.sin(rotation_angle), np.cos(rotation_angle)]])
-    # shift_vector = np.repeat(np.array([[shift_rows], [shift_columns]]), tracked_cell_matrix.shape[0] ** 2, axis=1)
-    # moved_indices = (np.matmul(rotation_matrix, indices) + shift_vector +
-    #                  np.repeat(np.array([
-    #                      [-central_row * np.cos(rotation_angle) + central_column * np.sin(
-    #                          rotation_angle) + central_row],
-    #                      [-central_row * np.sin(rotation_angle) - central_column * np.cos(
-    #                          rotation_angle) + central_column]]),
-    #                      tracked_cell_matrix.shape[0] ** 2, axis=1)
-    #                  )
-    # moved_cell_matrix = interpolator_search_cell(moved_indices.T).reshape(tracked_cell_matrix.shape)
-    # rasterio.plot.show(tracked_cell_matrix)
-    # rasterio.plot.show(moved_cell_matrix)
-
 
 def get_tracked_pixels_square(tracked_pixels, central_pixel_coordinates):
     # get central indices
     central_pixel_row = central_pixel_coordinates[0]
     central_pixel_col = central_pixel_coordinates[1]
     neighbouring_tracked_pixels = pd.DataFrame()
+
     # get indices around given central index
     smaller_row_index = np.max(tracked_pixels[tracked_pixels["row"] < central_pixel_row]["row"])
     bigger_row_index = np.min(tracked_pixels[tracked_pixels["row"] > central_pixel_row]["row"])
     smaller_col_index = np.max(tracked_pixels[tracked_pixels["column"] < central_pixel_col]["column"])
     bigger_col_index = np.min(tracked_pixels[tracked_pixels["column"] > central_pixel_col]["column"])
+
     # find all adjacent points, but not the central point itself
     for row in [smaller_row_index, central_pixel_row, bigger_row_index]:
         for column in [smaller_col_index, central_pixel_col, bigger_col_index]:
@@ -287,21 +251,17 @@ def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, f
                                                   (neighbouring_pixels["column"] != col)]
         neighbouring_pixels = neighbouring_pixels[~neighbouring_pixels["movement_row_direction"].isna()]
 
-        # print(np.abs(neighbouring_pixels["movement_row_direction"]-central_pixel["movement_row_direction"]))
-        # print((np.abs(neighbouring_pixels["movement_row_direction"]-central_pixel["movement_row_direction"]).any() >= 15))
-        # Check if more than three neigbouring pixels have a more than 5 pixel difference movement
-        # if np.sum(np.abs(neighbouring_pixels["movement_row_direction"].values-central_pixel["movement_row_direction"].values) >= 5) > 3 | (np.abs(neighbouring_pixels["movement_row_direction"].values-central_pixel["movement_row_direction"].values) >= 12).any():
-        #     tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction"]] = np.nan
-        # if np.sum(np.abs(neighbouring_pixels["movement_column_direction"].values-central_pixel["movement_column_direction"].values) >= 5) > 3 | (np.abs(neighbouring_pixels["movement_column_direction"].values-central_pixel["movement_column_direction"].values) >= 12).any():
-        #     tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction"]] = np.nan
-
+        # initialize average movement angle
         average_movement_angle = 0
 
+        # calculate the average movement angle
         for i in range(len(neighbouring_pixels)):
             movement_vector = np.array([neighbouring_pixels.iloc[i]["movement_row_direction"],
                                         neighbouring_pixels.iloc[i]["movement_column_direction"]])
             movement_vector_length = np.linalg.norm(movement_vector)
             average_movement_angle += np.arccos(np.dot(movement_vector, np.array([1, 0])) / movement_vector_length)
+
+        # check if there exist any neighbouring pixels to avoid division by 0
         if len(neighbouring_pixels) > 0:
             average_movement_angle /= len(neighbouring_pixels)
             movement_vector_central = np.array([central_pixel["movement_row_direction"],
@@ -310,43 +270,41 @@ def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, f
             movement_vector_central_length = np.linalg.norm(movement_vector_central)
             movement_angle_central = np.arccos(
                 np.dot(movement_vector_central.T, np.array([1, 0])) / movement_vector_central_length)
+
+            # check if the central pixel is a rotation outlier
             if (
-                    np.abs(average_movement_angle - movement_angle_central) > np.pi / 2) & from_rotation:  #  & (not (float(central_pixel.tail(1)["movement_row_direction"].values) in [-0.001, -0.002, -0.003])):
+                    np.abs(
+                        average_movement_angle - movement_angle_central) > np.pi / 2) & from_rotation:
                 print("removed pixel", row, col, "for rotation reasons")
-                tracked_pixels.loc[(tracked_pixels["row"] == row) &
-                                   (tracked_pixels["column"] == col),
-                ["movement_row_direction",
-                 "movement_column_direction",
-                 "movement_distance_pixels"]] = np.nan
+                tracked_pixels.loc[
+                    (tracked_pixels["row"] == row) &
+                    (tracked_pixels["column"] == col),
+                    ["movement_row_direction",
+                     "movement_column_direction",
+                     "movement_distance_pixels"]] = np.nan
 
-                #tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction"]] = -0.004
-
+            # check if the central pixel is a velocity outlier
             if (central_pixel["movement_distance_pixels"].values >
                 2 * np.nanmean(neighbouring_pixels[
-                                   "movement_distance_pixels"].values)) & from_velocity:  #& (not (float(central_pixel.tail(1)["movement_row_direction"].values) in [-0.001, -0.002, -0.003, -0.004])):
+                                   "movement_distance_pixels"].values)) & from_velocity:
                 print("removed pixel", row, col, "for velocity reasons")
                 tracked_pixels.loc[
-                    (tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction",
-                                                                                         "movement_column_direction",
-                                                                                         "movement_distance_pixels"]] = np.nan
-                #tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction"]] = -0.005
+                    (tracked_pixels["row"] == row) & (tracked_pixels["column"] == col),
+                    ["movement_row_direction",
+                     "movement_column_direction",
+                     "movement_distance_pixels"]] = np.nan
 
-            # if (central_pixel["movement_distance_pixels"].values >= 2 * np.mean(
-        #         neighbouring_pixels["movement_distance_pixels"].values)) & from_velocity & (np.abs(average_movement_angle - movement_angle_central) >= np.pi/2):
-        #     tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = -0.003
-
-        # if (np.sum(np.abs(neighbouring_pixels["movement_distance_pixels"].values-central_pixel["movement_distance_pixels"].values) >= 15) > 3) | ((np.abs(neighbouring_pixels["movement_distance_pixels"].values-central_pixel["movement_distance_pixels"].values) >= 20).any()) | (all(1.2*x <= central_pixel["movement_distance_pixels"].values for x in neighbouring_pixels["movement_distance_pixels"].tolist())) | (np.sum(np.isnan(neighbouring_pixels["movement_distance_pixels"])) >= 7):
-        #     print("removed pixel", row, col)
-        #
-        #     tracked_pixels.loc[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col), ["movement_row_direction", "movement_column_direction", "movement_distance_pixels"]] = np.nan
     return tracked_pixels
 
 
 def retrack_wrong_matching_pixels(tracked_pixels, track_matrix, search_matrix, cell_size: int, tracking_area_size: int,
                                   fallback_on_cross_correlation: bool = False):
+
+    # check for every tracked point if it has a valid movement result
     for [row, col] in zip(tracked_pixels["row"].tolist(), tracked_pixels["column"].tolist()):
         central_pixel = tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)]
 
+        # if the movement is NaN, it is no valid result and a second matching attempt is made
         if np.isnan(central_pixel["movement_row_direction"].values) & np.isnan(
                 central_pixel["movement_column_direction"].values):
             neighbouring_pixels = get_tracked_pixels_square(tracked_pixels, [row, col])
@@ -354,20 +312,27 @@ def retrack_wrong_matching_pixels(tracked_pixels, track_matrix, search_matrix, c
             neighbouring_pixels = neighbouring_pixels[
                 (neighbouring_pixels["row"] != row) | (neighbouring_pixels["column"] != col)]
             neighbouring_pixels = neighbouring_pixels[~neighbouring_pixels["movement_row_direction"].isna()]
+
+            # check if there are adjacent points, which can provide an initial guess
             if len(neighbouring_pixels) > 0:
                 movement_row_direction_neighbours_mean = np.nanmean(
                     neighbouring_pixels["movement_row_direction"].values)
                 movement_column_direction_neighbours_mean = np.nanmean(
                     neighbouring_pixels["movement_column_direction"].values)
+
+                # get tracked and search cells
                 track_cell1 = get_submatrix_symmetric(central_index=[row, col], shape=(cell_size, cell_size),
                                                       matrix=track_matrix)
 
                 search_area2 = get_submatrix_symmetric(central_index=[row, col],
                                                        shape=(tracking_area_size, tracking_area_size),
                                                        matrix=search_matrix)
+                # perform the new matching attempt with provided initial values
                 match = track_cell_lsm(track_cell1, search_area2,
                                        initial_shift_values=[movement_row_direction_neighbours_mean,
                                                              movement_column_direction_neighbours_mean])
+
+                # If the second attempt was not valid neither, fallback on the cross-correlation result if desired
                 if np.isnan(match[0]) & fallback_on_cross_correlation:
                     print("Falling back on cross correlation for pixel", [row, col])
                     match = track_cell(track_cell1, search_area2)
@@ -384,63 +349,59 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
                    number_of_tracked_points: int, cell_size: int = 40,
                    tracking_area_size: int = 50, tracking_method: str = "lsm", remove_outliers: bool = True,
                    retry_matching: bool = True):
-    # 20 PIXELS CELL SIZE LEADS TO NON-ROBUST RESULTS (IT'S JUST TO SMALL FOR RECOGNIZING PATTERNS)
     """Creates roughly number_of_tracked_points points on the tracking area and  tracks these points between image1 and
     image2. The size of the cell, which is tracked for each point as well as the search area can be adjusted. Takes two aligned matrices image1 and image 2 and the respective transform"""
 
+    # get grid of tracked points
     points = grid_points_on_polygon(polygon=tracking_area, number_of_points=number_of_tracked_points)
 
+    # get the matrix indices for every point
     rows, cols = get_raster_indices_from_points(points, image_transform)
     tracked_points_pixels = np.array([rows, cols]).transpose()
 
+    # initialize dataframe for the resulting tracked points
     tracked_pixels = pd.DataFrame()
+
+    # Loop over all points
     for central_index in tracked_points_pixels:
         # if ((len(tracked_pixels)+1) % 50 == 0):
         print("Starting to track pixel ", len(tracked_pixels) + 1, " of ", len(tracked_points_pixels), ": ",
               central_index)
 
+        # get the first image section as tracked cell
         track_cell1 = get_submatrix_symmetric(central_index=central_index, shape=(cell_size, cell_size),
                                               matrix=image1_matrix)
-        # if (track_cell1 == 0).any():
-        #     print("Skipping this cell for unavailable data")
-        #
-        #     tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
-        #                                                               "column": central_index[1],
-        #                                                               "movement_row_direction": np.nan,
-        #                                                               "movement_column_direction": np.nan},
-        #                                                              index=[len(tracked_pixels)])])
-        #     continue
 
+        # get the second image section as search cell
         search_area2 = get_submatrix_symmetric(central_index=central_index,
                                                shape=(tracking_area_size, tracking_area_size),
                                                matrix=image2_matrix)
+
         # checks if the search area reached the boundary of the underlying raster image and skips when this is the case
         if len(search_area2) == 0:
             continue
 
-        # Visualization for the thesis
-        # search_area1 = get_submatrix_symmetric(central_index=central_index,
-        #                                        shape=(tracking_area_size, tracking_area_size),
-        #                                        matrix=image1_matrix)
-        # rasterio.plot.show(search_area1, cmap="Greys", title="Search area section of the first image")
-        # rasterio.plot.show(search_area2, cmap="Greys", title="Search area section of the second image")
-
+        # perform tracking based on specified method
         if tracking_method == "lsm":
             match = track_cell_lsm(track_cell1, search_area2)
         elif tracking_method == "cross-correlation":
             match = track_cell(track_cell1, search_area2)
         else:
             raise ValueError("Tracking method not recognized.")
+
+        # add the tracked pixel to the results dataframe
         tracked_pixels = pd.concat([tracked_pixels, pd.DataFrame({"row": central_index[0],
                                                                   "column": central_index[1],
                                                                   "movement_row_direction": match[0],
                                                                   "movement_column_direction": match[1]},
                                                                  index=[len(tracked_pixels)])])
+
+    # calculate the movement distance in pixels from the movement along the axes for the whole results dataframe
     tracked_pixels.insert(4, "movement_distance_pixels",
                           np.linalg.norm(tracked_pixels.loc[:, ["movement_row_direction", "movement_column_direction"]],
                                          axis=1))
-    # tracked_pixels.loc[((tracked_pixels["movement_row_direction"] == -0.001) | (tracked_pixels["movement_row_direction"] == -0.002) | (tracked_pixels["movement_row_direction"] == -0.003)| (tracked_pixels["movement_row_direction"] == -0.004)| (tracked_pixels["movement_row_direction"] == -0.005)), "movement_distance_pixels"] = np.nan
 
+    # Perform postprocessing, such as outlier removal and second matching attempt
     if remove_outliers:
         tracked_pixels = remove_outlying_tracked_pixels(tracked_pixels, from_rotation=True, from_velocity=True)
     if retry_matching & (tracking_method == "lsm"):
@@ -448,7 +409,6 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
                                                        tracking_area_size, fallback_on_cross_correlation=False)
         if remove_outliers:
             tracked_pixels = remove_outlying_tracked_pixels(tracked_pixels, from_rotation=True, from_velocity=True)
-    # tracked_pixels.loc[((tracked_pixels["movement_row_direction"] == -0.001) | (tracked_pixels["movement_row_direction"] == -0.002) | (tracked_pixels["movement_row_direction"] == -0.003)| (tracked_pixels["movement_row_direction"] == -0.004)| (tracked_pixels["movement_row_direction"] == -0.005)), "movement_distance_pixels"] = np.nan
 
     return tracked_pixels
 
@@ -472,6 +432,7 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
 
     """
 
+    # crop the images to the same extent
     [image1_matrix, image_transform], [image2_matrix, _] = get_overlapping_area(image1, image2)
 
     if select_bands is None:
@@ -480,19 +441,22 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
         image1_matrix = image1_matrix[select_bands, :, :]
         image2_matrix = image2_matrix[select_bands, :, :]
 
+    # track control area using the cross-correlation approach
     tracked_control_pixels = track_movement(image1_matrix, image2_matrix, image_transform, tracking_area=reference_area,
                                             number_of_tracked_points=number_of_control_points,
                                             tracking_method="cross-correlation", cell_size=cell_size,
                                             tracking_area_size=tracking_area_size, remove_outliers=False)
+    # calculate mean movement in the control area
     row_movements = np.nanmean(tracked_control_pixels["movement_row_direction"])
     column_movements = np.nanmean(tracked_control_pixels["movement_column_direction"])
 
-    # global_match = track_cell_lsm(image2_matrix, image1_matrix, initial_shift_values=[row_movements, column_movements])
-    # print("Shifted second matrix by following number (rows/columns) to match first matrix: ", row_movements, column_movements)
+    # for single-channel images
     if len(image1_matrix.shape) == 2:
         interpolator_image2_matrix = scipy.interpolate.RegularGridInterpolator(
             (np.arange(0, image2_matrix.shape[0]), np.arange(0, image2_matrix.shape[1])),
             image2_matrix, fill_value=0, bounds_error=False)
+
+    # for multichannel images a list of interpolators is needed
     else:
         interpolator_image2_matrix = list()
         for band in range(image1_matrix.shape[0]):
@@ -500,6 +464,8 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
                 (np.arange(0, image2_matrix.shape[-2]), np.arange(0, image2_matrix.shape[-1])),
                 image2_matrix[band, :, :], fill_value=0, bounds_error=False
             ))
+
+    # prepare transformation of the second image
     central_row = np.round(image2_matrix.shape[-2] / 2)
     central_column = np.round(image2_matrix.shape[-1] / 2)
     indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - image1_matrix.shape[-2] / 2),
@@ -510,43 +476,45 @@ def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_con
 
     if image_alignment_via_lsm:
 
+        # transform given reference area polygon and raster images to the same coordinate reference system
         inverse_transform = (~image_transform).to_shapely()
         transformation_matrix = np.array(inverse_transform)
         transformed_polygon = reference_area
         transformed_polygon["geometry"] = shapely.affinity.affine_transform(reference_area.loc[0]["geometry"],
                                                                             transformation_matrix)
 
+        # get the mask for the two raster images from the reference area polygon
         mask_matrix = rasterio.features.rasterize([reference_area.loc[0]["geometry"]],
                                                   out_shape=image1_matrix.shape[-2:])
-
+        # invert the mask
         mask_matrix = -mask_matrix + 1
+        # for multichannel images
         if len(image1_matrix.shape) == 3:
 
+            # repeat the matrix for every channel
             mask_matrix = np.repeat(mask_matrix[np.newaxis, :, :], image1_matrix.shape[0], axis=0)
             masked_matrix1 = np.ma.masked_array(image1_matrix, mask=mask_matrix)
             masked_matrix2 = np.ma.masked_array(image2_matrix, mask=mask_matrix)
 
-            # masked_matrix1[masked_matrix1.mask] = 0
-            # masked_matrix2[masked_matrix2.mask] = 0
-
-            # masked_matrix1 = masked_matrix1.astype(float)
-            # masked_matrix2 = masked_matrix2.astype(float)
-
+        # for single-channel images
         else:
 
             masked_matrix1 = np.ma.masked_array(image1_matrix / image1_matrix.max(), mask=mask_matrix)
             masked_matrix2 = np.ma.masked_array(image2_matrix / image2_matrix.max(), mask=mask_matrix)
 
-        print(row_movements, column_movements)
-
+        # perform least-squares matching on the whole masked matrices and get the full transformation coefficients
         matching = track_cell_lsm(masked_matrix1, masked_matrix2,
                                   initial_shift_values=[row_movements, column_movements], return_full_coefficients=True)
-    else:
+    else:  # if alignment is performed via cross-correlation, assume the transformation matrix to be the identity
+        # translation is the mean translation from ground control points
         matching = [1, 0, 0, 1, row_movements, column_movements]
 
     print("Transformation matrix coefficients for image:", matching, "to match optimally in the reference area.")
 
+    # move the second image according to the found coefficients to match the first one
     new_matrix2 = move_cell_rotation_approach(matching, image1_matrix.shape, interpolator_image2_matrix, indices)
+
+    # set areas where only one of the images contains data to 0 in both images
     image1_matrix[new_matrix2 == 0] = 0
     new_matrix2[image1_matrix == 0] = 0
 

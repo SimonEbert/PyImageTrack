@@ -71,7 +71,6 @@ def get_overlapping_area(file1, file2):
     array_file2, array_file2_transform = rasterio.mask.mask(file2, shapes=minbbox_polygon, crop=True)
 
     # If the matrices have different number of pixels, pad the smaller one with 0 to match the size of the larger one
-    # TODO: Only works for multiple bands at the moment
     if array_file1.shape[-2] < array_file2.shape[-2]:
         array_file1 = np.pad(array_file1,
                              pad_width=((0, 0), (0, array_file2.shape[-2] - array_file1.shape[-2]), (0, 0)),

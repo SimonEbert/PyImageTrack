@@ -51,7 +51,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                           arrow_point["movement_column_direction"] * 3 / arrow_point["movement_distance"],
                           -arrow_point["movement_row_direction"] * 3 / arrow_point["movement_distance"],
                           head_width=10, head_length=10, color="black", alpha=1)
-    plt.title("Movement Distance in " + point_movement.crs.axis_info[0].unit_name + " per year")
+    plt.title("Movement velocity in " + point_movement.crs.axis_info[0].unit_name + " per year")
     # plt.title("Reasons for invalid matching of points")
     if show_figure:
         fig.show()
