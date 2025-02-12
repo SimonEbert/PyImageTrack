@@ -5,6 +5,26 @@ import matplotlib.pyplot as plt
 
 
 def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geometry: gpd.GeoDataFrame, alpha=0.6):
+
+    """
+    Plots a matrix representing a raster image with given transform and the geometries of a given GeoDataFrame in one
+    figure.
+    Parameters
+    ----------
+    raster_matrix: np.ndarray
+        The matrix representing the raster image to be plotted.
+    raster_transform
+        An object of the class Affine as used by the rasterio package, which gives the transform of the raster image to
+        the coordinate reference system of the geometry GeoDataFrame.
+    geometry: gpd.GeoDataFrame
+        The geometry to be plotted.
+    alpha=0.6
+        The opacity of the plotted geometry (which will be plotted on top of the raster image).
+    Returns
+    ----------
+    None
+    """
+
     plot_extent = rasterio.plot.plotting_extent(raster_matrix, raster_transform)
     fig, ax = plt.subplots()
     geometry.plot(ax=ax, color="blue", alpha=alpha, markersize=1)
@@ -14,6 +34,34 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
                             masking_polygon: gpd.GeoDataFrame = None, show_figure: bool = True, save_path: str = None):
+    
+    """
+    Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
+    colour scale, while the movement direction is shown with arrows for selected pixels.
+    Parameters
+    ----------
+    raster_matrix: np.ndarray
+        The matrix representing the raster image to be plotted.
+    raster_transform :
+        An object of the class Affine as used by the rasterio package, which gives the transform of the raster image to
+        the coordinate reference system of the geometry GeoDataFrame.
+    point_movement: gpd.GeoDataFrame
+        A GeoDataFrame containing the columns "row", "column" giving the position of the points expressed in matrix
+        indices, as well as "movement_column_direction", "movement_row_direction" and "movement_distance_per_year". The
+        unit of the movement is taken from the coordinate reference system of this GeoDataFrame.
+    masking_polygon: gpd.GeoDataFrame = None
+        A single-element GeoDataFrame to allow masking the plotted points to a certain area. If None, the points will
+        not be masked.
+    show_figure : bool = True
+        If True, the created plot is displayed on the current canvas.
+    save_path : str = None
+        The file location, where the created plot is stored. When no path is given (the default), the figure is not
+        saved.
+    Returns
+    ----------
+    None
+    """
+    
     fig, ax = plt.subplots()
 
     if masking_polygon is not None:
@@ -25,20 +73,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                         )
 
     rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
-
-    # thesis visualization
-    # background_rock_glacier = rasterio.open("../Test_Data/temp_rock_glacier_background.tif")
-    # rasterio.plot.show(background_rock_glacier, ax=ax, cmap="Greys")
-    # #
-    # outlier_points = point_movement[(point_movement["movement_row_direction"] == -0.001) | (point_movement["movement_row_direction"] == -0.002) | (point_movement["movement_row_direction"] == -0.003)| (point_movement["movement_row_direction"] == -0.004)| (point_movement["movement_row_direction"] == -0.005)]
-    #
-    # outlier_points.loc[outlier_points["movement_row_direction"] == -0.001, "movement_row_direction"] = "Cross-correlation yielded no valid result"
-    # outlier_points.loc[outlier_points["movement_row_direction"] == -0.002, "movement_row_direction"] = "Optimization did not converge"
-    # outlier_points.loc[outlier_points["movement_row_direction"] == -0.003, "movement_row_direction"] = "Unrealistic Transformation determinant"
-    # outlier_points.loc[outlier_points["movement_row_direction"] == -0.004, "movement_row_direction"] = "Rotation outlier"
-    # outlier_points.loc[outlier_points["movement_row_direction"] == -0.005, "movement_row_direction"] = "Velocity or rotation outlier"
-
-    # outlier_points.plot(categorical=True, column = "movement_row_direction", ax=ax, markersize=8, marker="o", alpha=1.0, legend=True, legend_kwds={"loc": "lower left", "fontsize": "small", "reverse": True}, cmap="plasma")
 
     # Arrow plotting
     for row in sorted(list(set(point_movement.loc[:, "row"])))[::4]:

@@ -8,8 +8,22 @@ from rasterio.coords import BoundingBox
 
 
 def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10):
-    """Creates a grid of roughly a given number of evenly spaced points on the given polygon. The exact number of points
-    can vary depending on the shape of the polygon."""
+    """
+    Creates an evenly spaced grid of points inside the given polygon. An approximation of the number of created points
+    can be given, the actual number of points may differ depending on the shape of the polygon. The resulting
+    GeoDataFrame will have the same coordinate reference system as the polygon.
+    Parameters
+    ----------
+    polygon: gpd.GeoDataFrame
+        The polygon where the points will be created.
+    number_of_points: int = 10
+        The approximate number of points to be created. The function calculates an approximate spacing based on this
+        number and the area ratio of the given polygon and its enclosing rectangle so that the resulting grid is exactly
+        evenly spaced and contains roughly this number of points.
+    Returns
+    ----------
+    points: A GeoDataFrame containing the created points.
+    """
     minlongitude, minlatitude, maxlongitude, maxlatitude = polygon.bounds.iloc[0]
 
     length_latitude = maxlatitude - minlatitude
@@ -45,6 +59,21 @@ def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10
 
 
 def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_transform):
+    """
+    Transforms the coordinates of points in a given coordinate reference system to their respective matrix indices for a
+    given transform
+    Parameters
+    ----------
+    points: gpd.GeoDataFrame
+        A GeoDataFrame containing points in a certain coordinate reference system.
+    raster_matrix_transform
+        An object of the class Affine as used by the rasterio package, representing the transform from the matrix
+        indices to the coordinate reference system of the points.
+    Returns
+    ----------
+    rows, cols: The row and column indices respectively for the points.
+    """
+
     xs = points["geometry"].x.to_list()
     ys = points["geometry"].y.to_list()
     rows, cols = rasterio.transform.rowcol(raster_matrix_transform, xs, ys)
@@ -52,6 +81,19 @@ def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_trans
 
 
 def get_overlapping_area(file1, file2):
+
+    """
+    Crops the two files to their intersection and pads multi-channel images with different pixel sizes with 0 so that
+    the resulting matrices have the same size.
+    Parameters
+    ----------
+    file1, file2: The two raster image files as opened rasterio objects.
+    Returns
+    ----------
+    [array_file1, array_file2]: The raster matrix for the first file and its respective transform.
+    [array_file2, array_file2_transform]: The raster matrix for the first file and its respective transform.
+    """
+    
     bbox1 = file1.bounds
     bbox2 = file2.bounds
     minbbox = BoundingBox(left=max(bbox1[0], bbox2[0]),
@@ -93,6 +135,31 @@ def get_overlapping_area(file1, file2):
 
 
 def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs, years_between_observations=1):
+    
+    """
+    Georeferences a DataFrame with tracked points and calculates their movement (absolute and per year) in the unit
+    specified by the coordinate reference system.
+    Parameters
+    ----------
+    tracked_pixels: pd.DataFrame
+        A DataFrame containing tracked pixels with columns "row", "column" (specifying the position of the point on the
+        raster image), and "movement_row_direction", "movement_column_direction", "movement_distance_pixels" (specifying
+        its movement in terms of raster pixels).
+    raster_transform:
+        An object of the class Affine as used by the rasterio package, representing the transform from the matrix
+        indices to the coordinate reference system of the points.
+    crs:
+        An identifier for a coordinate reference system to which the resulting GeoDataFrame will be projected.
+    years_between_observations = 1
+        A float representing the number of years between the two images for calculating average yearly movement rates.
+    Returns
+    ----------
+    georeferenced_tracked_pixels:
+        A GeoDataFrame containing the tracked pixels with the previously mentioned columns, as well as the columns
+        "movement_distance" and "movement_distance_per_year", specifying the movement in the unit of the given
+        coordinate reference system and one geometry column.
+    """
+    
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
                                                     ["row", "column", "movement_row_direction",

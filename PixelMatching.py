@@ -13,7 +13,24 @@ from CreateGeometries.HandleGeometries import get_overlapping_area
 
 
 def get_submatrix_symmetric(central_index, shape, matrix):
-    """Makes even given shapes one number smaller to ascertain there is one unique central index"""
+    """
+    Extracts a symmetric section of a given matrix and shape, so that central_index is in the centre of the returned
+    array. If shape specifies an even height or width, it is decreased by one to ensure that there exists a unique
+    central index in the returned array
+    Parameters
+    ----------
+    central_index :
+        A two-element list, containing the row and column indices of the entry, which lies in the centre of the returned
+        array.
+    shape :
+        A two-element list, containing the row and column number of the returned array. If one of these is an even
+        number, it will be decreased by one to ensure that a unique central index exists.
+    matrix :
+        The matrix from which the section is extracted.
+    Returns
+    ----------
+    submatrix: A numpy array of the specified shape.
+    """
     # matrix is three-dimensional if there are several channels
     if len(matrix.shape) == 3:
         submatrix = matrix[:,
@@ -27,6 +44,20 @@ def get_submatrix_symmetric(central_index, shape, matrix):
 
 
 def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
+    """
+    Calculates the movement of an image section using the cross-correlation approach. 
+    Parameters
+    ----------
+    tracked_cell_matrix: np.ndarray
+        An array (a section of the first image), which is compared to sections of the search_cell_matrix (a section of
+        the second image).
+    search_cell_matrix: np.ndarray
+        An array, which delimits the area in which possible matching image sections are searched.
+    Returns
+    ----------
+    movement_for_best_correlation: A two-element list, giving the movement rates in x- and y-direction respectively.
+    """
+    
     height_tracked_cell = tracked_cell_matrix.shape[-2]
     width_tracked_cell = tracked_cell_matrix.shape[-1]
     height_search_cell = search_cell_matrix.shape[-2]
@@ -68,6 +99,32 @@ def track_cell(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
 
 
 def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpolator_search_cell, indices):
+    
+    """
+    For given transformation coefficients and indices, returns the section of the search_cell with size given by
+    tracked_cell_matrix_shape, obtained by applying the transformation to the indices.
+    Parameters
+    ----------
+    coefficients :
+        A list of six integers [t1,t2,t3,t4,b1,b2] specifying the transformation parameters as in track_cell_lsm.
+    tracked_cell_matrix_shape :
+        The shape of the tracked image section (from the first image). This is used to get a section of equal size from
+        the second image, using the interpolator_search_cell.
+    interpolator_search_cell :
+        The interpolator for the search cell from the second image, used to obtain values for non-integer results of the
+        application of the affine transform to the indices. As in lsm_loss_function_rotation, this has to be an object
+        f the class RegularGridInterpolator.
+    indices :
+        A 2-dimensional array, with two rows and number of columns equal to the number of entries in
+        tracked_cell_matrix, containing the indices of the pixels of tracked_cell_matrix expressed in terms of the
+        search cell matrix. The affine transformation given by the coefficients is applied to these indices and the
+        interpolated search cell is evaluated at the transformed indices.
+    Returns
+    ----------
+    moved_cell_matrix: A numpy array of the shape given by tracked_cell_matrix_shape, which represents the section of
+    the second image, moved according to the affine transform coefficients with respect to the search cell.
+    """
+    
     # for single-channel images
     if len(tracked_cell_matrix_shape) == 2:
         # central_row, central_column = central_indices[0], central_indices[1]
@@ -111,6 +168,32 @@ def move_cell_rotation_approach(coefficients, tracked_cell_matrix_shape, interpo
 
 
 def lsm_loss_function_rotation(coefficients, tracked_cell_matrix: np.ndarray, interpolator_search_cell, indices):
+    
+    """
+    Calculates the loss of the optimization problem in the least-squares approach for given coefficients.
+    Parameters
+    ----------
+    coefficients
+        A list of six integers [t1,t2,t3,t4,b1,b2] specifying the transformation parameters as in track_cell_lsm and
+        the least-squares approach.
+    tracked_cell_matrix : np.ndarray
+        The given image section from the first image to be compared to an image section of the second image, which is
+        given by interpolator_search_cell.
+    interpolator_search_cell :
+        The interpolator for the section from the second image. An object of the class RegularGridInterpolator from
+        scipy.interpolate. For details see move_cell_rotation_approach.
+    central_indices
+        The index of the centre pixel of the tracked image cell, expressed in terms of matrix indices of the search cell
+        matrix (from the second image). For details see move_cell_rotation_approach.
+    indices
+        A 2-dimensional array, with two rows and number of columns equal to the number of entries in
+        tracked_cell_matrix, containing the indices of the pixels of tracked_cell_matrix expressed in terms of the
+        search cell matrix. For details see move_cell_rotation_approach.
+    Returns
+    ----------
+    loss: A float, giving the loss for the provided transformation parameters
+    """
+    
     moved_cell_matrix = move_cell_rotation_approach(coefficients=coefficients,
                                                     tracked_cell_matrix_shape=tracked_cell_matrix.shape,
                                                     interpolator_search_cell=interpolator_search_cell,
@@ -120,6 +203,32 @@ def lsm_loss_function_rotation(coefficients, tracked_cell_matrix: np.ndarray, in
 
 def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, initial_shift_values=None,
                    return_full_coefficients: bool = False):
+    
+    """
+    Calculates the transformation parameters for a given image cell to match optimally the corresponding section in the
+    second image using the least-squares approach.
+    Parameters
+    ----------
+    tracked_cell_matrix : np.ndarray
+        The image section of the first image that will be matched to a part of the search image section.
+    search_cell_matrix : np.ndarray
+        The image section of the second, which is used as a search area for the image section from the first image. This
+        array needs to be larger than the tracked_cell_matrix.
+    initial_shift_values = None
+        If None, the initial values for the shift between the images are being calculated from the cross-correlation
+        approach using the function track_cell. Otherwise, the provided values will be used as initial shift values.
+        The transformation matrix is always initialized as the identity matrix.
+    return_full_coefficients : bool = False
+        If True, returns the six parameters for the affine transformation, instead of the movement rates for the central
+        pixel of tracked_cell_matrix.
+    Returns
+    ----------
+    [shift_rows, shift_columns]: The y- and x-movement (in pixels) for the central pixel of tracked_cell_matrix.
+    If return_full_coefficients == True, returns instead [t1,t2,t3,t4,b1,b2], where t1, t2, t3, t4 are the entries of
+    the transformation matrix and b1, b2 are the entries of the shift vector. If the matching was not successful,
+    return NaNs instead.
+    """
+    
     # For one channel images
     if len(tracked_cell_matrix.shape) == 2:
 
@@ -220,6 +329,23 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
 
 
 def get_tracked_pixels_square(tracked_pixels, central_pixel_coordinates):
+    
+    """
+    Returns a dataframe which consists of the eight (or less) surrounding pixels, for a given pixel with matrix indices
+    central_pixel_coordinates. This is a helper function for retrack_wrong_matching_pixels and
+    remove_outlying_tracked_pixels
+    Parameters
+    ----------
+    tracked_pixels :
+        A DataFrame containing the tracked pixels with their position and movement rates as returned by track_movement.
+    central_pixel_coordinates
+        The coordinates (as matrix index tuple) of the central pixel, for which the adjacent pixels will be returned.
+    Returns
+    ----------
+    neighbouring_tracked_pixels: A DataFrame containing all available adjacent pixels with their position and movement
+    rates. The central pixel is not included.
+    """
+    
     # get central indices
     central_pixel_row = central_pixel_coordinates[0]
     central_pixel_col = central_pixel_coordinates[1]
@@ -244,6 +370,25 @@ def get_tracked_pixels_square(tracked_pixels, central_pixel_coordinates):
 
 
 def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, from_velocity: bool = True):
+    """
+    Removes outliers given by deviations in velocity or movement direction from a given dataframe of tracked pixels.
+    Parameters
+    ----------
+    tracked_pixels :
+        A DataFrame containing the tracked pixels with their position and movement rates as returned by track_movement.
+    from_rotation : bool = True
+        If True, pixels with a movement direction which differs more than 90° from the average movement direction of its
+        adjacent pixels, will be considered outliers and their movement rates will be set to NaN.
+    from_velocity : bool = True
+        If True, pixels with a movement rate more than twice the average movement rate of its adjacent pixels, will be
+        considered outliers and their movement rates will be set to NaN.
+    Returns
+    ----------
+    tracked_pixels: A DataFrame containing one row for every tracked pixel, specifying the position of the tracked pixel
+    (in terms of matrix indices) and the movement in x- and y-direction in pixels. Invalid matchings are marked by
+    NaN values for the movement.
+    """
+
     for [row, col] in zip(tracked_pixels["row"].tolist(), tracked_pixels["column"].tolist()):
         neighbouring_pixels = get_tracked_pixels_square(tracked_pixels, [row, col])
         central_pixel = tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)]
@@ -299,7 +444,30 @@ def remove_outlying_tracked_pixels(tracked_pixels, from_rotation: bool = True, f
 
 def retrack_wrong_matching_pixels(tracked_pixels, track_matrix, search_matrix, cell_size: int, tracking_area_size: int,
                                   fallback_on_cross_correlation: bool = False):
-
+    """
+    Tries to retrack all pixels with movement given by np.nan via the least-squares approach.
+    Parameters
+    ----------
+    tracked_pixels :
+        A DataFrame containing the tracked pixels with their position and movement rates as returned by track_movement.
+    track_matrix :
+        The raster image matrix of the first image.
+    search_matrix :
+        The raster image matrix of the second image. The two matrices are assumed to be aligned (for example using
+        align_images).
+    cell_size : int
+        The cell size used for tracking. For details see track_movement.
+    tracking_area_size : int
+        The size of the area in which the corresponding image section will be searched. For details see track_movement.
+    fallback_on_cross_correlation : bool = False
+        If True, the function will return the matching result from the cross-correlation approach, if the least-squares
+        approach did not find a valid matching in the second try.
+    Returns
+    ----------
+    tracked_pixels: A DataFrame containing one row for every tracked pixel, specifying the position of the tracked pixel
+    (in terms of matrix indices) and the movement in x- and y-direction in pixels. Invalid matchings are marked by
+    NaN values for the movement.
+    """
     # check for every tracked point if it has a valid movement result
     for [row, col] in zip(tracked_pixels["row"].tolist(), tracked_pixels["column"].tolist()):
         central_pixel = tracked_pixels[(tracked_pixels["row"] == row) & (tracked_pixels["column"] == col)]
@@ -349,8 +517,57 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
                    number_of_tracked_points: int, cell_size: int = 40,
                    tracking_area_size: int = 50, tracking_method: str = "lsm", remove_outliers: bool = True,
                    retry_matching: bool = True):
-    """Creates roughly number_of_tracked_points points on the tracking area and  tracks these points between image1 and
-    image2. The size of the cell, which is tracked for each point as well as the search area can be adjusted. Takes two aligned matrices image1 and image 2 and the respective transform"""
+    """
+     Calculates the movement of points between two aligned raster image matrices (with the same transform) in a given
+     area using the cross-correlation or the least-squares approach.
+    Parameters
+    ----------
+    image1_matrix :
+        A numpy array with 2 or three dimensions, where the last two dimensions give the image height and width
+        respectively and for a threedimensional array, the first dimension gives the channels of the raster image.
+        This array should represent the earlier observation.
+    image2_matrix :
+        A numpy array of the same format as image1_matrix representing the second observation.
+    image_transform :
+        An object of the class Affine as provided by the rasterio package. The two images are assumed to be aligned
+        (for example as a result of align_images) and therefore have the same transform.
+    tracking_area : gpd.GeoDataFrame
+        A GeoDataFrame containing a single polygon, where pixels should be tracked. In the area specified by this
+        polygon, a regularly spaced grid of points is created using grid_points_on_polygon. The polygon is assumed to
+        have the same coordinate reference system as the raster images (i.e. it is compatible with the given
+        image_transform).
+    number_of_tracked_points : int
+        The number of points to be created by grid_points_on_polygon (for details see there), which is the number of
+        separate pixels that are being tracked.
+    cell_size : int = 40
+        The size of the cells in pixels, which will be created in order to compare the two images. The function
+        get_submatrix_symmetric is used for extracting the image section based on this value. This parameter determines
+        the size ob detectable object as well as the influence of boundary effects.
+    tracking_area_size : int = 50
+        The size of the area in pixels, where fitting image sections are being searched. This parameter determines the
+        maximum detectable movement rate and influences computation speed. This value must be higher than the parameter
+        cell_size.
+    tracking_method : str = "lsm"
+        One of "lsm" (for least-squares matching) or "cross-correlation", determining the method used for tracking each
+        cell.
+    remove_outliers : bool = True
+        Determines if outliers determined via large deviations in velocity and movement direction will be removed
+        (for details see remove_outlying_tracked_pixels). Low correlation matchings
+        (cross-correlation coefficient < 0.5) and matchings with a transformation determinant < 0.8 or > 1.2 will always
+        be removed.
+    retry_matching : bool = True
+        When the first matching using the least-squares approach was unsuccessful (e.g. due to a low correlation
+        coefficient for the initial values, a non-converging optimization problem or because the pixel was removed as an
+        outlier), it can be rerun using a different starting value. If this parameter is True, the already calculated
+        average movement rate for its adjacent pixels will be used as initial value for the least-squares optimization
+        problem.
+    Returns
+    ----------
+    tracked_pixels: A DataFrame containing one row for every tracked pixel, specifying the position of the tracked pixel
+    (in terms of matrix indices) and the movement in x- and y-direction in pixels. Invalid matchings are marked by
+    NaN values for the movement.
+
+    """
 
     # get grid of tracked points
     points = grid_points_on_polygon(polygon=tracking_area, number_of_points=number_of_tracked_points)
@@ -416,20 +633,43 @@ def track_movement(image1_matrix, image2_matrix, image_transform, tracking_area:
 def align_images(image1, image2, reference_area: gpd.GeoDataFrame, number_of_control_points: int, cell_size: int = 40,
                  tracking_area_size: int = 60, select_bands=None, image_alignment_via_lsm: bool = False):
     """
-    Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
-
+    Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area. In
+    areas, where only one of the two images contains data, the matrix values will be set to 0 in both images.
     Parameters
     ----------
     image1 :
         A raster image opened in the rasterio package to be aligned with the second image.
     image2 :
-        A raster image opened in the rasterio package to be aligned with the first image. The alignment takes
-        place via an adjustment of the transform of the second raster image, which means that the first image is
-        assumed to be correctly georeferenced.
+        A raster image opened in the rasterio package to be aligned with the first image. The alignment takes place via
+        an adjustment of the transform of the second raster image, which means that the first image is assumed to be
+        correctly georeferenced.
     reference_area : gpd.GeoDataFrame
         A single-element GeoDataFrame, containing a polygon for specifying the reference area used for the alignment.
         This is the area, where no movement is suspected.
-
+    number_of_control_points: int
+        An approximation of how many points should be created on the reference_area polygon to track possible camera
+        position differences. For details see grid_points_on_polygon.
+    cell_size: int = 40
+        The size of image sections in pixels which are compared during the tracking. See track_movement for details.
+    tracking_area_size: int = 60
+        The size of the image sections in pixels which are used as a search area during the tracking. Must be greater
+        than the parameter cell_size. See track_movement for details.
+    select_bands = None
+        For multichannel images the channel, which should be used for tracking. If it is None (the default) it will
+        select the first three channels. If it is an integer, only the respective single channel will be selected.
+        For multi-channel selection a list can be provided (e.g. [0,2,3] for the first, third and fourth channel of the
+        given raster image). Channels are assumed to be in the same order for the two provided image files.
+    image_alignment_via_lsm: bool = False
+        If False, each control point is being tracked using the cross-correlation approach and their average
+        displacement is taken into account (see also track_cell). If True, after calculating the average displacement,
+        the least-squares approach  is used on the whole reference area,
+        to determine the exact transformation matrix necessary to align the two images optimally. For large images,
+        this step is cost-intensive and can take some time.
+    Returns
+    ----------
+    [image1_matrix, new_matrix2, image_transform]: The two matrices representing the raster image as numpy arrays and
+    their transform for the coordinate reference system of the input images. As the two matrices are aligned,
+    they possess the same transformation.
     """
 
     # crop the images to the same extent
