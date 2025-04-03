@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PyImageTrack"
+version = "0.1"
+description = "A Python package for image tracking"
+authors = [{ name = "Simon Ebert", email = "simon.ebert.kn@gmx.de" }]
+license = { text = "CC BY-SA 4.0" }
+dependencies = [
+    "rasterio",
+    "matplotlib",
+    "shapely",
+    "geopandas",
+    "numpy",
+    "scipy",
+    "pandas"
+]

@@ -5,9 +5,10 @@ import rasterio.transform
 import pandas as pd
 import rasterio.mask
 from rasterio.coords import BoundingBox
+import matplotlib.pyplot as plt
 
 
-def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10):
+def grid_points_on_polygon_by_number_of_points(polygon: gpd.GeoDataFrame, number_of_points: int = 10):
     """
     Creates an evenly spaced grid of points inside the given polygon. An approximation of the number of created points
     can be given, the actual number of points may differ depending on the shape of the polygon. The resulting
@@ -26,8 +27,8 @@ def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10
     """
     minlongitude, minlatitude, maxlongitude, maxlatitude = polygon.bounds.iloc[0]
 
-    length_latitude = maxlatitude - minlatitude
-    length_longitude = maxlongitude - minlongitude
+    length_latitude = np.abs(maxlatitude - minlatitude)
+    length_longitude = np.abs(maxlongitude - minlongitude)
     enclosing_rectangle = shapely.Polygon((
         (minlongitude, minlatitude),
         (maxlongitude, minlatitude),
@@ -56,6 +57,42 @@ def grid_points_on_polygon(polygon: gpd.GeoDataFrame, number_of_points: int = 10
     points = points[points.intersects(polygon.loc[0, "geometry"])]
     print("Created ", len(points), " points on the polygon.")
     return points
+
+
+def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_points: float = 10):
+
+    minx = polygon.bounds.loc[0, 'minx']
+    miny = polygon.bounds.loc[0, 'miny']
+    maxx = polygon.bounds.loc[0, 'maxx']
+    maxy = polygon.bounds.loc[0, 'maxy']
+
+    extent_corners = gpd.GeoDataFrame(["minx_miny", "maxx_miny", "minx_maxy", "maxx_maxy"],
+                                      columns=["names"],
+                                      geometry=[shapely.geometry.Point(minx, miny),
+                                                shapely.geometry.Point(maxx, miny),
+                                                shapely.geometry.Point(minx, maxy),
+                                                shapely.geometry.Point(maxx, maxy)],
+                                      crs=polygon.crs)
+
+    width_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[1].geometry)
+    height_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[2].geometry)
+
+    number_of_points_width = width_image_crs_unit / distance_of_points
+    number_of_points_height = height_image_crs_unit / distance_of_points
+    points = []
+    for x in np.arange(minx, maxx, width_image_crs_unit / number_of_points_width):
+        for y in np.arange(miny, maxy, height_image_crs_unit / number_of_points_height):
+            points.append(shapely.geometry.Point(x, y))
+
+    points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
+
+    print(type(polygon))
+
+    points = points[points.intersects(polygon.loc[0, "geometry"])]
+    print("Created ", len(points), " points on the polygon with distance ", distance_of_points,
+          points.crs.axis_info[0].unit_name)
+    return points
+
 
 
 def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_transform):

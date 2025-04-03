@@ -3,6 +3,9 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 from datetime import datetime
 
+import numpy as np
+import rasterio
+
 #import functions
 import PixelMatching
 from CreateGeometries.HandleGeometries import georeference_tracked_points
@@ -16,7 +19,7 @@ plt.rcParams['figure.dpi'] = 300
 output_folder_path = "../Output_results/Kaiserberg/" + datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
 
 # Set parameters
-alignment_via_lsm = True
+alignment_via_lsm = False
 number_of_control_points = 100
 image_bands = 0
 control_tracking_area_size = 60
@@ -24,7 +27,7 @@ control_cell_size = 40
 tracking_method = "lsm"
 number_of_tracked_points = 2000
 movement_tracking_area_size = 80
-movement_cell_size = 30
+movement_cell_size = 50
 remove_outliers = True
 retry_matching = True
 years_between_observations = 2.083
@@ -46,9 +49,14 @@ polygon_inside_RG_unbuffered = polygon_inside_RG_unbuffered.to_crs(crs=32632)
 # save current time for computation time measurements
 start_time = datetime.now()
 
-# align the two images and crop to the same extent
+# crop the images to the same extent
+[image1_matrix, image1_transform], [image2_matrix, _] = PixelMatching.get_overlapping_area(file1, file2)
+
+
+
+# align the two images
 [image1_matrix, image2_matrix, image_transform] = (
-    PixelMatching.align_images(file1, file2,
+    PixelMatching.align_images(image1_matrix, image2_matrix, image1_transform,
                                reference_area=polygon_outside_RG,
                                image_alignment_via_lsm=alignment_via_lsm,
                                number_of_control_points=number_of_control_points, select_bands=image_bands,

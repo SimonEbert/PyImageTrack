@@ -1,0 +1,14 @@
+Metadata-Version: 2.4
+Name: PyImageTrack
+Version: 0.1
+Summary: A Python package for image tracking
+Author: Simon Ebert
+Author-email: Simon Ebert <simon.ebert.kn@gmx.de>
+License: CC BY-SA 4.0
+Requires-Dist: rasterio
+Requires-Dist: matplotlib
+Requires-Dist: shapely
+Requires-Dist: geopandas
+Requires-Dist: numpy
+Requires-Dist: scipy
+Requires-Dist: pandas
