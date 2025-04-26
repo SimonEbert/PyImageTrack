@@ -1,3 +1,4 @@
+import geopandas
 import geopandas as gpd
 import shapely
 import numpy as np
@@ -5,6 +6,7 @@ import rasterio.transform
 import pandas as pd
 import rasterio.mask
 from rasterio.coords import BoundingBox
+import rasterio
 import matplotlib.pyplot as plt
 
 
@@ -86,11 +88,25 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_po
 
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
 
-    print(type(polygon))
-
     points = points[points.intersects(polygon.loc[0, "geometry"])]
     print("Created ", len(points), " points on the polygon with distance ", distance_of_points,
           points.crs.axis_info[0].unit_name)
+    return points
+
+def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
+
+    points = gpd.GeoDataFrame()
+
+    while len(points) < number_of_points:
+        # generate random points in the bounds of the polygon
+        minx, miny, maxx, maxy = polygon.bounds.iloc[0]
+        x = np.random.uniform(minx, maxx, 2*number_of_points).tolist()
+        y = np.random.uniform(miny, maxy, 2*number_of_points).tolist()
+        # create DataFrame with the new points
+        new_points = gpd.GeoDataFrame(crs=polygon.crs, geometry=geopandas.points_from_xy(x, y))
+        points = pd.concat([points, new_points[new_points.intersects(polygon.loc[0, "geometry"])]])
+    points = points.head(number_of_points)
+    points.set_index(np.arange(number_of_points), inplace=True)
     return points
 
 
@@ -127,7 +143,7 @@ def get_overlapping_area(file1, file2):
     file1, file2: The two raster image files as opened rasterio objects.
     Returns
     ----------
-    [array_file1, array_file2]: The raster matrix for the first file and its respective transform.
+    [array_file1, array_file1_transform]: The raster matrix for the first file and its respective transform.
     [array_file2, array_file2_transform]: The raster matrix for the first file and its respective transform.
     """
     
@@ -154,19 +170,27 @@ def get_overlapping_area(file1, file2):
         array_file1 = np.pad(array_file1,
                              pad_width=((0, 0), (0, array_file2.shape[-2] - array_file1.shape[-2]), (0, 0)),
                              constant_values=(0, 0))
+        # array_file2[:, array_file2.shape[-2] - array_file1.shape[-2]: array_file2.shape[-2], :] = 0
     if array_file1.shape[-2] > array_file2.shape[-2]:
         array_file2 = np.pad(array_file2,
                              pad_width=((0, 0), (0, array_file1.shape[-2] - array_file2.shape[-2]), (0, 0)),
                              constant_values=(0, 0))
+        # array_file1[:, array_file1.shape[-2] - array_file2.shape[-2]: array_file1.shape[-2], :] = 0
+
 
     if array_file1.shape[-1] < array_file2.shape[-1]:
         array_file1 = np.pad(array_file1,
                              pad_width=((0, 0), (0, 0), (0, array_file2.shape[-1] - array_file1.shape[-1])),
                              constant_values=(0, 0))
+        # array_file2[:, :, array_file2.shape[-1] - array_file1.shape[-1]: array_file2.shape[-1]] = 0
+
     if array_file1.shape[-1] > array_file2.shape[-1]:
         array_file2 = np.pad(array_file2,
                              pad_width=((0, 0), (0, 0), (0, array_file1.shape[-1] - array_file2.shape[-1])),
                              constant_values=(0, 0))
+        # array_file1[:, :, array_file1.shape[-1] - array_file2.shape[-1]: array_file1.shape[-1]] = 0
+
+
 
     return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
 
@@ -201,13 +225,13 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
                                                     ["row", "column", "movement_row_direction",
                                                      "movement_column_direction",
-                                                     "movement_distance_pixels"]],
+                                                     "movement_distance_pixels", "movement_bearing_pixels"]],
                                                     geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
 
-    georeferenced_tracked_pixels.insert(5, "movement_distance", np.linalg.norm(
+    georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
         [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
-         raster_transform[0] * georeferenced_tracked_pixels.loc[:, "movement_column_direction"].values], axis=0))
-    georeferenced_tracked_pixels.insert(6, "movement_distance_per_year",
-                                        georeferenced_tracked_pixels["movement_distance"] / years_between_observations)
+         raster_transform[0] * georeferenced_tracked_pixels.loc[:, "movement_column_direction"].values], axis=0)
+    georeferenced_tracked_pixels["movement_distance_per_year"] = (georeferenced_tracked_pixels["movement_distance"]
+                                                                  / years_between_observations)
 
     return georeferenced_tracked_pixels

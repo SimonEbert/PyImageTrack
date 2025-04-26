@@ -1,28 +1,28 @@
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 from PixelMatching import track_movement
 from CreateGeometries.HandleGeometries import georeference_tracked_points
+from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
+from dataloader.TrackingParameters import TrackingParameters
 
 
-def remove_points_below_LoD(image1_raster: np.ndarray, image2_raster: np.ndarray, image_transform,
-                            refererence_area: gpd.GeoDataFrame,
-                            tracked_pixels: pd.DataFrame):
-    reference_tracked_pixels = track_movement(image1_matrix=image1_raster, image2_matrix=image2_raster,
-                                              image_transform=image_transform, tracking_area=refererence_area,
-                                              number_of_tracked_points=100, tracking_area_size=60, cell_size=30,
-                                              tracking_method="lsm", remove_outliers=False, retry_matching=False)
+def calculate_LoD_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform, reference_area: gpd.GeoDataFrame,
+                  number_of_reference_points, tracking_parameters: TrackingParameters, crs, years_between_observations)\
+        -> float:
 
-    reference_tracked_pixels = georeference_tracked_points(reference_tracked_pixels, image_transform, 31254, 27)
+    points = random_points_on_polygon_by_number(reference_area, number_of_points=number_of_reference_points)
+    tracked_points = track_movement(image1_matrix=image1_matrix, image2_matrix=image2_matrix,
+                                              image_transform=image_transform, tracking_area=reference_area,
+                   tracking_parameters=tracking_parameters, points_to_be_tracked=points)
+    tracked_points = georeference_tracked_points(tracked_points, image_transform, crs=crs,
+                                                 years_between_observations=years_between_observations)
+    return tracked_points
 
-    print(reference_tracked_pixels)
-    mean_movement_reference_pixels = reference_tracked_pixels["movement_distance_per_year"].mean()
-    print(mean_movement_reference_pixels)
-    print(tracked_pixels)
-    tracked_pixels[tracked_pixels["movement_distance_per_year"] <= mean_movement_reference_pixels] = np.nan
 
-    return [tracked_pixels, mean_movement_reference_pixels]
+
 
 
 import os

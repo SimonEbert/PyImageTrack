@@ -42,7 +42,8 @@ def write_results(georeferenced_tracked_pixels: gpd.GeoDataFrame, parameter_dict
     """
 
     os.makedirs(folder_path, exist_ok=True)
-    georeferenced_tracked_pixels.to_file(folder_path + "/tracking_results" + filename_addition + ".geojson", driver='GeoJSON')
+    georeferenced_tracked_pixels.to_file(folder_path + "/tracking_results" + filename_addition + ".geojson",
+                                         driver='GeoJSON')
     # georeferenced_tracked_pixels.to_csv(folder_path + "/tracking_results.csv")
     # with open(folder_path + "/tracking_parameters.txt", "w") as parameter_file:
     #     print(parameter_dict, file=parameter_file)

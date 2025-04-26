@@ -1,3 +1,4 @@
+import matplotlib.axes
 import numpy as np
 import geopandas as gpd
 import rasterio.plot
@@ -74,8 +75,9 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                         # missing_kwds={'color': 'gray'}
                         vmin=0, vmax=3.5,
                         )
-
-    rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+    ax.ticklabel_format(scilimits= (-3,4))
+    if raster_matrix is not None:
+        rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
     # Arrow plotting
     for row in sorted(list(set(point_movement.loc[:, "row"])))[::8]:
