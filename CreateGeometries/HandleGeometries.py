@@ -62,7 +62,6 @@ def grid_points_on_polygon_by_number_of_points(polygon: gpd.GeoDataFrame, number
 
 
 def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_points: float = 10):
-
     minx = polygon.bounds.loc[0, 'minx']
     miny = polygon.bounds.loc[0, 'miny']
     maxx = polygon.bounds.loc[0, 'maxx']
@@ -93,22 +92,21 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_po
           points.crs.axis_info[0].unit_name)
     return points
 
-def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
 
+def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
     points = gpd.GeoDataFrame()
 
     while len(points) < number_of_points:
         # generate random points in the bounds of the polygon
         minx, miny, maxx, maxy = polygon.bounds.iloc[0]
-        x = np.random.uniform(minx, maxx, 2*number_of_points).tolist()
-        y = np.random.uniform(miny, maxy, 2*number_of_points).tolist()
+        x = np.random.uniform(minx, maxx, 2 * number_of_points).tolist()
+        y = np.random.uniform(miny, maxy, 2 * number_of_points).tolist()
         # create DataFrame with the new points
         new_points = gpd.GeoDataFrame(crs=polygon.crs, geometry=geopandas.points_from_xy(x, y))
         points = pd.concat([points, new_points[new_points.intersects(polygon.loc[0, "geometry"])]])
     points = points.head(number_of_points)
     points.set_index(np.arange(number_of_points), inplace=True)
     return points
-
 
 
 def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_transform):
@@ -133,27 +131,25 @@ def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_trans
     return rows, cols
 
 
-def get_overlapping_area(file1, file2):
-
+def crop_images_to_intersection(file1, file2):
     """
-    Crops the two files to their intersection and pads multi-channel images with different pixel sizes with 0 so that
-    the resulting matrices have the same size.
+    Crops the two files to their intersection based on the spatial information provided with the two images
     Parameters
     ----------
     file1, file2: The two raster image files as opened rasterio objects.
-    Returns
+    returns
     ----------
     [array_file1, array_file1_transform]: The raster matrix for the first file and its respective transform.
-    [array_file2, array_file2_transform]: The raster matrix for the first file and its respective transform.
+    [array_file2, array_file2_transform]: The raster matrix for the second file and its respective transform.
     """
-    
+
     bbox1 = file1.bounds
     bbox2 = file2.bounds
-    minbbox = BoundingBox(left=max(bbox1[0], bbox2[0]),
-                          bottom=max(bbox1[1], bbox2[1]),
-                          right=min(bbox1[2], bbox2[2]),
-                          top=min(bbox1[3], bbox2[3])
-                          )
+    minbbox = rasterio.coords.BoundingBox(left=max(bbox1[0], bbox2[0]),
+                                          bottom=max(bbox1[1], bbox2[1]),
+                                          right=min(bbox1[2], bbox2[2]),
+                                          top=min(bbox1[3], bbox2[3])
+                                          )
 
     minbbox_polygon = [shapely.Polygon((
         (minbbox[0], minbbox[1]),
@@ -164,39 +160,36 @@ def get_overlapping_area(file1, file2):
 
     array_file1, array_file1_transform = rasterio.mask.mask(file1, shapes=minbbox_polygon, crop=True)
     array_file2, array_file2_transform = rasterio.mask.mask(file2, shapes=minbbox_polygon, crop=True)
-
-    # If the matrices have different number of pixels, pad the smaller one with 0 to match the size of the larger one
-    if array_file1.shape[-2] < array_file2.shape[-2]:
-        array_file1 = np.pad(array_file1,
-                             pad_width=((0, 0), (0, array_file2.shape[-2] - array_file1.shape[-2]), (0, 0)),
-                             constant_values=(0, 0))
-        # array_file2[:, array_file2.shape[-2] - array_file1.shape[-2]: array_file2.shape[-2], :] = 0
-    if array_file1.shape[-2] > array_file2.shape[-2]:
-        array_file2 = np.pad(array_file2,
-                             pad_width=((0, 0), (0, array_file1.shape[-2] - array_file2.shape[-2]), (0, 0)),
-                             constant_values=(0, 0))
-        # array_file1[:, array_file1.shape[-2] - array_file2.shape[-2]: array_file1.shape[-2], :] = 0
-
-
-    if array_file1.shape[-1] < array_file2.shape[-1]:
-        array_file1 = np.pad(array_file1,
-                             pad_width=((0, 0), (0, 0), (0, array_file2.shape[-1] - array_file1.shape[-1])),
-                             constant_values=(0, 0))
-        # array_file2[:, :, array_file2.shape[-1] - array_file1.shape[-1]: array_file2.shape[-1]] = 0
-
-    if array_file1.shape[-1] > array_file2.shape[-1]:
-        array_file2 = np.pad(array_file2,
-                             pad_width=((0, 0), (0, 0), (0, array_file1.shape[-1] - array_file2.shape[-1])),
-                             constant_values=(0, 0))
-        # array_file1[:, :, array_file1.shape[-1] - array_file2.shape[-1]: array_file1.shape[-1]] = 0
-
-
+    #
+    # # If the matrices have different number of pixels, pad the smaller one with 0 to match the size of the larger one
+    # if array_file1.shape[-2] < array_file2.shape[-2]:
+    #     array_file1 = np.pad(array_file1,
+    #                          pad_width=((0, 0), (0, array_file2.shape[-2] - array_file1.shape[-2]), (0, 0)),
+    #                          constant_values=(0, 0))
+    #     # array_file2[:, array_file2.shape[-2] - array_file1.shape[-2]: array_file2.shape[-2], :] = 0
+    # if array_file1.shape[-2] > array_file2.shape[-2]:
+    #     array_file2 = np.pad(array_file2,
+    #                          pad_width=((0, 0), (0, array_file1.shape[-2] - array_file2.shape[-2]), (0, 0)),
+    #                          constant_values=(0, 0))
+    #     # array_file1[:, array_file1.shape[-2] - array_file2.shape[-2]: array_file1.shape[-2], :] = 0
+    #
+    #
+    # if array_file1.shape[-1] < array_file2.shape[-1]:
+    #     array_file1 = np.pad(array_file1,
+    #                          pad_width=((0, 0), (0, 0), (0, array_file2.shape[-1] - array_file1.shape[-1])),
+    #                          constant_values=(0, 0))
+    #     # array_file2[:, :, array_file2.shape[-1] - array_file1.shape[-1]: array_file2.shape[-1]] = 0
+    #
+    # if array_file1.shape[-1] > array_file2.shape[-1]:
+    #     array_file2 = np.pad(array_file2,
+    #                          pad_width=((0, 0), (0, 0), (0, array_file1.shape[-1] - array_file2.shape[-1])),
+    #                          constant_values=(0, 0))
+    #     # array_file1[:, :, array_file1.shape[-1] - array_file2.shape[-1]: array_file1.shape[-1]] = 0
 
     return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
 
 
 def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs, years_between_observations=1):
-    
     """
     Georeferences a DataFrame with tracked points and calculates their movement (absolute and per year) in the unit
     specified by the coordinate reference system.
@@ -220,7 +213,7 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         "movement_distance" and "movement_distance_per_year", specifying the movement in the unit of the given
         coordinate reference system and one geometry column.
     """
-    
+
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
                                                     ["row", "column", "movement_row_direction",
