@@ -11,9 +11,9 @@ image_bands = 0
 control_tracking_area_size = 60
 control_cell_size = 40
 tracking_method = "lsm"
-distance_of_tracked_points = 5
-movement_tracking_area_size = 100
-movement_cell_size = 50
+distance_of_tracked_points = 2.5
+movement_tracking_area_size = 80
+movement_cell_size = 30
 level_of_detection_quantile = 0.5
 use_4th_channel_as_data_mask = True
 
@@ -48,3 +48,5 @@ Kaiserberg_pair_19_21.calculate_lod(1000, polygon_outside_RG)
 Kaiserberg_pair_19_21.filter_lod_points()
 
 Kaiserberg_pair_19_21.plot_tracking_results_lod_mask()
+
+Kaiserberg_pair_19_21.save_full_results("../Test_results")

@@ -3,6 +3,7 @@ import geopandas as gpd
 import rasterio.plot
 import matplotlib.pyplot as plt
 import scipy.interpolate
+import logging
 
 
 def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geometry: gpd.GeoDataFrame, alpha=0.6):
@@ -62,7 +63,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         Specifies the figure for plotting multiple results simultaneously.
     ax = None
         Specifies the axes on which to plot the movement of tracked points. If None (the default) the figure is plotted
-        onto a new canvas.
+        onto a new canvas. If fig, ax are not provided, but save_path is, the figure is only saved and not displayed.
     save_path : str = None
         The file location, where the created plot is stored. When no path is given (the default), the figure is not
         saved.
@@ -70,10 +71,12 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     ----------
     None
     """
+
     show_figure = False
     if ax is None and fig is None:
         fig, ax = plt.subplots(dpi=200)
-        show_figure = True
+        if save_path is None:
+            show_figure = True
 
     if masking_polygon is not None:
         masking_polygon = masking_polygon.to_crs(crs=point_movement.crs)
@@ -98,17 +101,20 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
             arrow_point = point_movement.loc[(point_movement['row'] == row) & (point_movement['column'] == column)]
             if not arrow_point.empty:
                 arrow_point = arrow_point.iloc[0]
-                plt.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
-                          arrow_point["movement_column_direction"] * 3 / arrow_point["movement_distance"],
-                          -arrow_point["movement_row_direction"] * 3 / arrow_point["movement_distance"],
-                          head_width=10, head_length=10, color="black", alpha=1)
+                if arrow_point["movement_distance_per_year"] == 0:
+                    print(arrow_point)
+                    continue
+                ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
+                         arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
+                         -arrow_point["movement_row_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
+                         head_width=10, head_length=10, color="black", alpha=1)
     plt.title("Movement velocity in " + point_movement.crs.axis_info[0].unit_name + " per year")
 
     if show_figure:
         fig.show()
-
     if save_path is not None:
         fig.savefig(save_path, bbox_inches='tight')
+
 
 def plot_movement_of_points_with_lod_mask(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
                                           save_path: str = None):
@@ -138,6 +144,10 @@ def plot_movement_of_points_with_lod_mask(raster_matrix: np.ndarray, raster_tran
     point_movement_zero = point_movement[point_movement["movement_distance_per_year"] == 0]
 
     plot_movement_of_points(None, raster_transform, point_movement_zero, point_color="gray", fig=fig, ax=ax)
-    plot_movement_of_points(raster_matrix, raster_transform, point_movement_positive, fig=fig, ax=ax)
-    fig.show()
+    plot_movement_of_points(raster_matrix, raster_transform, point_movement_positive, fig=fig, ax=ax, save_path=None)
+
+    if save_path is None:
+        fig.show()
+    else:
+        fig.savefig(save_path, bbox_inches='tight')
 

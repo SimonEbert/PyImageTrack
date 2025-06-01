@@ -36,5 +36,5 @@ class TrackingParameters:
                 f'\tremove outliers: {self.remove_outliers}\n'
                 f'\tretry matching: {self.retry_matching}\n'
                 f'\ttransformation determinant threshold: {self.transformation_determinant_threshold}\n'
-                f'\tlevel of detection quantile: {self.level_of_detection_quantile}'
-                f'\tuse 4th channel as data_mask: {self.use_4th_channel_as_data_mask}')
+                f'\tlevel of detection quantile: {self.level_of_detection_quantile}\n'
+                f'\tuse 4th channel as data_mask: {self.use_4th_channel_as_data_mask}\n')
