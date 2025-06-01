@@ -22,6 +22,8 @@ from DataProcessing.DataPostprocessing import filter_lod_points
 class ImagePair:
     def __init__(self, parameter_dict: dict = None):
         self.images_aligned = False
+        # self.mask_array = None
+
         self.image1_matrix = None
         self.image1_transform = None
         self.image1_observation_date = None
@@ -76,6 +78,7 @@ class ImagePair:
         self.image1_observation_date = datetime.strptime(observation_date_1, "%d-%m-%Y").date()
         self.image2_observation_date = datetime.strptime(observation_date_2, "%d-%m-%Y").date()
 
+        # self.mask_array = (self.image1_matrix[3, :, :] != 255) & (self.image2_matrix[3, :, :] != 255)
         self.select_image_channels(selected_channels=selected_channels)
 
     def align_images(self, reference_area: gpd.GeoDataFrame) -> None:
@@ -105,6 +108,11 @@ class ImagePair:
 
             self.image2_matrix = new_image2_matrix
             self.image2_transform = self.image1_transform
+
+            # if self.tracking_parameters.use_4th_channel_as_data_mask:
+            #     self.image1_matrix[self.mask_array] = 0
+            #     self.image2_matrix[self.mask_array] = 0
+
             self.images_aligned = True
 
     def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.geodataframe:
@@ -229,13 +237,15 @@ class ImagePair:
             self.tracking_parameters.level_of_detection_quantile = 0.5
         else:
             level_of_detection_quantile = self.tracking_parameters.level_of_detection_quantile
-
         self.level_of_detection = calculate_lod(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
                                                 image_transform=self.image1_transform, reference_area=reference_area,
                                                 number_of_reference_points=number_of_points,
                                                 tracking_parameters=self.tracking_parameters,
                                                 crs=self.crs, years_between_observations=years_between_observations,
                                                 level_of_detection_quantile=level_of_detection_quantile)
+        print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
+              + str(self.level_of_detection))
+
 
     def filter_lod_points(self) -> None:
         """

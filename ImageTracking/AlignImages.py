@@ -90,7 +90,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     image2_matrix_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, image2_matrix.shape[0]),
                                                                  np.arange(0, image2_matrix.shape[1]),
                                                                  image2_matrix)
-    print("Resampling the second image matrix. This may take some time.")
+    print("Resampling the second image matrix with transformation matrix\n" + str(transformation_matrix) +
+          "\nThis may take some time.")
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
     return [image1_matrix, moved_image2_matrix]

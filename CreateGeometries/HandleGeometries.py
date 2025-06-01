@@ -167,7 +167,7 @@ def crop_images_to_intersection(file1, file2):
     Parameters
     ----------
     file1, file2: The two raster image files as opened rasterio objects.
-    returns
+    Returns
     ----------
     [array_file1, array_file1_transform]: The raster matrix for the first file and its respective transform.
     [array_file2, array_file2_transform]: The raster matrix for the second file and its respective transform.
@@ -190,7 +190,6 @@ def crop_images_to_intersection(file1, file2):
 
     array_file1, array_file1_transform = rasterio.mask.mask(file1, shapes=minbbox_polygon, crop=True)
     array_file2, array_file2_transform = rasterio.mask.mask(file2, shapes=minbbox_polygon, crop=True)
-
 
     return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
 

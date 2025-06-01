@@ -174,7 +174,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     # distance > 0.1 to the central point always
     previous_moved_central_point = np.array([np.nan, np.nan])
 
-    while iteration < 50:
+    while iteration < 20:
         moved_indices = move_indices_from_transformation_matrix(transformation_matrix=transformation_matrix,
                                                                 indices=indices)
         moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
@@ -224,8 +224,8 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         previous_moved_central_point = new_moved_central_point
         iteration += 1
 
-    if iteration == 50:
-        logging.info("Did not converge after 50 iterations.")
+    if iteration == 20:
+        logging.info("Did not converge after 20 iterations.")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                tracking_success=False)
 
