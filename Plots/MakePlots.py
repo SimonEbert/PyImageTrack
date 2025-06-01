@@ -102,7 +102,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
             if not arrow_point.empty:
                 arrow_point = arrow_point.iloc[0]
                 if arrow_point["movement_distance_per_year"] == 0:
-                    print(arrow_point)
                     continue
                 ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
                          arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
