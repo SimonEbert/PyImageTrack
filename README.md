@@ -14,7 +14,11 @@ PyImageTrack is a Python library implementing feature tracking approaches based 
 - Pre- and post-processing of the data
 
 ## Acknowledgment
-The code in this repository corresponds to the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches	Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert from October 2024 to February 2025 at the University of Freiburg.
+<<<<<<< HEAD
+The code in this repository is based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches	Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert from October 2024 to February 2025 at the University of Freiburg.
+=======
+The code in this repository is based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches	Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert from October 2024 to February 2025 at the University of Freiburg.
+>>>>>>> 806d0c5 (Changed Readme)
 
 ## Installation
 To install PyImageTrack, follow these steps:
