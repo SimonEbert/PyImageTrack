@@ -11,6 +11,7 @@ import scipy
 from CreateGeometries.HandleGeometries import get_submatrix_symmetric
 from ImageTracking.TrackingResults import TrackingResults
 from CreateGeometries.HandleGeometries import get_raster_indices_from_points
+from ImageTracking.ImageInterpolator import ImageInterpolator
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     """
@@ -138,13 +139,13 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     """
 
     # assign indices in respect to indexing in the search cell matrix
-    central_row = np.round(search_cell_matrix.shape[0] / 2)
-    central_column = np.round(search_cell_matrix.shape[1] / 2)
+    central_row = np.round(search_cell_matrix.shape[-2] / 2)
+    central_column = np.round(search_cell_matrix.shape[-1] / 2)
 
-    indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - tracked_cell_matrix.shape[0] / 2),
-                                             np.ceil(central_row + tracked_cell_matrix.shape[0] / 2)),
-                                   np.arange(np.ceil(central_column - tracked_cell_matrix.shape[1] / 2),
-                                             np.ceil(central_column + tracked_cell_matrix.shape[1] / 2)))
+    indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - tracked_cell_matrix.shape[-2] / 2),
+                                             np.ceil(central_row + tracked_cell_matrix.shape[-2] / 2)),
+                                   np.arange(np.ceil(central_column - tracked_cell_matrix.shape[-1] / 2),
+                                             np.ceil(central_column + tracked_cell_matrix.shape[-1] / 2)))
                        ).T.reshape(-1, 2).T
 
     if initial_shift_values is None:
@@ -164,9 +165,12 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
                                       [coefficients[3], coefficients[4], coefficients[5]]])
 
-    search_cell_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, search_cell_matrix.shape[0]),
-                                                               np.arange(0, search_cell_matrix.shape[1]),
+    search_cell_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, search_cell_matrix.shape[-2]),
+                                                               np.arange(0, search_cell_matrix.shape[-1]),
                                                                search_cell_matrix)
+
+    # search_cell_spline = ImageInterpolator(search_cell_matrix)
+
     iteration = 0
     optimization_start_time = datetime.datetime.now()
     # Point to check the stopping condition. If the distance between the previous and current central point is smaller
@@ -337,11 +341,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
 
-    # with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
-    #     tracking_results = pool.map(track_cell_lsm_parallelized, list_of_central_indices)
-    #     for _ in tqdm.tqdm(pool.imap_unordered(track_cell_lsm_parallelized, list_of_central_indices),
-    #                        total=len(list_of_central_indices)):
-    #         pass
     with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
         tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
                                 total=len(list_of_central_indices),
@@ -350,7 +349,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
                                           smoothing=0.1,
                                           bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
                                                      "[{remaining}, {rate_fmt}]"))
-
 
     # access the respective tracked point coordinates and its movement
     movement_row_direction = [results.movement_rows for results in tracking_results]
