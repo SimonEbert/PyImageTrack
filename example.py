@@ -12,9 +12,9 @@ control_tracking_area_size = 60
 control_cell_size = 40
 tracking_method = "lsm"
 distance_of_tracked_points = 5
-movement_tracking_area_size = 80
-movement_cell_size = 30
-level_of_detection_quantile = 0.5
+movement_tracking_area_size = 60
+movement_cell_size = 20
+level_of_detection_quantile = 0.9
 use_4th_channel_as_data_mask = True
 
 Kaiserberg_pair_19_21 = ImagePair(
@@ -29,18 +29,18 @@ Kaiserberg_pair_19_21 = ImagePair(
                     "level_of_detection_quantile": level_of_detection_quantile,
                     "use_4th_channel_as_data_mask": use_4th_channel_as_data_mask})
 
-Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/KBT_hillshade_2019-07.tif",
-                                            observation_date_1="01-07-2019",
-                                            filename_2="../Test_Data/KBT_hillshade_2021-08.tif",
-                                            observation_date_2="01-08-2021",
+Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/Orthophotos_Kaiserberg_historic/1953_ortho_1m_RG_rend_bw.tif",
+                                            observation_date_1="02-09-1953",
+                                            filename_2="../Test_Data/Orthophotos_Kaiserberg_historic/1970_ortho_1m_RG_rend_bw.tif",
+                                            observation_date_2="29-09-1970",
                                             selected_channels=0)
 
 
-polygon_outside_RG = gpd.read_file("../Test_Data/Area_outside_rock_glacier.shp")
-polygon_outside_RG = polygon_outside_RG.to_crs(crs=32632)
+polygon_outside_RG = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_outside_rock_glacier.shp")
+polygon_outside_RG = polygon_outside_RG.to_crs(crs=31254)
 
-rock_glacier_polygon = gpd.read_file("../Test_Data/Area_inside_rock_glacier.shp")
-rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=32632)
+rock_glacier_polygon = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_inside_rock_glacier.shp")
+rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=31254)
 
 Kaiserberg_pair_19_21.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
 

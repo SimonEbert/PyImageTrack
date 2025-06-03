@@ -1,6 +1,7 @@
 import geopandas as gpd
 import rasterio
 import rasterio.plot
+from rasterio.crs import CRS
 from datetime import datetime
 import logging
 from osgeo import osr
@@ -18,6 +19,7 @@ from Plots.MakePlots import plot_movement_of_points
 from Plots.MakePlots import plot_movement_of_points_with_lod_mask
 from DataProcessing.DataPostprocessing import calculate_lod
 from DataProcessing.DataPostprocessing import filter_lod_points
+from Plots.MakePlots import plot_raster_and_geometry
 
 
 class ImagePair:
@@ -68,8 +70,9 @@ class ImagePair:
         Returns
         -------
         """
-        file1 = rasterio.open(filename_1)
-        file2 = rasterio.open(filename_2)
+        file1 = rasterio.open(filename_1, 'r+')
+        file2 = rasterio.open(filename_2, 'r+')
+
         if file1.crs != file2.crs:
             raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
                              "but the two images must  have the same crs.")
