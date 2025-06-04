@@ -8,5 +8,5 @@ scikit-learn==1.6.1
 scikit-image==0.25.2
 pandas==2.2.2
 tqdm==4.67.1
-gdal==3.4.1
+#gdal==3.4.1
 datetime==5.5

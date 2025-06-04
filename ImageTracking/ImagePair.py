@@ -4,8 +4,8 @@ import rasterio.plot
 from rasterio.crs import CRS
 from datetime import datetime
 import logging
-from osgeo import osr
-import osgeo.gdal as gdal
+# from osgeo import osr
+# import osgeo.gdal as gdal
 import os
 
 from ImageTracking.TrackMovement import track_movement_lsm
@@ -279,30 +279,30 @@ class ImagePair:
                                       + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
 
         # rasterize the created file into several geotiffs with lod mask, bearing and movement distance per year
-        srs = osr.SpatialReference()
-        srs.ImportFromEPSG(int(self.crs.to_epsg()))
+        # srs = osr.SpatialReference()
+        # srs.ImportFromEPSG(int(self.crs.to_epsg()))
 
         # save movement_bearing
-        gdal.Rasterize(destNameOrDestDS=folder_path + "/movement_bearing_" + str(self.image1_observation_date.year) + "_"
-                             + str(self.image2_observation_date.year) + ".geotiff",
-                       srcDS=folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
-                             + str(self.image2_observation_date.year) + ".geojson",
-                       format="GTiff",
-                       xRes=self.tracking_parameters.distance_of_tracked_points,
-                       yRes=self.tracking_parameters.distance_of_tracked_points,
-                       attribute="movement_bearing_pixels",
-                       outputSRS=srs
-                       )
-        gdal.Rasterize(destNameOrDestDS=folder_path + "/movement_rate_" + str(self.image1_observation_date.year) + "_"
-                             + str(self.image2_observation_date.year) + ".geotiff",
-                       srcDS=folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
-                             + str(self.image2_observation_date.year) + ".geojson",
-                       format="GTiff",
-                       xRes=self.tracking_parameters.distance_of_tracked_points,
-                       yRes=self.tracking_parameters.distance_of_tracked_points,
-                       attribute="movement_distance_per_year",
-                       outputSRS=srs
-                       )
+        # gdal.Rasterize(destNameOrDestDS=folder_path + "/movement_bearing_" + str(self.image1_observation_date.year) + "_"
+        #                      + str(self.image2_observation_date.year) + ".geotiff",
+        #                srcDS=folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
+        #                      + str(self.image2_observation_date.year) + ".geojson",
+        #                format="GTiff",
+        #                xRes=self.tracking_parameters.distance_of_tracked_points,
+        #                yRes=self.tracking_parameters.distance_of_tracked_points,
+        #                attribute="movement_bearing_pixels",
+        #                outputSRS=srs
+        #                )
+        # gdal.Rasterize(destNameOrDestDS=folder_path + "/movement_rate_" + str(self.image1_observation_date.year) + "_"
+        #                      + str(self.image2_observation_date.year) + ".geotiff",
+        #                srcDS=folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
+        #                      + str(self.image2_observation_date.year) + ".geojson",
+        #                format="GTiff",
+        #                xRes=self.tracking_parameters.distance_of_tracked_points,
+        #                yRes=self.tracking_parameters.distance_of_tracked_points,
+        #                attribute="movement_distance_per_year",
+        #                outputSRS=srs
+        #                )
 
         with (open(folder_path + "/tracking_parameters.txt", "w")
               as text_file):
@@ -312,17 +312,17 @@ class ImagePair:
             self.tracking_results[self.tracking_results["movement_distance_per_year"] == 0].to_file(
                 folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_" +
                 str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
-            gdal.Rasterize(
-                destNameOrDestDS=folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_"
-                                 + str(self.image2_observation_date.year) + ".geotiff",
-                srcDS=folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_"
-                      + str(self.image2_observation_date.year) + ".geojson",
-                format="GTiff",
-                xRes=self.tracking_parameters.distance_of_tracked_points,
-                yRes=self.tracking_parameters.distance_of_tracked_points,
-                burnValues=1,
-                outputSRS=srs
-                )
+            # gdal.Rasterize(
+            #     destNameOrDestDS=folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_"
+            #                      + str(self.image2_observation_date.year) + ".geotiff",
+            #     srcDS=folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_"
+            #           + str(self.image2_observation_date.year) + ".geojson",
+            #     format="GTiff",
+            #     xRes=self.tracking_parameters.distance_of_tracked_points,
+            #     yRes=self.tracking_parameters.distance_of_tracked_points,
+            #     burnValues=1,
+            #     outputSRS=srs
+            #     )
             plot_movement_of_points_with_lod_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
                                                   save_path=folder_path + "/tracking_results_" +
                                                   str(self.image1_observation_date.year) + "_" +
