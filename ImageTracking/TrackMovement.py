@@ -329,6 +329,10 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     NaN values for the movement.
     """
 
+    if len(points_to_be_tracked) == 0:
+        raise ValueError("No ppoints provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
+                         "with  at least one element.")
+
     # ToDo: Find a way to make these variables NOT global
     global shared_image_matrix1, shared_image_matrix2, shared_tracked_cell_size, shared_search_area_size
     shared_image_matrix1 = image1_matrix

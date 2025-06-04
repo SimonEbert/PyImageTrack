@@ -1,10 +1,12 @@
 import geopandas as gpd
 import numpy as np
+import matplotlib.pyplot as plt
 
 from ImageTracking import TrackMovement
 from CreateGeometries.HandleGeometries import georeference_tracked_points
 from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
 from dataloader.TrackingParameters import TrackingParameters
+from Plots.MakePlots import plot_movement_of_points
 
 
 def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
@@ -19,8 +21,15 @@ def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_tr
         movement_tracking_area_size=tracking_parameters.movement_tracking_area_size,)
     tracked_points = georeference_tracked_points(tracked_points, image_transform, crs=crs,
                                                  years_between_observations=years_between_observations)
+
     level_of_detection = np.quantile(tracked_points.loc[~tracked_points["movement_distance_per_year"].isna(),
                                                         "movement_distance_per_year"], level_of_detection_quantile)
+    # plt.hist(tracked_points.loc[~tracked_points["movement_distance_per_year"].isna(),
+    #                                                     "movement_distance_per_year"])
+    # plt.show()
+    # plt.hist(tracked_points.loc[~tracked_points["movement_distance_per_year"].isna(),
+    # "movement_bearing_pixels"])
+    # plt.show()
     return level_of_detection
 
 

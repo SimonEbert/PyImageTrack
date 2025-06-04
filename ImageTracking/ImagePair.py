@@ -20,6 +20,7 @@ from Plots.MakePlots import plot_movement_of_points_with_lod_mask
 from DataProcessing.DataPostprocessing import calculate_lod
 from DataProcessing.DataPostprocessing import filter_lod_points
 from Plots.MakePlots import plot_raster_and_geometry
+from DataProcessing.ImagePreprocessing import equalize_adapthist_images
 
 
 class ImagePair:
@@ -82,8 +83,8 @@ class ImagePair:
         self.image1_observation_date = datetime.strptime(observation_date_1, "%d-%m-%Y").date()
         self.image2_observation_date = datetime.strptime(observation_date_2, "%d-%m-%Y").date()
 
-        # self.mask_array = (self.image1_matrix[3, :, :] != 255) & (self.image2_matrix[3, :, :] != 255)
         self.select_image_channels(selected_channels=selected_channels)
+
 
     def align_images(self, reference_area: gpd.GeoDataFrame) -> None:
         """
@@ -334,3 +335,10 @@ class ImagePair:
                                     save_path=folder_path + "/tracking_results_" +
                                               str(self.image1_observation_date.year) + "_" +
                                               str(self.image2_observation_date.year) + ".jpg")
+
+    def equalize_adapthist_images(self):
+        self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
+                                                       kernel_size=50)
+        self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
+                                                       kernel_size=50)
+

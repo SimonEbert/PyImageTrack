@@ -36,7 +36,7 @@ Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/Orthophotos
                                             selected_channels=0)
 
 
-polygon_outside_RG = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_outside_rock_glacier.shp")
+polygon_outside_RG = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_outside_rock_glacier_adjusted.shp")
 polygon_outside_RG = polygon_outside_RG.to_crs(crs=31254)
 
 rock_glacier_polygon = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_inside_rock_glacier.shp")

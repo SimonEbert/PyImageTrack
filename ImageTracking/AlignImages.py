@@ -6,6 +6,8 @@ import sklearn
 from ImageTracking.TrackMovement import track_movement_lsm
 from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_number_of_points
 from ImageTracking.TrackMovement import move_indices_from_transformation_matrix
+from Plots.MakePlots import plot_movement_of_points
+from CreateGeometries.HandleGeometries import georeference_tracked_points
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
@@ -47,6 +49,10 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
     are aligned, they possess the same transformation. You can therefore assume that
     """
+
+    if len(reference_area) == 0:
+        raise ValueError("No polygon provided in the reference area GeoDataFrame. Please provide a GeoDataFrame with "
+                         "exactly one element.")
 
     reference_area_point_grid = grid_points_on_polygon_by_number_of_points(reference_area,
                                                                            number_of_points=number_of_control_points)
