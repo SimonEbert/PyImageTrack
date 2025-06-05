@@ -12,18 +12,28 @@ from Plots.MakePlots import plot_movement_of_points
 def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
                   reference_area: gpd.GeoDataFrame, number_of_reference_points,
                   tracking_parameters: TrackingParameters, crs, years_between_observations,
-                  level_of_detection_quantile: float = 0.5) -> float:
+                  level_of_detection_quantile: float = 0.5,) -> float:
 
     points = random_points_on_polygon_by_number(reference_area, number_of_points=number_of_reference_points)
     tracked_points = TrackMovement.track_movement_lsm(
         image1_matrix=image1_matrix, image2_matrix=image2_matrix,image_transform=image_transform,
         points_to_be_tracked=points, movement_cell_size=tracking_parameters.movement_cell_size,
-        movement_tracking_area_size=tracking_parameters.movement_tracking_area_size,)
+        movement_tracking_area_size=tracking_parameters.movement_tracking_area_size,
+        save_columns=["movement_row_direction",
+                      "movement_column_direction",
+                      "movement_distance_pixels",
+                      "movement_bearing_pixels",
+                      "correlation_coefficient"]
+    )
+    tracked_points = tracked_points[
+        tracked_points["correlation_coefficient"] > tracking_parameters.cross_correlation_threshold]
+    tracked_control_pixels = tracked_points[tracked_points["movement_row_direction"].notna()]
+    print("Used " + str(len(tracked_control_pixels)) + " pixels for LoD calculation.")
+
     tracked_points = georeference_tracked_points(tracked_points, image_transform, crs=crs,
                                                  years_between_observations=years_between_observations)
-
-    level_of_detection = np.quantile(tracked_points.loc[~tracked_points["movement_distance_per_year"].isna(),
-                                                        "movement_distance_per_year"], level_of_detection_quantile)
+    plot_movement_of_points(image1_matrix, image_transform, tracked_points)
+    level_of_detection = np.quantile(tracked_points["movement_distance_per_year"], level_of_detection_quantile)
     # plt.hist(tracked_points.loc[~tracked_points["movement_distance_per_year"].isna(),
     #                                                     "movement_distance_per_year"])
     # plt.show()

@@ -7,6 +7,9 @@ import logging
 # from osgeo import osr
 # import osgeo.gdal as gdal
 import os
+from rasterio.coords import BoundingBox
+from shapely.geometry import box
+import numpy as np
 
 from ImageTracking.TrackMovement import track_movement_lsm
 from dataloader import TrackingParameters
@@ -34,6 +37,7 @@ class ImagePair:
         self.image2_matrix = None
         self.image2_transform = None
         self.image2_observation_date = None
+        self.image_bounds = None
 
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
 
@@ -78,6 +82,17 @@ class ImagePair:
             raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
                              "but the two images must  have the same crs.")
         self.crs = file1.crs
+        # set the valid data box for the intersection of the two images
+        bbox1 = file1.bounds
+        bbox2 = file2.bounds
+
+        poly1 = box(*bbox1)
+        poly2 = box(*bbox2)
+        intersection = poly1.intersection(poly2)
+        # leave a buffer to the boundary so that every search_cell is contained in the valid data area
+        self.image_bounds = gpd.GeoDataFrame({'geometry': [intersection]}, crs=self.crs).buffer(
+            -max(-file1.transform[4],file1.transform[0])*self.tracking_parameters.movement_tracking_area_size)
+
         ([self.image1_matrix, self.image1_transform],
          [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
         self.image1_observation_date = datetime.strptime(observation_date_1, "%d-%m-%Y").date()
@@ -103,13 +118,19 @@ class ImagePair:
         if reference_area.crs != self.crs:
             raise ValueError("Got reference area with crs " + str(reference_area.crs) + " and images with crs "
                              + str(self.crs) + ". Reference area and images are supposed to have the same crs.")
+        reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
+
+        reference_area.rename(columns={0: 'geometry'}, inplace=True)
+        reference_area.set_geometry('geometry', inplace=True)
 
         if self.tracking_parameters.image_alignment_via_lsm:
             [_, new_image2_matrix] = (
                 align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
                                         image_transform=self.image1_transform, reference_area=reference_area,
                                         number_of_control_points=
-                                        self.tracking_parameters.image_alignment_number_of_control_points))
+                                        self.tracking_parameters.image_alignment_number_of_control_points,
+                                        cross_correlation_threshold=
+                                        self.tracking_parameters.cross_correlation_threshold))
 
             self.image2_matrix = new_image2_matrix
             self.image2_transform = self.image1_transform
@@ -234,6 +255,11 @@ class ImagePair:
         None
         """
         print("Starting level of detection calculation.")
+        reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
+
+        reference_area.rename(columns={0: 'geometry'}, inplace=True)
+        reference_area.set_geometry('geometry', inplace=True)
+
         years_between_observations = (self.image2_observation_date - self.image1_observation_date).days // 365.25
 
         # check if a custom level of detection value was provided with tracking parameters, if not set it to 0.5

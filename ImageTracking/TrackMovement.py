@@ -238,12 +238,21 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         tracked_cell_matrix.shape)
 
+    # flatten the comparison cell matrix
+    moved_cell_submatrix_vector = moved_cell_matrix.flatten()
 
+    moved_cell_submatrix_vector = moved_cell_submatrix_vector - np.mean(moved_cell_submatrix_vector)
+    moved_cell_submatrix_vector = moved_cell_submatrix_vector / np.linalg.norm(moved_cell_submatrix_vector)
+    tracked_cell_vector = tracked_cell_matrix.flatten()
+    tracked_cell_vector = tracked_cell_vector - np.mean(tracked_cell_vector)
+    tracked_cell_vector = tracked_cell_vector / np.linalg.norm(tracked_cell_vector)
+    corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
 
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
-                                       tracking_method="least-squares", tracking_success=True)
+                                       tracking_method="least-squares", tracking_success=True,
+                                       cross_correlation_coefficient=float(corr))
 
     return tracking_results
 
@@ -359,7 +368,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     movement_column_direction = [results.movement_cols for results in tracking_results]
     # create dataframe with all tracked points results
     tracked_pixels = pd.DataFrame({"row": rows, "column": cols})
-
     if save_columns is None:
         save_columns = ["movement_row_direction", "movement_column_direction",
                         "movement_distance_pixels", "movement_bearing_pixels"]

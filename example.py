@@ -15,6 +15,7 @@ distance_of_tracked_points = 5
 movement_tracking_area_size = 60
 movement_cell_size = 20
 level_of_detection_quantile = 0.9
+cross_correlation_threshold = 0.8
 use_4th_channel_as_data_mask = True
 
 Kaiserberg_pair_19_21 = ImagePair(
@@ -27,7 +28,8 @@ Kaiserberg_pair_19_21 = ImagePair(
                     "movement_tracking_area_size": movement_tracking_area_size,
                     "movement_cell_size": movement_cell_size,
                     "level_of_detection_quantile": level_of_detection_quantile,
-                    "use_4th_channel_as_data_mask": use_4th_channel_as_data_mask})
+                    "use_4th_channel_as_data_mask": use_4th_channel_as_data_mask,
+                    "cross_correlation_threshold": cross_correlation_threshold})
 
 Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/Orthophotos_Kaiserberg_historic/1953_ortho_1m_RG_rend_bw.tif",
                                             observation_date_1="02-09-1953",

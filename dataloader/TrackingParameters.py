@@ -19,6 +19,7 @@ class TrackingParameters:
         self.cross_correlation_threshold = parameter_dict.get('cross_correlation_threshold')
         self.level_of_detection_quantile = parameter_dict.get('level_of_detection_quantile')
         self.use_4th_channel_as_data_mask = parameter_dict.get('use_4th_channel_as_data_mask')
+        self.cross_correlation_threshold = parameter_dict.get('cross_correlation_threshold')
 
 
     def __str__(self):
@@ -37,4 +38,5 @@ class TrackingParameters:
                 f'\tretry matching: {self.retry_matching}\n'
                 f'\ttransformation determinant threshold: {self.transformation_determinant_threshold}\n'
                 f'\tlevel of detection quantile: {self.level_of_detection_quantile}\n'
-                f'\tuse 4th channel as data_mask: {self.use_4th_channel_as_data_mask}\n')
+                f'\tuse 4th channel as data_mask: {self.use_4th_channel_as_data_mask}\n'
+                f'\tcross correlation threshold: {self.cross_correlation_threshold}\n')

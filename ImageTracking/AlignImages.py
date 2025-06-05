@@ -12,7 +12,7 @@ from CreateGeometries.HandleGeometries import georeference_tracked_points
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
                             number_of_control_points: int, cell_size: int = 50, tracking_area_size: int = 60,
-                            cross_correlation_threshold: float = 0.95
+                            cross_correlation_threshold: float = 0.8
                             ):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
@@ -66,10 +66,10 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                               "movement_distance_pixels",
                                                               "correlation_coefficient"]
                                                 )
-    # tracked_control_pixels = tracked_control_pixels[
-    #     tracked_control_pixels["correlation_coefficient"] > cross_correlation_threshold]
+    tracked_control_pixels = tracked_control_pixels[
+        tracked_control_pixels["correlation_coefficient"] > cross_correlation_threshold]
     tracked_control_pixels = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
-
+    print("Used " + str(len(tracked_control_pixels)) + " pixels for alignment.")
     tracked_control_pixels["new_row"] = (tracked_control_pixels["row"]
                                          + tracked_control_pixels["movement_row_direction"])
     tracked_control_pixels["new_column"] = (tracked_control_pixels["column"]
