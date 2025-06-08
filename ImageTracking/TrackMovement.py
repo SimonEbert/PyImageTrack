@@ -7,11 +7,14 @@ import tqdm
 import sklearn
 import datetime
 import scipy
+import rasterio
 
 from CreateGeometries.HandleGeometries import get_submatrix_symmetric
 from ImageTracking.TrackingResults import TrackingResults
 from CreateGeometries.HandleGeometries import get_raster_indices_from_points
 from ImageTracking.ImageInterpolator import ImageInterpolator
+from Plots.MakePlots import plot_raster_and_geometry
+
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
     """
@@ -178,7 +181,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     # distance > 0.1 to the central point always
     previous_moved_central_point = np.array([np.nan, np.nan])
 
-    while iteration < 20:
+    while iteration < 50:
         moved_indices = move_indices_from_transformation_matrix(transformation_matrix=transformation_matrix,
                                                                 indices=indices)
         moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
@@ -228,8 +231,8 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         previous_moved_central_point = new_moved_central_point
         iteration += 1
 
-    if iteration == 20:
-        logging.info("Did not converge after 20 iterations.")
+    if iteration == 50:
+        logging.info("Did not converge after 50 iterations.")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                tracking_success=False)
 
@@ -289,7 +292,6 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
     search_area2 = get_submatrix_symmetric(central_index=central_index,
                                            shape=(search_area_size, search_area_size),
                                            matrix=shared_image_matrix2)
-
     if len(search_area2) == 0:
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                transformation_matrix=None,
@@ -339,7 +341,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     """
 
     if len(points_to_be_tracked) == 0:
-        raise ValueError("No ppoints provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
+        raise ValueError("No points provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
                          "with  at least one element.")
 
     # ToDo: Find a way to make these variables NOT global
@@ -353,7 +355,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
-
     with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
         tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
                                 total=len(list_of_central_indices),

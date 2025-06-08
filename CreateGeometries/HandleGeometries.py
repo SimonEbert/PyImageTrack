@@ -125,7 +125,8 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_po
 
 def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
     points = gpd.GeoDataFrame()
-
+    """
+    Creates randomly distributed points on a polygon given as a one-element GeoDataFrame."""
     while len(points) < number_of_points:
         # generate random points in the bounds of the polygon
         minx, miny, maxx, maxy = polygon.bounds.iloc[0]
@@ -218,7 +219,6 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         "movement_distance" and "movement_distance_per_year", specifying the movement in the unit of the given
         coordinate reference system and one geometry column.
     """
-
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
                                                     ["row", "column", "movement_row_direction",

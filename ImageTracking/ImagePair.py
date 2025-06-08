@@ -90,8 +90,13 @@ class ImagePair:
         poly2 = box(*bbox2)
         intersection = poly1.intersection(poly2)
         # leave a buffer to the boundary so that every search_cell is contained in the valid data area
-        self.image_bounds = gpd.GeoDataFrame({'geometry': [intersection]}, crs=self.crs).buffer(
-            -max(-file1.transform[4],file1.transform[0])*self.tracking_parameters.movement_tracking_area_size)
+        image_bounds = gpd.GeoDataFrame(gpd.GeoDataFrame({'geometry': [intersection]}, crs=self.crs).buffer(
+            -max(-file1.transform[4],file1.transform[0])*self.tracking_parameters.movement_tracking_area_size))
+        # set correct geometry column
+        image_bounds = image_bounds.rename(columns={0: "geometry"})
+        image_bounds.set_geometry("geometry", inplace=True)
+
+        self.image_bounds = image_bounds
 
         ([self.image1_matrix, self.image1_transform],
          [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
@@ -119,7 +124,6 @@ class ImagePair:
             raise ValueError("Got reference area with crs " + str(reference_area.crs) + " and images with crs "
                              + str(self.crs) + ". Reference area and images are supposed to have the same crs.")
         reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
-
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
@@ -165,6 +169,7 @@ class ImagePair:
         points_to_be_tracked = grid_points_on_polygon_by_distance(
             polygon=tracking_area,
             distance_of_points=self.tracking_parameters.distance_of_tracked_points)
+
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
                                             movement_cell_size=self.tracking_parameters.movement_cell_size,
@@ -255,8 +260,8 @@ class ImagePair:
         None
         """
         print("Starting level of detection calculation.")
+        #
         reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
-
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 

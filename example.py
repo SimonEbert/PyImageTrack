@@ -2,7 +2,7 @@ import geopandas as gpd
 import rasterio
 
 from ImageTracking.ImagePair import ImagePair
-
+from Plots.MakePlots import plot_raster_and_geometry
 
 # Set parameters
 alignment_via_lsm = True

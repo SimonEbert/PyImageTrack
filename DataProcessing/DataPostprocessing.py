@@ -7,12 +7,13 @@ from CreateGeometries.HandleGeometries import georeference_tracked_points
 from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
 from dataloader.TrackingParameters import TrackingParameters
 from Plots.MakePlots import plot_movement_of_points
+from Plots.MakePlots import plot_raster_and_geometry
 
 
 def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
                   reference_area: gpd.GeoDataFrame, number_of_reference_points,
                   tracking_parameters: TrackingParameters, crs, years_between_observations,
-                  level_of_detection_quantile: float = 0.5,) -> float:
+                  level_of_detection_quantile: float = 0.5) -> float:
 
     points = random_points_on_polygon_by_number(reference_area, number_of_points=number_of_reference_points)
     tracked_points = TrackMovement.track_movement_lsm(
@@ -32,7 +33,7 @@ def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_tr
 
     tracked_points = georeference_tracked_points(tracked_points, image_transform, crs=crs,
                                                  years_between_observations=years_between_observations)
-    plot_movement_of_points(image1_matrix, image_transform, tracked_points)
+
     level_of_detection = np.quantile(tracked_points["movement_distance_per_year"], level_of_detection_quantile)
     # plt.hist(tracked_points.loc[~tracked_points["movement_distance_per_year"].isna(),
     #                                                     "movement_distance_per_year"])
