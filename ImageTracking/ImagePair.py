@@ -4,8 +4,7 @@ import rasterio.plot
 from rasterio.crs import CRS
 from datetime import datetime
 import logging
-# from osgeo import osr
-# import osgeo.gdal as gdal
+from geocube.api.core import make_geocube
 import os
 from rasterio.coords import BoundingBox
 from shapely.geometry import box
@@ -313,47 +312,33 @@ class ImagePair:
         # srs = osr.SpatialReference()
         # srs.ImportFromEPSG(int(self.crs.to_epsg()))
 
-        # save movement_bearing
-        # gdal.Rasterize(destNameOrDestDS=folder_path + "/movement_bearing_" + str(self.image1_observation_date.year) + "_"
-        #                      + str(self.image2_observation_date.year) + ".geotiff",
-        #                srcDS=folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
-        #                      + str(self.image2_observation_date.year) + ".geojson",
-        #                format="GTiff",
-        #                xRes=self.tracking_parameters.distance_of_tracked_points,
-        #                yRes=self.tracking_parameters.distance_of_tracked_points,
-        #                attribute="movement_bearing_pixels",
-        #                outputSRS=srs
-        #                )
-        # gdal.Rasterize(destNameOrDestDS=folder_path + "/movement_rate_" + str(self.image1_observation_date.year) + "_"
-        #                      + str(self.image2_observation_date.year) + ".geotiff",
-        #                srcDS=folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
-        #                      + str(self.image2_observation_date.year) + ".geojson",
-        #                format="GTiff",
-        #                xRes=self.tracking_parameters.distance_of_tracked_points,
-        #                yRes=self.tracking_parameters.distance_of_tracked_points,
-        #                attribute="movement_distance_per_year",
-        #                outputSRS=srs
-        #                )
+        results_grid = make_geocube(vector_data=self.tracking_results,
+                                    measurements=["movement_bearing_pixels", "movement_distance_per_year"],
+                                    resolution = self.tracking_parameters.distance_of_tracked_points)
+        results_grid["movement_bearing_pixels"].rio.to_raster(folder_path + "/movement_bearing_"
+                                                              + str(self.image1_observation_date.year)
+                                                              + "_" + str(self.image2_observation_date.year)
+                                                              + ".tif")
+        results_grid["movement_distance_per_year"].rio.to_raster(folder_path + "/movement_rate_"
+                                                                 + str(self.image1_observation_date.year)
+                                                                 + "_" + str(self.image2_observation_date.year)
+                                                                 + ".tif")
+
 
         with (open(folder_path + "/tracking_parameters.txt", "w")
               as text_file):
             text_file.write(self.tracking_parameters.__str__())
 
         if self.level_of_detection is not None:
-            self.tracking_results[self.tracking_results["movement_distance_per_year"] == 0].to_file(
-                folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_" +
-                str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
-            # gdal.Rasterize(
-            #     destNameOrDestDS=folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_"
-            #                      + str(self.image2_observation_date.year) + ".geotiff",
-            #     srcDS=folder_path + "/LoD_mask_" + str(self.image1_observation_date.year) + "_"
-            #           + str(self.image2_observation_date.year) + ".geojson",
-            #     format="GTiff",
-            #     xRes=self.tracking_parameters.distance_of_tracked_points,
-            #     yRes=self.tracking_parameters.distance_of_tracked_points,
-            #     burnValues=1,
-            #     outputSRS=srs
-            #     )
+            lod_mask = self.tracking_results[self.tracking_results["movement_distance_per_year"] == 0]
+            lod_mask_grid = make_geocube(vector_data=lod_mask,
+                                        measurements=["movement_distance_per_year"],
+                                        resolution=self.tracking_parameters.distance_of_tracked_points)
+            lod_mask_grid["movement_distance_per_year"].rio.to_raster(folder_path + "/LoD_mask_"
+                                                                      + str(self.image1_observation_date.year)
+                                                                      + "_" + str(self.image2_observation_date.year)
+                                                                      + ".tif")
+
             plot_movement_of_points_with_lod_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
                                                   save_path=folder_path + "/tracking_results_" +
                                                   str(self.image1_observation_date.year) + "_" +
