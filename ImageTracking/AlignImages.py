@@ -66,24 +66,29 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                               "movement_distance_pixels",
                                                               "correlation_coefficient"]
                                                 )
-    tracked_control_pixels = tracked_control_pixels[
+    tracked_control_pixels_valid = tracked_control_pixels[
         tracked_control_pixels["correlation_coefficient"] > cross_correlation_threshold]
-    tracked_control_pixels = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
-    print("Used " + str(len(tracked_control_pixels)) + " pixels for alignment.")
-    tracked_control_pixels["new_row"] = (tracked_control_pixels["row"]
-                                         + tracked_control_pixels["movement_row_direction"])
-    tracked_control_pixels["new_column"] = (tracked_control_pixels["column"]
-                                            + tracked_control_pixels["movement_column_direction"])
+    tracked_control_pixels_valid = tracked_control_pixels_valid[tracked_control_pixels_valid["movement_row_direction"].notna()]
+    if len(tracked_control_pixels_valid) == 0:
+        raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
+                         "threshold. Cross-correlation values were " + str(
+            list(tracked_control_pixels["correlation_coefficient"])) + "\n(None-values may signify problems during tracking).")
+
+    print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for alignment.")
+    tracked_control_pixels_valid["new_row"] = (tracked_control_pixels_valid["row"]
+                                         + tracked_control_pixels_valid["movement_row_direction"])
+    tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
+                                            + tracked_control_pixels_valid["movement_column_direction"])
 
 
     model_row = sklearn.linear_model.LinearRegression().fit(
-        np.column_stack([tracked_control_pixels["row"], tracked_control_pixels["column"]]),
-                        tracked_control_pixels["new_row"]
+        np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+                        tracked_control_pixels_valid["new_row"]
     )
 
     model_column = sklearn.linear_model.LinearRegression().fit(
-        np.column_stack([tracked_control_pixels["row"], tracked_control_pixels["column"]]),
-                        tracked_control_pixels["new_column"]
+        np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+                        tracked_control_pixels_valid["new_column"]
     )
 
     transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],

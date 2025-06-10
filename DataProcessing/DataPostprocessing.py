@@ -28,10 +28,16 @@ def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_tr
     )
     tracked_points = tracked_points[
         tracked_points["correlation_coefficient"] > tracking_parameters.cross_correlation_threshold]
-    tracked_control_pixels = tracked_points[tracked_points["movement_row_direction"].notna()]
-    print("Used " + str(len(tracked_control_pixels)) + " pixels for LoD calculation.")
+    tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
-    tracked_points = georeference_tracked_points(tracked_points, image_transform, crs=crs,
+    if len(tracked_control_pixels_valid) == 0:
+        raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
+                         "threshold. Cross-correlation values were " + str(
+            list(tracked_points["correlation_coefficient"])) + " (None-values may signify problems during tracking).")
+
+    print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
+
+    tracked_points = georeference_tracked_points(tracked_control_pixels_valid, image_transform, crs=crs,
                                                  years_between_observations=years_between_observations)
 
     level_of_detection = np.quantile(tracked_points["movement_distance_per_year"], level_of_detection_quantile)
