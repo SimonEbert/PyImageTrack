@@ -139,11 +139,11 @@ def plot_movement_of_points_with_lod_mask(raster_matrix: np.ndarray, raster_tran
     None
     """
     fig, ax = plt.subplots(dpi=200)
-    point_movement_positive = point_movement[point_movement["movement_distance_per_year"] > 0]
-    point_movement_zero = point_movement[point_movement["movement_distance_per_year"] == 0]
+    point_movement_valid = point_movement[~(point_movement["is_velocity_outlier"] | point_movement["is_below_LoD"] | point_movement["is_rotation_outlier"])]
+    point_movement_invalid = point_movement[point_movement["is_velocity_outlier"]  | point_movement["is_below_LoD"] | point_movement["is_rotation_outlier"]]
 
-    plot_movement_of_points(None, raster_transform, point_movement_zero, point_color="gray", fig=fig, ax=ax)
-    plot_movement_of_points(raster_matrix, raster_transform, point_movement_positive, fig=fig, ax=ax, save_path=None)
+    plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray", fig=fig, ax=ax)
+    plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None)
 
     if save_path is None:
         fig.show()

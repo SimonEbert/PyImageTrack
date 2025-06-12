@@ -48,6 +48,9 @@ rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=31254)
 
 Kaiserberg_pair_19_21.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
 
+Kaiserberg_pair_19_21.filter_rotation_outliers(60, 50)
+Kaiserberg_pair_19_21.filter_velocity_outliers(velocity_threshold=0.5, inclusion_distance=50)
+
 Kaiserberg_pair_19_21.calculate_lod(1000, polygon_outside_RG)
 Kaiserberg_pair_19_21.filter_lod_points()
 

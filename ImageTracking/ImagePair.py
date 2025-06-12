@@ -23,6 +23,8 @@ from DataProcessing.DataPostprocessing import calculate_lod
 from DataProcessing.DataPostprocessing import filter_lod_points
 from Plots.MakePlots import plot_raster_and_geometry
 from DataProcessing.ImagePreprocessing import equalize_adapthist_images
+from DataProcessing.DataPostprocessing import filter_rotation_outliers
+from DataProcessing.DataPostprocessing import filter_velocity_outliers
 
 
 class ImagePair:
@@ -43,6 +45,7 @@ class ImagePair:
         self.crs = None
         self.tracking_results = None
         self.level_of_detection = None
+        self.level_of_detection_points = None
 
     def select_image_channels(self, selected_channels: int = None):
         if selected_channels is None:
@@ -272,12 +275,14 @@ class ImagePair:
             self.tracking_parameters.level_of_detection_quantile = 0.5
         else:
             level_of_detection_quantile = self.tracking_parameters.level_of_detection_quantile
-        self.level_of_detection = calculate_lod(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
+        self.level_of_detection_points = calculate_lod(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
                                                 image_transform=self.image1_transform, reference_area=reference_area,
                                                 number_of_reference_points=number_of_points,
                                                 tracking_parameters=self.tracking_parameters,
-                                                crs=self.crs, years_between_observations=years_between_observations,
-                                                level_of_detection_quantile=level_of_detection_quantile)
+                                                crs=self.crs, years_between_observations=years_between_observations)
+        self.level_of_detection = np.quantile(self.level_of_detection_points["movement_distance_per_year"],
+                                         level_of_detection_quantile)
+
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
               + str(self.level_of_detection))
 
@@ -330,11 +335,11 @@ class ImagePair:
             text_file.write(self.tracking_parameters.__str__())
 
         if self.level_of_detection is not None:
-            lod_mask = self.tracking_results[self.tracking_results["movement_distance_per_year"] == 0]
+            lod_mask = self.tracking_results[self.tracking_results["is_below_LoD"]]
             lod_mask_grid = make_geocube(vector_data=lod_mask,
-                                        measurements=["movement_distance_per_year"],
+                                        measurements=["is_below_LoD"],
                                         resolution=self.tracking_parameters.distance_of_tracked_points)
-            lod_mask_grid["movement_distance_per_year"].rio.to_raster(folder_path + "/LoD_mask_"
+            lod_mask_grid["is_below_LoD"].rio.to_raster(folder_path + "/LoD_mask_"
                                                                       + str(self.image1_observation_date.year)
                                                                       + "_" + str(self.image2_observation_date.year)
                                                                       + ".tif")
@@ -357,4 +362,36 @@ class ImagePair:
                                                        kernel_size=50)
         self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
                                                        kernel_size=50)
+
+    def filter_rotation_outliers(self, rotation_threshold: float, inclusion_distance: float):
+        """
+        Removes points that have strongly deviating rotation (in comparison to their neighbours). For details see
+        DataProcessing.DataPostprocessing.filter_rotation_outliers.
+        Parameters
+        ----------
+        rotation_threshold
+        inclusion_distance
+
+        Returns
+        -------
+
+        """
+
+        self.tracking_results = filter_rotation_outliers(self.tracking_results, rotation_threshold, inclusion_distance)
+
+    def filter_velocity_outliers(self, velocity_threshold: float, inclusion_distance: float):
+        """
+        Removes points that have strongly deviating velocity (in comparison to their neighbours). For details see
+        DataProcessing.DataPostprocessing.filter_velocity_outliers.
+        Parameters
+        ----------
+        velocity_threshold
+        inclusion_distance
+
+        Returns
+        -------
+
+        """
+
+        self.tracking_results = filter_velocity_outliers(self.tracking_results, velocity_threshold, inclusion_distance)
 
