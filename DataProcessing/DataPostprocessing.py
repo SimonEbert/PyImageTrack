@@ -105,10 +105,10 @@ def filter_rotation_outliers(tracking_results: gpd.GeoDataFrame, rotation_thresh
     for i in range(len(tracking_results)):
         surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
         average_movement_bearing = np.nanmean(surrounding_points["movement_bearing_pixels"])
+        # ToDo: Calculate angular difference correctly
+        # angular_difference = np.minimum(())
         if np.abs(average_movement_bearing - tracking_results.loc[i,"movement_bearing_pixels"]) > rotation_threshold:
             tracking_results.loc[i,"is_rotation_outlier"] = True
-    tracking_results.loc[tracking_results["is_rotation_outlier"], "movement_distance_per_year"] = 0
-    tracking_results.loc[tracking_results["is_rotation_outlier"], "movement_bearing_pixels"] = np.nan
     return tracking_results
 
 
