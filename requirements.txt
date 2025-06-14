@@ -10,4 +10,4 @@ pandas==2.2.2
 tqdm==4.67.1
 geocube==0.7.1
 datetime==5.5
-
+typing_extensions==4.14.0

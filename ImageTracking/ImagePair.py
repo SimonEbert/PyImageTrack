@@ -10,21 +10,25 @@ from rasterio.coords import BoundingBox
 from shapely.geometry import box
 import numpy as np
 
+# Parameter classes
+from Parameters.TrackingParameters import TrackingParameters
+from Parameters.FilterParameters import FilterParameters
+# Alignment and Tracking functions
 from ImageTracking.TrackMovement import track_movement_lsm
-from dataloader import TrackingParameters
 from CreateGeometries.HandleGeometries import crop_images_to_intersection
 from ImageTracking.AlignImages import align_images_lsm_scarce
 from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
 from CreateGeometries.HandleGeometries import georeference_tracked_points
-from dataloader.TrackingParameters import TrackingParameters
+# Plotting
 from Plots.MakePlots import plot_movement_of_points
-from Plots.MakePlots import plot_movement_of_points_with_lod_mask
-from DataProcessing.DataPostprocessing import calculate_lod
-from DataProcessing.DataPostprocessing import filter_lod_points
+from Plots.MakePlots import plot_movement_of_points_with_valid_mask
 from Plots.MakePlots import plot_raster_and_geometry
+# DataPreProcessing
 from DataProcessing.ImagePreprocessing import equalize_adapthist_images
-from DataProcessing.DataPostprocessing import filter_rotation_outliers
-from DataProcessing.DataPostprocessing import filter_velocity_outliers
+# filter functions
+from DataProcessing.DataPostprocessing import calculate_lod_points
+from DataProcessing.DataPostprocessing import filter_lod_points
+from DataProcessing.DataPostprocessing import filter_outliers_full
 
 
 class ImagePair:
@@ -32,6 +36,7 @@ class ImagePair:
         self.images_aligned = False
         # self.mask_array = None
 
+        # Data
         self.image1_matrix = None
         self.image1_transform = None
         self.image1_observation_date = None
@@ -40,8 +45,11 @@ class ImagePair:
         self.image2_observation_date = None
         self.image_bounds = None
 
+        # Parameters
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
+        self.filter_parameters = None
 
+        # Meta-Data and results
         self.crs = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -129,23 +137,18 @@ class ImagePair:
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
-        if self.tracking_parameters.image_alignment_via_lsm:
-            [_, new_image2_matrix] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform, reference_area=reference_area,
-                                        number_of_control_points=
-                                        self.tracking_parameters.image_alignment_number_of_control_points,
-                                        cross_correlation_threshold=
-                                        self.tracking_parameters.cross_correlation_threshold))
+        [_, new_image2_matrix] = (
+            align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
+                                   image_transform=self.image1_transform, reference_area=reference_area,
+                                    number_of_control_points=
+                                    self.tracking_parameters.image_alignment_number_of_control_points,
+                                    cross_correlation_threshold=
+                                    self.tracking_parameters.cross_correlation_threshold))
 
-            self.image2_matrix = new_image2_matrix
-            self.image2_transform = self.image1_transform
+        self.image2_matrix = new_image2_matrix
+        self.image2_transform = self.image1_transform
 
-            # if self.tracking_parameters.use_4th_channel_as_data_mask:
-            #     self.image1_matrix[self.mask_array] = 0
-            #     self.image2_matrix[self.mask_array] = 0
-
-            self.images_aligned = True
+        self.images_aligned = True
 
     def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.geodataframe:
         """
@@ -230,7 +233,7 @@ class ImagePair:
         else:
             logging.warning("No results calculated yet. Plot not provided")
 
-    def plot_tracking_results_lod_mask(self) -> None:
+    def plot_tracking_results_with_valid_mask(self) -> None:
         """
         Plots the first raster image and the movement of points in a single figure. Every point that has 0 movement rate
         is shown in gray
@@ -238,11 +241,29 @@ class ImagePair:
         -------
         """
         if self.tracking_results is not None:
-            plot_movement_of_points_with_lod_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
+            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
         else:
             logging.warning("No results calculated yet. Plot not provided")
 
-    def calculate_lod(self, number_of_points: int, reference_area: gpd.GeoDataFrame) -> None:
+
+
+    def filter_outliers(self, filter_parameters: FilterParameters):
+        """
+            Filters outliers based on the filter_parameters
+            Parameters
+            ----------
+            filter_parameters: FilterParameters
+                The Parameters used for Filtering. If some of the parameters are set to None, the respective filtering
+                will not be performed
+            Returns
+            -------
+
+               """
+        print("Filtering outliers. This may take a moment.")
+        self.filter_parameters = filter_parameters
+        self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters)
+
+    def calculate_lod(self, reference_area: gpd.GeoDataFrame, filter_parameters: FilterParameters = None) -> None:
         """
         Calculates the Level of Detection of a matching between two images. For calculating the LoD a specified number
         of points are generated randomly in some reference area, which is assumed to be stable. The level of detection
@@ -251,36 +272,50 @@ class ImagePair:
         given in movement per year.
         Parameters
         ----------
-        number_of_points: int
-            Defines the number of points used to calculate the level of detection.
         reference_area: gpd.GeoDataFrame
             The stable area (no motion assumed) on which the points for calculating the level of detection are created
             randomly. Since for image alignment an evenly spaced grid is used and here, we have a random distribution of
             points, it is possible to use the same reference area for both tasks.
+        filter_parameters
         Returns
         -------
         None
         """
-        print("Starting level of detection calculation.")
-        #
+
+        # Set used filter parameters if given as a variable, also set them as correct object for ImagePair
+        if filter_parameters is None:
+            if self.filter_parameters is None:
+                return
+            else:
+                filter_parameters = self.filter_parameters
+        else:
+            self.filter_parameters = filter_parameters
+
         reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
         years_between_observations = (self.image2_observation_date - self.image1_observation_date).days // 365.25
 
-        # check if a custom level of detection value was provided with tracking parameters, if not set it to 0.5
-        if self.tracking_parameters.level_of_detection_quantile is None:
-            level_of_detection_quantile = 0.5
-            self.tracking_parameters.level_of_detection_quantile = 0.5
-        else:
-            level_of_detection_quantile = self.tracking_parameters.level_of_detection_quantile
-        self.level_of_detection_points = calculate_lod(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
-                                                image_transform=self.image1_transform, reference_area=reference_area,
-                                                number_of_reference_points=number_of_points,
-                                                tracking_parameters=self.tracking_parameters,
-                                                crs=self.crs, years_between_observations=years_between_observations)
-        self.level_of_detection = np.quantile(self.level_of_detection_points["movement_distance_per_year"],
+        # check if a LoD filter parameter is provided, if this is None, don't perform LoD calculation
+        if (filter_parameters.level_of_detection_quantile is None
+            or filter_parameters.number_of_points_for_level_of_detection is None):
+            return
+
+        level_of_detection_quantile = filter_parameters.level_of_detection_quantile
+
+        unfiltered_level_of_detection_points = calculate_lod_points(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
+                                                              image_transform=self.image1_transform, reference_area=reference_area,
+                                                              number_of_reference_points=filter_parameters.number_of_points_for_level_of_detection,
+                                                              tracking_parameters=self.tracking_parameters,
+                                                              crs=self.crs, years_between_observations=years_between_observations)
+        filtered_level_of_detection_points = unfiltered_level_of_detection_points
+        filtered_level_of_detection_points = filtered_level_of_detection_points[
+            filtered_level_of_detection_points["valid"]]
+
+        self.level_of_detection_points = unfiltered_level_of_detection_points
+
+        self.level_of_detection = np.quantile(filtered_level_of_detection_points["movement_distance_per_year"],
                                          level_of_detection_quantile)
 
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
@@ -295,7 +330,22 @@ class ImagePair:
         """
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection)
 
-    def save_full_results(self, folder_path: str) -> None:
+    def full_filter(self, reference_area, filter_parameters: FilterParameters):
+        self.filter_outliers(filter_parameters)
+        self.calculate_lod(reference_area, filter_parameters)
+        self.filter_lod_points()
+
+
+    def equalize_adapthist_images(self):
+        self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
+                                                       kernel_size=50)
+        self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
+                                                       kernel_size=50)
+
+
+
+
+    def save_full_results(self, folder_path: str, save_files: list) -> None:
         """
         Saves the full results of tracking as a geosjon and the movement bearing and rate as geotiffs in the provided
         folder. If a level of detection is present, additionally the respective LoD mask is saved. A visualization of
@@ -304,6 +354,13 @@ class ImagePair:
         ----------
         folder_path: str
             The folder where all results will be saved.
+        save_files: list
+            A list, giving the files that should be saved. Possible options are: "movement_bearing_valid_tif", "movement_bearing_full_tif",
+              "movement_rate_valid_tif", "movement_rate_full_tif",
+              "movement_rate_with_lod_points_tif", "movement_bearing_with_lod_points_tif",
+              "statistical_parameters_csv".
+              The tracking parameters and the full tracking results (as geojson) will always be saved to prevent loss of
+              data.
         Returns
         -------
         """
@@ -313,42 +370,121 @@ class ImagePair:
         self.tracking_results.to_file(folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
                                       + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
 
-        # rasterize the created file into several geotiffs with lod mask, bearing and movement distance per year
-        # srs = osr.SpatialReference()
-        # srs.ImportFromEPSG(int(self.crs.to_epsg()))
+        tracking_results_valid = self.tracking_results[self.tracking_results["valid"]]
+        results_grid_valid = make_geocube(vector_data=tracking_results_valid,
+                                          measurements=["movement_bearing_pixels", "movement_distance_per_year"],
+                                          resolution = self.tracking_parameters.distance_of_tracked_points)
 
-        results_grid = make_geocube(vector_data=self.tracking_results,
-                                    measurements=["movement_bearing_pixels", "movement_distance_per_year"],
-                                    resolution = self.tracking_parameters.distance_of_tracked_points)
-        results_grid["movement_bearing_pixels"].rio.to_raster(folder_path + "/movement_bearing_"
-                                                              + str(self.image1_observation_date.year)
-                                                              + "_" + str(self.image2_observation_date.year)
-                                                              + ".tif")
-        results_grid["movement_distance_per_year"].rio.to_raster(folder_path + "/movement_rate_"
-                                                                 + str(self.image1_observation_date.year)
-                                                                 + "_" + str(self.image2_observation_date.year)
-                                                                 + ".tif")
+        is_outlier = (self.tracking_results["is_bearing_difference_outlier"]
+            | self.tracking_results["is_bearing_standard_deviation_outlier"]
+            | self.tracking_results["is_movement_rate_difference_outlier"]
+            | self.tracking_results["is_movement_rate_standard_deviation_outlier"]
+        )
+        tracking_results_without_outliers = self.tracking_results[~is_outlier]
+        results_grid_filtered = make_geocube(vector_data=tracking_results_without_outliers,
+                                         measurements=["movement_bearing_pixels", "movement_distance_per_year"],
+                                         resolution = self.tracking_parameters.distance_of_tracked_points)
 
+        if "movement_bearing_valid_tif" in save_files:
+            results_grid_valid["movement_bearing_pixels"].rio.to_raster(folder_path + "/movement_bearing_valid_"
+                                                                  + str(self.image1_observation_date.year)
+                                                                  + "_" + str(self.image2_observation_date.year)
+                                                                  + ".tif")
+        if "movement_rate_valid_tif" in save_files:
+            results_grid_valid["movement_distance_per_year"].rio.to_raster(folder_path + "/movement_rate_valid_"
+                                                                     + str(self.image1_observation_date.year)
+                                                                     + "_" + str(self.image2_observation_date.year)
+                                                                     + ".tif")
 
-        with (open(folder_path + "/tracking_parameters.txt", "w")
+        if "movement_bearing_outlier_filtered_tif" in save_files:
+            results_grid_filtered["movement_bearing_pixels"].rio.to_raster(
+                folder_path +"/movement_bearing_outlier_filtered_" + str(self.image1_observation_date.year)
+                                                                   + "_" + str(self.image2_observation_date.year)
+                                                                   + ".tif")
+
+        if "movement_rate_outlier_filtered_tif" in save_files:
+            results_grid_filtered["movement_bearing_pixels"].rio.to_raster(
+                folder_path + "/movement_bearing_outlier_filtered_" + str(self.image1_observation_date.year)
+                + "_" + str(self.image2_observation_date.year)
+                + ".tif")
+
+        if "invalid_mask_tif" in save_files:
+            invalid_mask = self.tracking_results.loc[~self.tracking_results["valid"]]
+            invalid_mask = invalid_mask.copy()
+            invalid_mask.loc[:, "valid_int"] = invalid_mask["valid"].astype(int)
+            invalid_mask_grid = make_geocube(vector_data=invalid_mask,
+                                         measurements=["valid_int"],
+                                         resolution=self.tracking_parameters.distance_of_tracked_points)
+            invalid_mask_grid["valid_int"].rio.to_raster(folder_path + "/Invalid_mask"
+                                                        + str(self.image1_observation_date.year)
+                                                        + "_" + str(self.image2_observation_date.year)
+                                                        + ".tif")
+
+        if "statistical_parameters_txt" in save_files:
+            total_number_of_points = len(self.tracking_results)
+            number_of_points_below_lod = len(self.tracking_results[self.tracking_results["is_below_LoD"]])
+            number_of_outliers = len(self.tracking_results[is_outlier])
+            number_of_valid_lod_points = len(self.level_of_detection_points[self.level_of_detection_points["valid"]])
+            total_number_of_lod_points = len(self.level_of_detection_points)
+            with open(folder_path + "/statistical_results.txt", "w") as statistics_file:
+                statistics_file.write("Total number of points: " + str(total_number_of_points) + "\n" +
+                           "thereof\n\tbelow LoD: " + str(number_of_points_below_lod) + " (" + str(np.round(number_of_points_below_lod
+                                / total_number_of_points * 100, decimals=2)) + "%)\n" +
+                           "\toutliers: " + str(number_of_outliers) + "(" + str(np.round(number_of_outliers / total_number_of_points * 100, decimals=2))
+                           + "%)\n"
+                           + "\tthereof\n\t\t" + str(len(self.tracking_results[self.tracking_results["is_bearing_difference_outlier"]])) + " bearing difference outliers\n" +
+                           "\t\t" + str(len(self.tracking_results[self.tracking_results["is_bearing_standard_deviation_outlier"]])) + " bearing standard deviation outliers\n" +
+                           "\t\t" + str(len(self.tracking_results[self.tracking_results["is_movement_rate_difference_outlier"]])) + " movement rate difference outliers\n" +
+                           "\t\t" + str(len(self.tracking_results[self.tracking_results["is_movement_rate_standard_deviation_outlier"]])) + " movement rate standard deviation outliers\n" +
+                           "Valid points: " + str(len(tracking_results_valid)) + "(" + str(np.round(len(tracking_results_valid) / total_number_of_points * 100, decimals=2)) + "%)\n"
+                           + "Movement rate with points below LoD:\n" +
+                           "\tMean: " + str(np.nanmean(tracking_results_without_outliers["movement_distance_per_year"])) + "\n" +
+                           "\tMedian: " + str(np.nanmedian(tracking_results_without_outliers["movement_distance_per_year"])) + "\n" +
+                           "\tStandard deviation: " + str(np.nanstd(tracking_results_without_outliers["movement_distance_per_year"])) + "\n" +
+                           "\tQ90: " + str(np.nanquantile(tracking_results_without_outliers["movement_distance_per_year"],0.9)) + "\n" +
+                           "\tQ99: " + str(np.nanquantile(tracking_results_without_outliers["movement_distance_per_year"],0.99)) + "\n" +
+                           "Movement rate without points below LoD:\n" +
+                           "\tMean: " + str(np.nanmean(tracking_results_valid["movement_distance_per_year"])) + "\n" +
+                           "\tMedian: " + str(np.nanmedian(tracking_results_valid["movement_distance_per_year"])) + "\n" +
+                           "\tStandard deviation: " + str(np.nanstd(tracking_results_valid["movement_distance_per_year"])) + "\n" +
+                           "\tQ90: " + str(np.nanquantile(tracking_results_valid["movement_distance_per_year"],0.9)) + "\n" +
+                           "\tQ99: " + str(np.nanquantile(tracking_results_valid["movement_distance_per_year"],0.99)) + "\n" +
+                           "Movement rate of LoD points:\n" +
+                           "\tMean: " + str(np.nanmean(self.level_of_detection_points["movement_distance_per_year"])) + "\n" +
+                           "\tMedian: " + str(np.nanmedian(self.level_of_detection_points["movement_distance_per_year"])) + "\n" +
+                           "\tStandard deviation: " + str(np.nanstd(self.level_of_detection_points["movement_distance_per_year"])) + "\n" +
+                           "\tQ90: " + str(np.nanquantile(self.level_of_detection_points["movement_distance_per_year"], 0.9)) + "\n" +
+                           "\tQ99: " + str(np.nanquantile(self.level_of_detection_points["movement_distance_per_year"], 0.99)) + "\n" +
+                           "\tUsed points: " + str(number_of_valid_lod_points) + " points\n"
+                           )
+
+        with (open(folder_path + "/parameters.txt", "w")
               as text_file):
             text_file.write(self.tracking_parameters.__str__())
 
-        if self.level_of_detection is not None:
-            lod_mask = self.tracking_results[self.tracking_results["is_below_LoD"]]
-            lod_mask_grid = make_geocube(vector_data=lod_mask,
-                                        measurements=["is_below_LoD"],
-                                        resolution=self.tracking_parameters.distance_of_tracked_points)
-            lod_mask_grid["is_below_LoD"].rio.to_raster(folder_path + "/LoD_mask_"
-                                                                      + str(self.image1_observation_date.year)
-                                                                      + "_" + str(self.image2_observation_date.year)
-                                                                      + ".tif")
+        if self.filter_parameters is not None:
+            with (open(folder_path + "/parameters.txt", "a") as text_file):
+                text_file.write(self.filter_parameters.__str__())
 
-            plot_movement_of_points_with_lod_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
-                                                  save_path=folder_path + "/tracking_results_" +
+
+        if self.level_of_detection is not None:
+            if "lod_mask_tif" in save_files:
+                lod_mask = self.tracking_results.loc[self.tracking_results["is_below_LoD"]]
+                lod_mask = lod_mask.copy()
+                lod_mask.loc[:, "is_below_LoD_int"] = lod_mask["is_below_LoD"].astype(int)
+                lod_mask_grid = make_geocube(vector_data=lod_mask,
+                                            measurements=["is_below_LoD_int"],
+                                            resolution=self.tracking_parameters.distance_of_tracked_points)
+                lod_mask_grid["is_below_LoD_int"].rio.to_raster(folder_path + "/LoD_mask_"
+                                                                          + str(self.image1_observation_date.year)
+                                                                          + "_" + str(self.image2_observation_date.year)
+                                                                          + ".tif")
+
+            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
+                                                    save_path=folder_path + "/tracking_results_" +
                                                   str(self.image1_observation_date.year) + "_" +
                                                   str(self.image2_observation_date.year) + ".jpg")
-            with (open(folder_path + "/tracking_parameters.txt", "a")
+            with (open(folder_path + "/parameters.txt", "a")
                   as text_file):
                 text_file.write("Level of Detection: " + str(self.level_of_detection) + "\n")
         else:
@@ -356,42 +492,3 @@ class ImagePair:
                                     save_path=folder_path + "/tracking_results_" +
                                               str(self.image1_observation_date.year) + "_" +
                                               str(self.image2_observation_date.year) + ".jpg")
-
-    def equalize_adapthist_images(self):
-        self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
-                                                       kernel_size=50)
-        self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
-                                                       kernel_size=50)
-
-    def filter_rotation_outliers(self, rotation_threshold: float, inclusion_distance: float):
-        """
-        Removes points that have strongly deviating rotation (in comparison to their neighbours). For details see
-        DataProcessing.DataPostprocessing.filter_rotation_outliers.
-        Parameters
-        ----------
-        rotation_threshold
-        inclusion_distance
-
-        Returns
-        -------
-
-        """
-
-        self.tracking_results = filter_rotation_outliers(self.tracking_results, rotation_threshold, inclusion_distance)
-
-    def filter_velocity_outliers(self, velocity_threshold: float, inclusion_distance: float):
-        """
-        Removes points that have strongly deviating velocity (in comparison to their neighbours). For details see
-        DataProcessing.DataPostprocessing.filter_velocity_outliers.
-        Parameters
-        ----------
-        velocity_threshold
-        inclusion_distance
-
-        Returns
-        -------
-
-        """
-
-        self.tracking_results = filter_velocity_outliers(self.tracking_results, velocity_threshold, inclusion_distance)
-

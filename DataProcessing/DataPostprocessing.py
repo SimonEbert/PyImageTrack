@@ -5,14 +5,16 @@ import matplotlib.pyplot as plt
 from ImageTracking import TrackMovement
 from CreateGeometries.HandleGeometries import georeference_tracked_points
 from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
-from dataloader.TrackingParameters import TrackingParameters
+from Parameters.TrackingParameters import TrackingParameters
 from Plots.MakePlots import plot_movement_of_points
 from Plots.MakePlots import plot_raster_and_geometry
+from CreateGeometries.HandleGeometries import circular_std_deg
+from Parameters.FilterParameters import FilterParameters
 
 
-def calculate_lod(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
-                  reference_area: gpd.GeoDataFrame, number_of_reference_points,
-                  tracking_parameters: TrackingParameters, crs, years_between_observations) -> gpd.GeoDataFrame:
+def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
+                         reference_area: gpd.GeoDataFrame, number_of_reference_points,
+                         tracking_parameters: TrackingParameters, crs, years_between_observations) -> gpd.GeoDataFrame:
     """
 
     Parameters
@@ -75,11 +77,12 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
     """
     tracking_results["is_below_LoD"] = False
     tracking_results.loc[tracking_results["movement_distance_per_year"] < level_of_detection, "is_below_LoD"] = True
+    tracking_results.loc[tracking_results["is_below_LoD"], "valid"] = False
     return tracking_results
 
 
-def filter_rotation_outliers(tracking_results: gpd.GeoDataFrame, rotation_threshold: float, inclusion_distance: float)\
-        -> gpd.GeoDataFrame:
+def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFrame,
+                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
     """
     Filters rotation outliers from the tracking results dataframe. All points that divert more than the given threshold
     (in degrees) from the average movement direction of surrounding points will be removed. The distance up to which
@@ -91,57 +94,161 @@ def filter_rotation_outliers(tracking_results: gpd.GeoDataFrame, rotation_thresh
     ----------
     tracking_results: gpd.GeoDataFrame
         A GeoDataFrame as obtained from an image tracking.
-    rotation_threshold: float
-        The threshold up to which deviations from the average are considered non-outliers (given in degrees).
-    inclusion_distance: float
-        The distance up to which points are being taken into account for the average movement direction calculation (
-        given in terms of the unit of the crs)
+    filter_parameters: FilterParameters
+        An instance of FilterParameters containing the parameters used to filter the results. If the parameters that are
+        relevant for this sort of filtering are set to None, no filtering is performed. The value of irrelevant filter
+        parameters is ignored.
     Returns
     -------
     tracking_results: GeoDataFrame
         The changed GeoDataFrame
     """
-    tracking_results["is_rotation_outlier"] = False
+
+    rotation_threshold = filter_parameters.difference_movement_bearing_threshold
+    inclusion_distance = filter_parameters.difference_movement_bearing_moving_window_size
+    # check if one of the filter parameters is None and perform no filtering in this case
+    if rotation_threshold is None or inclusion_distance is None:
+        return tracking_results
+
+    tracking_results["is_bearing_difference_outlier"] = False
     for i in range(len(tracking_results)):
         surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
         average_movement_bearing = np.nanmean(surrounding_points["movement_bearing_pixels"])
-        # ToDo: Calculate angular difference correctly
-        # angular_difference = np.minimum(())
-        if np.abs(average_movement_bearing - tracking_results.loc[i,"movement_bearing_pixels"]) > rotation_threshold:
-            tracking_results.loc[i,"is_rotation_outlier"] = True
+
+        difference = abs(average_movement_bearing - tracking_results.loc[i, "movement_bearing_pixels"]) % 360
+        angular_difference = min(difference, 360 - difference)
+        if angular_difference > rotation_threshold:
+            tracking_results.loc[i,"is_bearing_difference_outlier"] = True
+            tracking_results.loc[i, "valid"] = False
     return tracking_results
 
-
-def filter_velocity_outliers(tracking_results: gpd.GeoDataFrame, velocity_threshold: float, inclusion_distance: float)\
-        -> gpd.GeoDataFrame:
+def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.GeoDataFrame,
+                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
     """
-    Filters velocity outliers from the tracking results dataframe. All points that divert more than the given threshold
-    (given in the unit of "movement_distance_per_year") from the average velocity of surrounding points will be removed.
-    The distance up to which surrounding points are being considered for the calculation of the average velocity can be
-    specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the average
-    velocity all points (also those that are being removed as outliers) are being taken into account. It is therefore
-    advisable to use an inclusion distance that is not too small.
+    Filters rotation outliers from the tracking results dataframe. All points that have neighbouring points such that
+    the standard deviation of the movement bearing exceeds the given threshold (specified in filter_parameters), will be
+    removed. The distance up to which surrounding points are being considered for the calculation of the average
+    movement direction can be specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the
+    calculation of the average direction all points (also those that are being removed as outliers) are being taken into
+    account. It is therefore advisable to use a moving window size that is not too small.
     Parameters
     ----------
     tracking_results: gpd.GeoDataFrame
         A GeoDataFrame as obtained from an image tracking.
-    velocity_threshold: float
-        The threshold up to which deviations from the average are considered non-outliers (given in the unit of
-        "movement_distance_per_year").
-    inclusion_distance: float
-        The distance up to which points are being taken into account for the average velocity calculation (given in
-        terms of the unit of the crs)
+    filter_parameters: FilterParameters
+        An instance of FilterParameters containing the parameters used to filter the results. If the parameters that are
+        relevant for this sort of filtering are set to None, no filtering is performed. The value of irrelevant filter
+        parameters is ignored.
     Returns
     -------
     tracking_results: GeoDataFrame
         The changed GeoDataFrame
     """
-    tracking_results["is_velocity_outlier"] = False
+
+    standard_deviation_threshold = filter_parameters.standard_deviation_movement_bearing_threshold
+    inclusion_distance = filter_parameters.standard_deviation_movement_bearing_moving_window_size
+    # check if one of the filter parameters is None and perform no filtering in this case
+    if standard_deviation_threshold is None or inclusion_distance is None:
+        return tracking_results
+
+    tracking_results["is_bearing_standard_deviation_outlier"] = False
     for i in range(len(tracking_results)):
         surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
-        average_velocity = np.nanmean(surrounding_points["movement_distance_per_year"])
-        if np.abs(average_velocity - tracking_results.loc[i,"movement_distance_per_year"]) > velocity_threshold:
-            tracking_results.loc[i,"is_velocity_outlier"] = True
-    tracking_results.loc[tracking_results["is_velocity_outlier"], "movement_distance_per_year"] = 0
-    tracking_results.loc[tracking_results["is_velocity_outlier"], "movement_bearing_pixels"] = np.nan
+        movement_bearings = surrounding_points["movement_bearing_pixels"]
+        valid_movement_bearings = movement_bearings[~np.isnan(movement_bearings)]
+        standard_deviation = circular_std_deg(valid_movement_bearings)
+        if standard_deviation > standard_deviation_threshold:
+            tracking_results.loc[i,"is_bearing_standard_deviation_outlier"] = True
+            tracking_results.loc[i, "valid"] = False
     return tracking_results
+
+
+def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
+                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+    """
+    Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
+     average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
+    distance up to which surrounding points are being considered for the calculation of the average movement rate can be
+    specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the average
+    movement rate all points (also those that are being removed as outliers) are being taken into account. It is
+    therefore advisable to use a moving window size that is not too small.
+    Parameters
+    ----------
+    tracking_results: gpd.GeoDataFrame
+        A GeoDataFrame as obtained from an image tracking.
+    filter_parameters: FilterParameters
+        An instance of FilterParameters containing the parameters used to filter the results. If the parameters that are
+        relevant for this sort of filtering are set to None, no filtering is performed. The value of irrelevant filter
+        parameters is ignored.
+    Returns
+    -------
+    tracking_results: GeoDataFrame
+        The changed GeoDataFrame
+    """
+
+    movement_rate_threshold = filter_parameters.difference_movement_rate_threshold
+    inclusion_distance = filter_parameters.difference_movement_rate_moving_window_size
+    # check if one of the filter parameters is None and perform no filtering in this case
+    if movement_rate_threshold is None or inclusion_distance is None:
+        return tracking_results
+
+    tracking_results["is_movement_rate_difference_outlier"] = False
+    for i in range(len(tracking_results)):
+        surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
+        average_movement_rate = np.nanmean(surrounding_points["movement_distance_per_year"])
+        if np.abs(average_movement_rate - tracking_results.loc[i,"movement_distance_per_year"]) > movement_rate_threshold:
+            tracking_results.loc[i,"is_movement_rate_difference_outlier"] = True
+            tracking_results.loc[i, "valid"] = False
+    return tracking_results
+
+def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDataFrame,
+                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+    """
+    Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
+     average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
+    distance up to which surrounding points are being considered for the calculation of the average movement rate can be
+    specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the average
+    movement rate all points (also those that are being removed as outliers) are being taken into account. It is
+    therefore advisable to use a moving window size that is not too small.
+    Parameters
+    ----------
+    tracking_results: gpd.GeoDataFrame
+        A GeoDataFrame as obtained from an image tracking.
+    filter_parameters: FilterParameters
+        An instance of FilterParameters containing the parameters used to filter the results. If the parameters that are
+        relevant for this sort of filtering are set to None, no filtering is performed. The value of irrelevant filter
+        parameters is ignored.
+    Returns
+    -------
+    tracking_results: GeoDataFrame
+        The changed GeoDataFrame
+    """
+
+    movement_rate_threshold = filter_parameters.standard_deviation_movement_rate_threshold
+    inclusion_distance = filter_parameters.standard_deviation_movement_rate_moving_window_size
+    # check if one of the filter parameters is None and perform no filtering in this case
+    if movement_rate_threshold is None or inclusion_distance is None:
+        return tracking_results
+
+    tracking_results["is_movement_rate_standard_deviation_outlier"] = False
+    for i in range(len(tracking_results)):
+        surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
+        standard_deviation_movement_rate = np.nanstd(surrounding_points["movement_distance_per_year"])
+        if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i,"movement_distance_per_year"]) >
+                movement_rate_threshold):
+            tracking_results.loc[i,"is_movement_rate_standard_deviation_outlier"] = True
+            tracking_results.loc[i, "valid"] = False
+    return tracking_results
+
+
+def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+
+    filtered_tracking_results = filter_outliers_movement_bearing_difference(tracking_results, filter_parameters)
+    filtered_tracking_results = filter_outliers_movement_bearing_standard_deviation(
+        filtered_tracking_results, filter_parameters)
+    filtered_tracking_results = filter_outliers_movement_rate_difference(
+        filtered_tracking_results, filter_parameters)
+    filtered_tracking_results = filter_outliers_movement_rate_standard_deviation(
+        filtered_tracking_results, filter_parameters)
+    return filtered_tracking_results
+

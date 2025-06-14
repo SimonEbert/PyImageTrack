@@ -36,7 +36,7 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig = None, ax = None,
-                            save_path: str = None):
+                            save_path: str = None, show_arrows: bool = True):
     # ToDo: Change size of the single points for a smooth image regardless of point grid resolution
     
     """
@@ -95,18 +95,19 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
     # Arrow plotting
-    for row in sorted(list(set(point_movement.loc[:, "row"])))[::8]:
-        for column in sorted(list(set(point_movement.loc[:, "column"])))[::8]:
+    if show_arrows:
+        for row in sorted(list(set(point_movement.loc[:, "row"])))[::8]:
+            for column in sorted(list(set(point_movement.loc[:, "column"])))[::8]:
 
-            arrow_point = point_movement.loc[(point_movement['row'] == row) & (point_movement['column'] == column)]
-            if not arrow_point.empty:
-                arrow_point = arrow_point.iloc[0]
-                if arrow_point["movement_distance_per_year"] == 0:
-                    continue
-                ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
-                         arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
-                         -arrow_point["movement_row_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
-                         head_width=10, head_length=10, color="black", alpha=1)
+                arrow_point = point_movement.loc[(point_movement['row'] == row) & (point_movement['column'] == column)]
+                if not arrow_point.empty:
+                    arrow_point = arrow_point.iloc[0]
+                    if arrow_point["movement_distance_per_year"] == 0:
+                        continue
+                    ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
+                             arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
+                             -arrow_point["movement_row_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
+                             head_width=10, head_length=10, color="black", alpha=1)
     plt.title("Movement velocity in " + point_movement.crs.axis_info[0].unit_name + " per year")
 
     if show_figure:
@@ -115,8 +116,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         fig.savefig(save_path, bbox_inches='tight')
 
 
-def plot_movement_of_points_with_lod_mask(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
-                                          save_path: str = None):
+def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
+                                            save_path: str = None):
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
     colour scale, while the movement direction is shown with arrows for selected pixels.
@@ -139,10 +140,11 @@ def plot_movement_of_points_with_lod_mask(raster_matrix: np.ndarray, raster_tran
     None
     """
     fig, ax = plt.subplots(dpi=200)
-    point_movement_valid = point_movement[~(point_movement["is_velocity_outlier"] | point_movement["is_below_LoD"] | point_movement["is_rotation_outlier"])]
-    point_movement_invalid = point_movement[point_movement["is_velocity_outlier"]  | point_movement["is_below_LoD"] | point_movement["is_rotation_outlier"]]
+    point_movement_valid = point_movement[point_movement["valid"]]
+    point_movement_invalid = point_movement[~point_movement["valid"]]
 
-    plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray", fig=fig, ax=ax)
+    plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray",
+                            show_arrows=False, fig=fig, ax=ax)
     plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None)
 
     if save_path is None:

@@ -231,4 +231,26 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
     georeferenced_tracked_pixels["movement_distance_per_year"] = (georeferenced_tracked_pixels["movement_distance"]
                                                                   / years_between_observations)
 
+    georeferenced_tracked_pixels["valid"] = True
+    georeferenced_tracked_pixels.loc[
+        np.isnan(georeferenced_tracked_pixels["movement_distance_per_year"]),
+        "valid"] = False
+
     return georeferenced_tracked_pixels
+
+
+def circular_std_deg(angles_deg):
+    # Convert to radians
+    angles_rad = np.deg2rad(angles_deg)
+
+    # Compute mean resultant vector
+    sin_sum = np.sum(np.sin(angles_rad))
+    cos_sum = np.sum(np.cos(angles_rad))
+    R = np.sqrt(sin_sum ** 2 + cos_sum ** 2) / len(angles_rad)
+
+    # Circular standard deviation in radians
+    circ_std_rad = np.sqrt(-2 * np.log(R))
+
+    # Convert back to degrees
+    circ_std_deg = np.rad2deg(circ_std_rad)
+    return circ_std_deg
