@@ -6,7 +6,7 @@ from Plots.MakePlots import plot_raster_and_geometry
 from Parameters.FilterParameters import FilterParameters
 
 # Set parameters
-number_of_control_points = 200
+number_of_control_points = 2000
 image_bands = 0
 control_tracking_area_size = 60
 control_cell_size = 40
