@@ -10,7 +10,7 @@ number_of_control_points = 200
 image_bands = 0
 control_tracking_area_size = 60
 control_cell_size = 40
-distance_of_tracked_points = 50
+distance_of_tracked_points = 5
 movement_tracking_area_size = 60
 movement_cell_size = 20
 cross_correlation_threshold = 0.75
@@ -29,7 +29,7 @@ save_files = ["movement_bearing_valid_tif", "movement_bearing_outlier_filtered_t
 # points
 filter_parameters = FilterParameters({
     "level_of_detection_quantile": 0.9,
-    "number_of_points_for_level_of_detection": 1000,
+    "number_of_points_for_level_of_detection": 100,
     # Filters points, whose movement bearings deviate more than the given threshold from the movementt rate of surrounding points
     "difference_movement_bearing_threshold": 45, # in degrees
     "difference_movement_bearing_moving_window_size": 50, # in units of the used crs
