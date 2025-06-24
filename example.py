@@ -5,15 +5,19 @@ from ImageTracking.ImagePair import ImagePair
 from Plots.MakePlots import plot_raster_and_geometry
 from Parameters.FilterParameters import FilterParameters
 
+
+
+
 # Set parameters
 number_of_control_points = 2000
 image_bands = 0
-control_tracking_area_size = 60
-control_cell_size = 40
+control_tracking_area_size = 80
+control_cell_size = 60
 distance_of_tracked_points = 5
 movement_tracking_area_size = 60
 movement_cell_size = 20
-cross_correlation_threshold = 0.75
+cross_correlation_threshold_alignment = 0.85
+cross_correlation_threshold_movement = 0.85
 
 
 # === SAVE OPTIONS ===
@@ -29,19 +33,19 @@ save_files = ["movement_bearing_valid_tif", "movement_bearing_outlier_filtered_t
 # points
 filter_parameters = FilterParameters({
     "level_of_detection_quantile": 0.9,
-    "number_of_points_for_level_of_detection": 100,
+    "number_of_points_for_level_of_detection": 1000,
     # Filters points, whose movement bearings deviate more than the given threshold from the movementt rate of surrounding points
-    "difference_movement_bearing_threshold": 45, # in degrees
-    "difference_movement_bearing_moving_window_size": 50, # in units of the used crs
+    "difference_movement_bearing_threshold": 60, # in degrees
+    "difference_movement_bearing_moving_window_size":  7.5, # in units of the used crs
     # Filters points, where the standard deviation of movement bearing of neighbouring points exceeds the given threshold
-    "standard_deviation_movement_bearing_threshold": 30, # in degrees,
-    "standard_deviation_movement_bearing_moving_window_size": 30, # in units of the used crs
+    "standard_deviation_movement_bearing_threshold": 90, # in degrees,
+    "standard_deviation_movement_bearing_moving_window_size":  50, # in units of the used crs
     # Filters points whose movement rates deviate more than the given threshold from the movement rate of surrounding points
-    "difference_movement_rate_threshold": 1, # in units of the used crs / year
-    "difference_movement_rate_moving_window_size": 50, # in units of the used crs
+    "difference_movement_rate_threshold": 0.2, # in units of the used crs / year
+    "difference_movement_rate_moving_window_size":  12.5, # in units of the used crs
     # Filters points whose standard deviation of movement rates of neighbouring points exceeds the given threshold
-    "standard_deviation_movement_rate_threshold": 1, # in units of the used crs / year
-    "standard_deviation_movement_rate_moving_window_size": 30 # in units of the used crs
+    "standard_deviation_movement_rate_threshold": 1.2, # in units of the used crs / year
+    "standard_deviation_movement_rate_moving_window_size": 50 # in units of the used crs
 })
 
 
@@ -56,7 +60,8 @@ Kaiserberg_pair_19_21 = ImagePair(
                     "distance_of_tracked_points": distance_of_tracked_points,
                     "movement_tracking_area_size": movement_tracking_area_size,
                     "movement_cell_size": movement_cell_size,
-                    "cross_correlation_threshold": cross_correlation_threshold})
+                    "cross_correlation_threshold_alignment": cross_correlation_threshold_alignment,
+                    "cross_correlation_threshold_movement": cross_correlation_threshold_movement})
 
 Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/Orthophotos_Kaiserberg_historic/1953_ortho_1m_RG_rend_bw.tif",
                                             observation_date_1="02-09-1953",
@@ -66,14 +71,16 @@ Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/Orthophotos
 
 
 
-
 polygon_outside_RG = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_outside_rock_glacier_adjusted.shp")
 polygon_outside_RG = polygon_outside_RG.to_crs(crs=31254)
 
 rock_glacier_polygon = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_inside_rock_glacier.shp")
 rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=31254)
 
-Kaiserberg_pair_19_21.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
+# Kaiserberg_pair_19_21.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
+
+Kaiserberg_pair_19_21.load_results("../Test_results/full_results/tracking_results_1953_1970.geojson", reference_area=polygon_outside_RG)
+
 
 Kaiserberg_pair_19_21.full_filter(reference_area=polygon_outside_RG, filter_parameters=filter_parameters)
 

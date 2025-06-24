@@ -303,6 +303,7 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
 
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
                        movement_cell_size: int = 50, movement_tracking_area_size: int = 60,
+                       cross_correlation_threshold: int = 0.8,
                        save_columns: list[str] = None) -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)
@@ -329,6 +330,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         The size of the area in pixels, where fitting image sections are being searched. This parameter determines the
         maximum detectable movement rate and influences computation speed. This value must be higher than the parameter
         cell_size.
+    cross_correlation_threshold: int = 0.8
+        The threshold below which trackings will not be accepted.
     save_columns: list[str] = None
         The columns to be saved to the results dataframe. Default is None, which will save "movement_row_direction",
         "movement_column_direction", "movement_distance_pixels", and "movement_bearing_pixels".
@@ -388,7 +391,13 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         tracked_pixels['movement_bearing_pixels'] = np.degrees(tracked_pixels['movement_bearing_pixels'])
     if "transformation_matrix" in save_columns:
         tracked_pixels["transformation_matrix"] = [results.transformation_matrix for results in tracking_results]
-    if "correlation_coefficient" in save_columns:
-        tracked_pixels["correlation_coefficient"] = [results.cross_correlation_coefficient for results in tracking_results]
-    return tracked_pixels
+
+    tracked_pixels["correlation_coefficient"] = [results.cross_correlation_coefficient for results in tracking_results]
+
+    tracked_pixels_above_cc_threshold = tracked_pixels[
+        tracked_pixels["correlation_coefficient"] > cross_correlation_threshold]
+
+    if "correlation_coefficient" not in save_columns:
+        tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
+    return tracked_pixels_above_cc_threshold
 

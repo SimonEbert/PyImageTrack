@@ -186,7 +186,7 @@ class ImagePair:
                                     number_of_control_points=
                                     self.tracking_parameters.image_alignment_number_of_control_points,
                                     cross_correlation_threshold=
-                                    self.tracking_parameters.cross_correlation_threshold))
+                                    self.tracking_parameters.cross_correlation_threshold_alignment))
 
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
@@ -223,6 +223,7 @@ class ImagePair:
                                             movement_cell_size=self.tracking_parameters.movement_cell_size,
                                             movement_tracking_area_size=
                                             self.tracking_parameters.movement_tracking_area_size,
+                                            cross_correlation_threshold=self.tracking_parameters.cross_correlation_threshold_movement
                                             )
         # calculate the years between observations from the two given observation dates
         years_between_observations = (self.image2_observation_date - self.image1_observation_date).days // 365.25
@@ -231,6 +232,7 @@ class ImagePair:
                                                                    crs=tracking_area.crs,
                                                                    years_between_observations=years_between_observations
                                                                    )
+
         return georeferenced_tracked_points
 
     def perform_point_tracking(self, reference_area: gpd.GeoDataFrame, tracking_area: gpd.GeoDataFrame) -> None:
@@ -551,3 +553,12 @@ class ImagePair:
                                     save_path=folder_path + "/tracking_results_" +
                                               str(self.image1_observation_date.year) + "_" +
                                               str(self.image2_observation_date.year) + ".jpg")
+
+
+    def load_results(self, file_path, reference_area):
+        saved_tracking_results = gpd.read_file(file_path)
+        saved_tracking_results = saved_tracking_results.loc[:, ["row", "column", "movement_row_direction", "movement_column_direction",
+                        "movement_distance_pixels", "movement_bearing_pixels", "movement_distance", "movement_distance_per_year", "geometry"]]
+        saved_tracking_results["valid"] = True
+        self.align_images(reference_area)
+        self.tracking_results = saved_tracking_results

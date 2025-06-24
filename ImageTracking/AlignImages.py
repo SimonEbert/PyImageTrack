@@ -41,7 +41,7 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracking_area_size: int = 60
         The size of the image sections in pixels which are used as a search area during the tracking. Must be greater
         than the parameter cell_size. See track_movement for details.
-    cross_correlation_threshold: float = 0.95
+    cross_correlation_threshold: float = 0.8
         Threshold for which points will be used for aligning the image. Only cells that match with a correlation
         coefficient higher than this value will be considered.
     Returns
@@ -61,14 +61,12 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                 points_to_be_tracked=reference_area_point_grid,
                                                 movement_cell_size=cell_size,
                                                 movement_tracking_area_size=tracking_area_size,
+                                                cross_correlation_threshold=cross_correlation_threshold,
                                                 save_columns=["movement_row_direction",
                                                               "movement_column_direction",
-                                                              "movement_distance_pixels",
-                                                              "correlation_coefficient"]
+                                                              "movement_distance_pixels"]
                                                 )
-    tracked_control_pixels_valid = tracked_control_pixels[
-        tracked_control_pixels["correlation_coefficient"] > cross_correlation_threshold]
-    tracked_control_pixels_valid = tracked_control_pixels_valid[tracked_control_pixels_valid["movement_row_direction"].notna()]
+    tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
     if len(tracked_control_pixels_valid) == 0:
         raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
                          "threshold. Cross-correlation values were " + str(

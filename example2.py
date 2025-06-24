@@ -31,7 +31,9 @@ control_cell_size = 40
 distance_of_tracked_points = 5
 movement_tracking_area_size = 60 # tracking size = movement cell size plus surrounding area in all 4 directions
 movement_cell_size = 20
-cross_correlation_threshold = 0.85
+cross_correlation_threshold_alignment = 0.85
+cross_correlation_threshold_movement = 0.7
+
 
 # === FILTER PARAMETERS ===
 # FILTERING OPTIONS: For preventing the use of a specific filter, set the respective values to None
@@ -56,7 +58,7 @@ filter_parameters = FilterParameters({
 
 
 
-param_string = f"MTA{movement_tracking_area_size}_MC{movement_cell_size}_LoDq{filter_parameters.level_of_detection_quantile}_CC{cross_correlation_threshold}" # sets name for output subfolder
+param_string = f"MTA{movement_tracking_area_size}_MC{movement_cell_size}_LoDq{filter_parameters.level_of_detection_quantile}_CC{cross_correlation_threshold_movement}" # sets name for output subfolder
 
 # read csv for dates
 date_df = pd.read_csv(date_csv_path)
@@ -120,7 +122,8 @@ for year1, year2 in year_pairs:
             "distance_of_tracked_points": distance_of_tracked_points,
             "movement_tracking_area_size": movement_tracking_area_size,
             "movement_cell_size": movement_cell_size,
-            "cross_correlation_threshold": cross_correlation_threshold})
+            "cross_correlation_threshold_alignment": cross_correlation_threshold_alignment,
+            "cross_correlation_threshold_movement": cross_correlation_threshold_movement})
 
         image_pair.load_images_from_file(
             filename_1=filename_1,

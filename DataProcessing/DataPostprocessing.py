@@ -38,14 +38,12 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
         image1_matrix=image1_matrix, image2_matrix=image2_matrix,image_transform=image_transform,
         points_to_be_tracked=points, movement_cell_size=tracking_parameters.movement_cell_size,
         movement_tracking_area_size=tracking_parameters.movement_tracking_area_size,
+        cross_correlation_threshold=tracking_parameters.cross_correlation_threshold_movement,
         save_columns=["movement_row_direction",
                       "movement_column_direction",
                       "movement_distance_pixels",
-                      "movement_bearing_pixels",
-                      "correlation_coefficient"]
+                      "movement_bearing_pixels"]
     )
-    tracked_points = tracked_points[
-        tracked_points["correlation_coefficient"] > tracking_parameters.cross_correlation_threshold]
     tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
     if len(tracked_control_pixels_valid) == 0:
@@ -109,10 +107,13 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
     # check if one of the filter parameters is None and perform no filtering in this case
     if rotation_threshold is None or inclusion_distance is None:
         return tracking_results
-
+    tracking_results_valid = tracking_results.loc[tracking_results["valid"]]
     tracking_results["is_bearing_difference_outlier"] = False
-    for i in range(len(tracking_results)):
-        surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
+    for i in list(tracking_results.index.values):
+        list_is_within_current_point = tracking_results_valid.dwithin(tracking_results.geometry[i], inclusion_distance)
+        if len(list_is_within_current_point) == 0:
+            continue
+        surrounding_points = tracking_results_valid.loc[list_is_within_current_point, :]
         average_movement_bearing = np.nanmean(surrounding_points["movement_bearing_pixels"])
 
         difference = abs(average_movement_bearing - tracking_results.loc[i, "movement_bearing_pixels"]) % 360
@@ -151,9 +152,13 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
     if standard_deviation_threshold is None or inclusion_distance is None:
         return tracking_results
 
+    tracking_results_valid = tracking_results.loc[tracking_results["valid"]]
     tracking_results["is_bearing_standard_deviation_outlier"] = False
-    for i in range(len(tracking_results)):
-        surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
+    for i in list(tracking_results.index.values):
+        list_is_within_current_point = tracking_results_valid.dwithin(tracking_results.geometry[i], inclusion_distance)
+        if len(list_is_within_current_point) == 0:
+            continue
+        surrounding_points = tracking_results_valid.loc[list_is_within_current_point,:]
         movement_bearings = surrounding_points["movement_bearing_pixels"]
         valid_movement_bearings = movement_bearings[~np.isnan(movement_bearings)]
         standard_deviation = circular_std_deg(valid_movement_bearings)
@@ -192,9 +197,13 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
     if movement_rate_threshold is None or inclusion_distance is None:
         return tracking_results
 
+    tracking_results_valid = tracking_results.loc[tracking_results["valid"]]
     tracking_results["is_movement_rate_difference_outlier"] = False
-    for i in range(len(tracking_results)):
-        surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
+    for i in list(tracking_results.index.values):
+        list_is_within_current_point = tracking_results_valid.dwithin(tracking_results.geometry[i], inclusion_distance)
+        if len(list_is_within_current_point) == 0:
+            continue
+        surrounding_points = tracking_results_valid.loc[list_is_within_current_point,:]
         average_movement_rate = np.nanmean(surrounding_points["movement_distance_per_year"])
         if np.abs(average_movement_rate - tracking_results.loc[i,"movement_distance_per_year"]) > movement_rate_threshold:
             tracking_results.loc[i,"is_movement_rate_difference_outlier"] = True
@@ -230,9 +239,13 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
     if movement_rate_threshold is None or inclusion_distance is None:
         return tracking_results
 
+    tracking_results_valid = tracking_results.loc[tracking_results["valid"]]
     tracking_results["is_movement_rate_standard_deviation_outlier"] = False
-    for i in range(len(tracking_results)):
-        surrounding_points = tracking_results.loc[tracking_results.dwithin(tracking_results.geometry[i], inclusion_distance),:]
+    for i in list(tracking_results.index.values):
+        list_is_within_current_point = tracking_results_valid.dwithin(tracking_results.geometry[i], inclusion_distance)
+        if len(list_is_within_current_point) == 0:
+            continue
+        surrounding_points = tracking_results_valid.loc[list_is_within_current_point,:]
         standard_deviation_movement_rate = np.nanstd(surrounding_points["movement_distance_per_year"])
         if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i,"movement_distance_per_year"]) >
                 movement_rate_threshold):
