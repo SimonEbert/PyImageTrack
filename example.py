@@ -6,11 +6,11 @@ from Plots.MakePlots import plot_raster_and_geometry
 from Parameters.FilterParameters import FilterParameters
 
 # Set parameters
-number_of_control_points = 200
+number_of_control_points = 2000
 image_bands = 0
 control_tracking_area_size = 60
 control_cell_size = 40
-distance_of_tracked_points = 50
+distance_of_tracked_points = 5
 movement_tracking_area_size = 60
 movement_cell_size = 20
 cross_correlation_threshold = 0.75

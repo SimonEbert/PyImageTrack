@@ -115,6 +115,48 @@ class ImagePair:
 
         self.select_image_channels(selected_channels=selected_channels)
 
+    def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
+                                              image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
+                                              selected_channels:int = None):
+        """
+        Loads two images from two matrices, which are assumed to have the same image transform. For more details cf
+        load_images_from_file
+        Parameters
+        ----------
+        image1_matrix
+        observation_date_1
+        image2_matrix
+        observation_date_2
+        image_transform
+        crs
+        bounds
+        selected_channels
+
+        Returns
+        -------
+
+        """
+        self.image1_matrix = image1_matrix
+        self.image1_transform = image_transform
+        self.image2_matrix = image2_matrix
+        self.image2_transform = image_transform
+        self.image1_observation_date = datetime.strptime(observation_date_1, "%d-%m-%Y").date()
+        self.image2_observation_date = datetime.strptime(observation_date_2, "%d-%m-%Y").date()
+        self.crs=crs
+
+
+        bbox = rasterio.transform.array_bounds(image1_matrix.shape[-2], image1_matrix.shape[-1], image_transform)
+        poly1 = box(*bbox)
+        image_bounds = gpd.GeoDataFrame(gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(
+            -max(-image_transform[4], image_transform[0]) * self.tracking_parameters.movement_tracking_area_size))
+        # set correct geometry column
+        image_bounds = image_bounds.rename(columns={0: "geometry"})
+        image_bounds.set_geometry("geometry", inplace=True)
+        self.image_bounds = image_bounds
+        # self.select_image_channels(selected_channels=selected_channels)
+
+
+
 
     def align_images(self, reference_area: gpd.GeoDataFrame) -> None:
         """
@@ -358,7 +400,7 @@ class ImagePair:
             A list, giving the files that should be saved. Possible options are: "movement_bearing_valid_tif", "movement_bearing_full_tif",
               "movement_rate_valid_tif", "movement_rate_full_tif",
               "movement_rate_with_lod_points_tif", "movement_bearing_with_lod_points_tif",
-              "statistical_parameters_csv".
+              "statistical_parameters_csv", "LoD_points_geojson".
               The tracking parameters and the full tracking results (as geojson) will always be saved to prevent loss of
               data.
         Returns
@@ -420,13 +462,20 @@ class ImagePair:
                                                         + "_" + str(self.image2_observation_date.year)
                                                         + ".tif")
 
+        if "LoD_points_geojson" in save_files:
+            self.level_of_detection_points.to_file(
+                folder_path + "/LoD_points_" + str(self.image1_observation_date.year) + "_"
+                + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
+
         if "statistical_parameters_txt" in save_files:
             total_number_of_points = len(self.tracking_results)
             number_of_points_below_lod = len(self.tracking_results[self.tracking_results["is_below_LoD"]])
             number_of_outliers = len(self.tracking_results[is_outlier])
             number_of_valid_lod_points = len(self.level_of_detection_points[self.level_of_detection_points["valid"]])
             total_number_of_lod_points = len(self.level_of_detection_points)
-            with open(folder_path + "/statistical_results.txt", "w") as statistics_file:
+            with open(folder_path + "/statistical_results_" + str(self.image1_observation_date.year)
+                                                                   + "_" + str(self.image2_observation_date.year)
+                                                                   + ".txt", "w") as statistics_file:
                 statistics_file.write("Total number of points: " + str(total_number_of_points) + "\n" +
                            "thereof\n\tbelow LoD: " + str(number_of_points_below_lod) + " (" + str(np.round(number_of_points_below_lod
                                 / total_number_of_points * 100, decimals=2)) + "%)\n" +
@@ -458,12 +507,16 @@ class ImagePair:
                            "\tUsed points: " + str(number_of_valid_lod_points) + " points\n"
                            )
 
-        with (open(folder_path + "/parameters.txt", "w")
+        with (open(folder_path + "/parameters_" + str(self.image1_observation_date.year)
+                                                                   + "_" + str(self.image2_observation_date.year)
+                                                                   + ".txt", "w")
               as text_file):
             text_file.write(self.tracking_parameters.__str__())
 
         if self.filter_parameters is not None:
-            with (open(folder_path + "/parameters.txt", "a") as text_file):
+            with (open(folder_path + "/parameters_" + str(self.image1_observation_date.year)
+                                                                   + "_" + str(self.image2_observation_date.year)
+                                                                   + ".txt", "a") as text_file):
                 text_file.write(self.filter_parameters.__str__())
 
 
@@ -484,7 +537,9 @@ class ImagePair:
                                                     save_path=folder_path + "/tracking_results_" +
                                                   str(self.image1_observation_date.year) + "_" +
                                                   str(self.image2_observation_date.year) + ".jpg")
-            with (open(folder_path + "/parameters.txt", "a")
+            with (open(folder_path + "/parameters_" + str(self.image1_observation_date.year)
+                                                                   + "_" + str(self.image2_observation_date.year)
+                                                                   + ".txt", "a")
                   as text_file):
                 text_file.write("Level of Detection: " + str(self.level_of_detection) + "\n")
         else:
