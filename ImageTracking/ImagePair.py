@@ -7,6 +7,7 @@ import logging
 from geocube.api.core import make_geocube
 import os
 from rasterio.coords import BoundingBox
+from geocube.rasterize import rasterize_points_griddata
 from shapely.geometry import box
 import numpy as np
 
@@ -412,20 +413,23 @@ class ImagePair:
         self.tracking_results.to_file(folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
                                       + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
 
-        tracking_results_valid = self.tracking_results[self.tracking_results["valid"]]
+        tracking_results_valid = self.tracking_results.loc[self.tracking_results["valid"]]
+
         results_grid_valid = make_geocube(vector_data=tracking_results_valid,
                                           measurements=["movement_bearing_pixels", "movement_distance_per_year"],
                                           resolution = self.tracking_parameters.distance_of_tracked_points)
+
 
         is_outlier = (self.tracking_results["is_bearing_difference_outlier"]
             | self.tracking_results["is_bearing_standard_deviation_outlier"]
             | self.tracking_results["is_movement_rate_difference_outlier"]
             | self.tracking_results["is_movement_rate_standard_deviation_outlier"]
         )
-        tracking_results_without_outliers = self.tracking_results[~is_outlier]
+        tracking_results_without_outliers = self.tracking_results.loc[~is_outlier]
         results_grid_filtered = make_geocube(vector_data=tracking_results_without_outliers,
                                          measurements=["movement_bearing_pixels", "movement_distance_per_year"],
-                                         resolution = self.tracking_parameters.distance_of_tracked_points)
+                                         resolution = self.tracking_parameters.distance_of_tracked_points,
+                                             rasterize_function=rasterize_points_griddata)
 
         if "movement_bearing_valid_tif" in save_files:
             results_grid_valid["movement_bearing_pixels"].rio.to_raster(folder_path + "/movement_bearing_valid_"

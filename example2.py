@@ -10,7 +10,7 @@ from Parameters.FilterParameters import FilterParameters
 
 # === USER CONFIGURATION ===
 # input_folder = "/home/lisa/projects/pyimagetrack/Test_Data/Orthophotos_Kaiserberg_historic"
-input_folder = "/media/simon/Swap/Dokumente/Studium/14.Semester/HiWi_Arbeit_PyImageTrack/Test_Data/Orthophotos_Kaiserberg_historic"
+input_folder = "../Test_Data/Orthophotos_Kaiserberg_historic"
 date_csv_path = os.path.join(input_folder, "image_dates.csv")
 pairs_csv_path = os.path.join(input_folder, "image_pairs.csv")
 #output_folder = "/home/lisa/projects/pyimagetrack/Test_results"
