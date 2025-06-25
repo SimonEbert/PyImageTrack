@@ -153,7 +153,8 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
         return tracking_results
 
     tracking_results_valid = tracking_results.loc[tracking_results["valid"]]
-    tracking_results["is_bearing_standard_deviation_outlier"] = False
+    if "is_bearing_standard_deviation_outlier" not in tracking_results_valid.columns:
+        tracking_results["is_bearing_standard_deviation_outlier"] = False
     for i in list(tracking_results.index.values):
         list_is_within_current_point = tracking_results_valid.dwithin(tracking_results.geometry[i], inclusion_distance)
         if len(list_is_within_current_point) == 0:

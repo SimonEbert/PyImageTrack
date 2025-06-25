@@ -97,19 +97,12 @@ filter_parameters = FilterParameters({
 
 
 
-
-# available_layer_names = ["Image_1949_1954", "Image_1970_1982", "Image_1999_2004", "Image_2004_2009", "Image_2009_2012", "Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
-# flight_years = [1952, 1976, 2001, 2007, 2011, 2014, 2020, 2023]
 #
 # available_layer_names = ["Image_1999_2004", "Image_2004_2009", "Image_2009_2012", "Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
 # flight_years = [2003, 2009, 2010, 2015, 2020, 2023]
 # flight_years_str = ["05-09-2003", "09-09-2009", "31-07-2010", "03-08-2015", "08-09-2020", "06-09-2023"]
 
-
-
-# available_layer_names = ["Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
-# flight_years = [2015, 2020, 2023]
-# flight_years_str = ["03-08-2015", "08-09-2020", "06-09-2023"]
+# Possible layer names: ["Image_1949_1954", "Image_1970_1982", "Image_1999_2004", "Image_2004_2009", "Image_2009_2012", "Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
 available_layer_names = ["Image_1949_1954", "Image_1970_1982"]
 flight_years = [1953, 1971]
 flight_years_str = ["02-09-1953", "19-08-1971"]
