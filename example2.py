@@ -32,7 +32,7 @@ distance_of_tracked_points = 5
 movement_tracking_area_size = 60 # tracking size = movement cell size plus surrounding area in all 4 directions
 movement_cell_size = 20
 cross_correlation_threshold_alignment = 0.85
-cross_correlation_threshold_movement = 0.7
+cross_correlation_threshold_movement = 0.5
 
 
 # === FILTER PARAMETERS ===
@@ -42,17 +42,18 @@ cross_correlation_threshold_movement = 0.7
 filter_parameters = FilterParameters({
     "level_of_detection_quantile": 0.9,
     "number_of_points_for_level_of_detection": 1000,
-    "difference_movement_bearing_threshold": 90, # in degrees
-    "difference_movement_bearing_moving_window_size": 25, # in units of the used crs
+    # Filters points, whose movement bearings deviate more than the given threshold from the movementt rate of surrounding points
+    "difference_movement_bearing_threshold": 60, # in degrees
+    "difference_movement_bearing_moving_window_size":  17.5, # in units of the used crs
     # Filters points, where the standard deviation of movement bearing of neighbouring points exceeds the given threshold
-    "standard_deviation_movement_bearing_threshold": 45, # in degrees,
-    "standard_deviation_movement_bearing_moving_window_size": 15, # in units of the used crs
+    "standard_deviation_movement_bearing_threshold": 90, # in degrees,
+    "standard_deviation_movement_bearing_moving_window_size":  50, # in units of the used crs
     # Filters points whose movement rates deviate more than the given threshold from the movement rate of surrounding points
-    "difference_movement_rate_threshold": 1, # in units of the used crs / year
-    "difference_movement_rate_moving_window_size": 25, # in units of the used crs
+    "difference_movement_rate_threshold": 0.2, # in units of the used crs / year
+    "difference_movement_rate_moving_window_size":  30, # in units of the used crs
     # Filters points whose standard deviation of movement rates of neighbouring points exceeds the given threshold
-    "standard_deviation_movement_rate_threshold": 1, # in units of the used crs / year
-    "standard_deviation_movement_rate_moving_window_size": 15 # in units of the used crs
+    "standard_deviation_movement_rate_threshold": 1.2, # in units of the used crs / year
+    "standard_deviation_movement_rate_moving_window_size": 50 # in units of the used crs
 })
 
 
@@ -134,8 +135,13 @@ for year1, year2 in year_pairs:
         )
 
         image_pair.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
+        # image_pair.load_results("../Test_Results/1953_1970/MTA60_MC20_LoDq0.9_CC0.5/tracking_results_1953_1970.geojson",
+        #                                    reference_area=polygon_outside_RG)
 
         image_pair.full_filter(reference_area=polygon_outside_RG, filter_parameters=filter_parameters)
+        # second filter without LoD filter to improve outlier detection
+        image_pair.filter_outliers(filter_parameters=filter_parameters)
+
         image_pair.plot_tracking_results_with_valid_mask()
 
         result_dir = os.path.join(output_folder, f"{year1}_{year2}", param_string)

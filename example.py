@@ -17,7 +17,7 @@ distance_of_tracked_points = 5
 movement_tracking_area_size = 60
 movement_cell_size = 20
 cross_correlation_threshold_alignment = 0.85
-cross_correlation_threshold_movement = 0.85
+cross_correlation_threshold_movement = 0.5
 
 
 # === SAVE OPTIONS ===
@@ -36,13 +36,13 @@ filter_parameters = FilterParameters({
     "number_of_points_for_level_of_detection": 1000,
     # Filters points, whose movement bearings deviate more than the given threshold from the movementt rate of surrounding points
     "difference_movement_bearing_threshold": 60, # in degrees
-    "difference_movement_bearing_moving_window_size":  7.5, # in units of the used crs
+    "difference_movement_bearing_moving_window_size":  17.5, # in units of the used crs
     # Filters points, where the standard deviation of movement bearing of neighbouring points exceeds the given threshold
     "standard_deviation_movement_bearing_threshold": 90, # in degrees,
     "standard_deviation_movement_bearing_moving_window_size":  50, # in units of the used crs
     # Filters points whose movement rates deviate more than the given threshold from the movement rate of surrounding points
     "difference_movement_rate_threshold": 0.2, # in units of the used crs / year
-    "difference_movement_rate_moving_window_size":  12.5, # in units of the used crs
+    "difference_movement_rate_moving_window_size":  30, # in units of the used crs
     # Filters points whose standard deviation of movement rates of neighbouring points exceeds the given threshold
     "standard_deviation_movement_rate_threshold": 1.2, # in units of the used crs / year
     "standard_deviation_movement_rate_moving_window_size": 50 # in units of the used crs
@@ -83,6 +83,7 @@ Kaiserberg_pair_19_21.load_results("../Test_results/full_results/tracking_result
 
 
 Kaiserberg_pair_19_21.full_filter(reference_area=polygon_outside_RG, filter_parameters=filter_parameters)
+Kaiserberg_pair_19_21.filter_outliers(filter_parameters=filter_parameters)
 
 Kaiserberg_pair_19_21.plot_tracking_results_with_valid_mask()
 

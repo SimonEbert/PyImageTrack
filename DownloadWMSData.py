@@ -64,7 +64,8 @@ control_tracking_area_size = 60
 control_cell_size = 40
 distance_of_tracked_points = 5
 movement_cell_size = 30
-cross_correlation_threshold = 0.75
+cross_correlation_threshold_alignment = 0.85
+cross_correlation_threshold_movement = 0.6
 
 
 # === SAVE OPTIONS ===
@@ -179,8 +180,6 @@ for layer_name_picture1 in available_layer_names[:-1]:
                                       layer_name=layer_name_picture2)
 
 
-    rasterio.plot.show(raster_image1)
-    rasterio.plot.show(raster_image2)
 
     #  define the four corners as ground control points and
     ground_control_points = [rasterio.transform.GroundControlPoint(row=0, col=0,
@@ -205,7 +204,8 @@ for layer_name_picture1 in available_layer_names[:-1]:
                         "distance_of_tracked_points": distance_of_tracked_points,
                         "movement_tracking_area_size": movement_tracking_area_size,
                         "movement_cell_size": movement_cell_size,
-                        "cross_correlation_threshold": cross_correlation_threshold})
+                        "cross_correlation_threshold_alignment": cross_correlation_threshold_alignment,
+                        "cross_correlation_threshold_movement": cross_correlation_threshold_movement})
 
     image_pair.load_images_from_matrix_and_transform(image1_matrix=raster_image1, observation_date_1=flight_years_str[index_first_layer],
                                                      image2_matrix=raster_image2, observation_date_2=flight_years_str[index_first_layer + 1],
@@ -214,8 +214,6 @@ for layer_name_picture1 in available_layer_names[:-1]:
 
     image_pair.equalize_adapthist_images()
     print(image_pair.tracking_parameters.movement_tracking_area_size)
-    rasterio.plot.show(image_pair.image1_matrix)
-    rasterio.plot.show(image_pair.image2_matrix)
 
     image_pair.perform_point_tracking(reference_area=reference_area, tracking_area=single_rock_glacier)
 
