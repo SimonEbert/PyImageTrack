@@ -30,6 +30,9 @@ from DataProcessing.ImagePreprocessing import equalize_adapthist_images
 from DataProcessing.DataPostprocessing import calculate_lod_points
 from DataProcessing.DataPostprocessing import filter_lod_points
 from DataProcessing.DataPostprocessing import filter_outliers_full
+# Geometry Handling
+from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
+
 
 
 class ImagePair:
@@ -226,7 +229,7 @@ class ImagePair:
                                             cross_correlation_threshold=self.tracking_parameters.cross_correlation_threshold_movement
                                             )
         # calculate the years between observations from the two given observation dates
-        years_between_observations = (self.image2_observation_date - self.image1_observation_date).days // 365.25
+        years_between_observations = (self.image2_observation_date - self.image1_observation_date).days / 365.25
         georeferenced_tracked_points = georeference_tracked_points(tracked_pixels=tracked_points,
                                                                    raster_transform=self.image1_transform,
                                                                    crs=tracking_area.crs,
@@ -308,7 +311,7 @@ class ImagePair:
         self.filter_parameters = filter_parameters
         self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters)
 
-    def calculate_lod(self, reference_area: gpd.GeoDataFrame, filter_parameters: FilterParameters = None) -> None:
+    def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame, filter_parameters: FilterParameters = None) -> None:
         """
         Calculates the Level of Detection of a matching between two images. For calculating the LoD a specified number
         of points are generated randomly in some reference area, which is assumed to be stable. The level of detection
@@ -317,10 +320,9 @@ class ImagePair:
         given in movement per year.
         Parameters
         ----------
-        reference_area: gpd.GeoDataFrame
-            The stable area (no motion assumed) on which the points for calculating the level of detection are created
-            randomly. Since for image alignment an evenly spaced grid is used and here, we have a random distribution of
-            points, it is possible to use the same reference area for both tasks.
+        points_for_lod_calculation: gpd.GeoDataFrame
+            The points in the area (no motion assumed) for calculating the level of detection. Since for image alignment an evenly spaced grid is used and here, a random distribution of
+            points is advisable, such that it is possible to use the same reference area for both tasks.
         filter_parameters
         Returns
         -------
@@ -336,12 +338,11 @@ class ImagePair:
         else:
             self.filter_parameters = filter_parameters
 
-        reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
-        reference_area.rename(columns={0: 'geometry'}, inplace=True)
-        reference_area.set_geometry('geometry', inplace=True)
+        points_for_lod_calculation = gpd.GeoDataFrame(points_for_lod_calculation.intersection(self.image_bounds.geometry[0]))
+        points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
+        points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
-        years_between_observations = (self.image2_observation_date - self.image1_observation_date).days // 365.25
-
+        years_between_observations = (self.image2_observation_date - self.image1_observation_date).days / 365.25
         # check if a LoD filter parameter is provided, if this is None, don't perform LoD calculation
         if (filter_parameters.level_of_detection_quantile is None
             or filter_parameters.number_of_points_for_level_of_detection is None):
@@ -350,17 +351,13 @@ class ImagePair:
         level_of_detection_quantile = filter_parameters.level_of_detection_quantile
 
         unfiltered_level_of_detection_points = calculate_lod_points(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
-                                                              image_transform=self.image1_transform, reference_area=reference_area,
-                                                              number_of_reference_points=filter_parameters.number_of_points_for_level_of_detection,
+                                                              image_transform=self.image1_transform,
+                                                              points_for_lod_calculation=points_for_lod_calculation,
                                                               tracking_parameters=self.tracking_parameters,
                                                               crs=self.crs, years_between_observations=years_between_observations)
-        filtered_level_of_detection_points = unfiltered_level_of_detection_points
-        filtered_level_of_detection_points = filtered_level_of_detection_points[
-            filtered_level_of_detection_points["valid"]]
-
         self.level_of_detection_points = unfiltered_level_of_detection_points
 
-        self.level_of_detection = np.quantile(filtered_level_of_detection_points["movement_distance_per_year"],
+        self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points["movement_distance_per_year"],
                                          level_of_detection_quantile)
 
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
@@ -376,8 +373,9 @@ class ImagePair:
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection)
 
     def full_filter(self, reference_area, filter_parameters: FilterParameters):
+        points_for_lod_calculation = random_points_on_polygon_by_number(reference_area, filter_parameters.number_of_points_for_level_of_detection)
         self.filter_outliers(filter_parameters)
-        self.calculate_lod(reference_area, filter_parameters)
+        self.calculate_lod(points_for_lod_calculation, filter_parameters)
         self.filter_lod_points()
 
 
@@ -414,24 +412,22 @@ class ImagePair:
 
         self.tracking_results.to_file(folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
                                       + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
-
-        tracking_results_valid = self.tracking_results.loc[self.tracking_results["valid"]]
-
+        tracking_results_valid = self.tracking_results.loc[self.tracking_results["valid"], :]
         results_grid_valid = make_geocube(vector_data=tracking_results_valid,
                                           measurements=["movement_bearing_pixels", "movement_distance_per_year"],
                                           resolution = self.tracking_parameters.distance_of_tracked_points)
 
-
-        is_outlier = (self.tracking_results["is_bearing_difference_outlier"]
-            | self.tracking_results["is_bearing_standard_deviation_outlier"]
-            | self.tracking_results["is_movement_rate_difference_outlier"]
-            | self.tracking_results["is_movement_rate_standard_deviation_outlier"]
-        )
-        tracking_results_without_outliers = self.tracking_results.loc[~is_outlier]
-        results_grid_filtered = make_geocube(vector_data=tracking_results_without_outliers,
-                                         measurements=["movement_bearing_pixels", "movement_distance_per_year"],
-                                         resolution = self.tracking_parameters.distance_of_tracked_points,
-                                             rasterize_function=rasterize_points_griddata)
+        if "is_outlier" in tracking_results_valid.columns:
+            is_outlier = (self.tracking_results["is_bearing_difference_outlier"]
+                | self.tracking_results["is_bearing_standard_deviation_outlier"]
+                | self.tracking_results["is_movement_rate_difference_outlier"]
+                | self.tracking_results["is_movement_rate_standard_deviation_outlier"]
+            )
+            tracking_results_without_outliers = self.tracking_results.loc[~is_outlier]
+            results_grid_filtered = make_geocube(vector_data=tracking_results_without_outliers,
+                                             measurements=["movement_bearing_pixels", "movement_distance_per_year"],
+                                             resolution = self.tracking_parameters.distance_of_tracked_points,
+                                                 rasterize_function=rasterize_points_griddata)
 
         if "movement_bearing_valid_tif" in save_files:
             results_grid_valid["movement_bearing_pixels"].rio.to_raster(folder_path + "/movement_bearing_valid_"

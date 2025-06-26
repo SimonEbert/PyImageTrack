@@ -15,7 +15,7 @@ from Parameters.FilterParameters import FilterParameters
 
 
 def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
-                         reference_area: gpd.GeoDataFrame, number_of_reference_points,
+                         points_for_lod_calculation: gpd.GeoDataFrame,
                          tracking_parameters: TrackingParameters, crs, years_between_observations) -> gpd.GeoDataFrame:
     """
 
@@ -24,8 +24,7 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
     image1_matrix
     image2_matrix
     image_transform
-    reference_area
-    number_of_reference_points
+    points_for_lod_calculation
     tracking_parameters
     crs
     years_between_observations
@@ -35,7 +34,7 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
     tracked_points: gpd.GeoDataFrame
         The random points which can be used for calculating the LoD.
     """
-    points = random_points_on_polygon_by_number(reference_area, number_of_points=number_of_reference_points)
+    points = points_for_lod_calculation
     tracked_points = TrackMovement.track_movement_lsm(
         image1_matrix=image1_matrix, image2_matrix=image2_matrix,image_transform=image_transform,
         points_to_be_tracked=points, movement_cell_size=tracking_parameters.movement_cell_size,
