@@ -1,19 +1,22 @@
 import geopandas as gpd
 import rasterio
+import matplotlib.pyplot as plt
+import numpy as np
 
 from ImageTracking.ImagePair import ImagePair
 from Plots.MakePlots import plot_raster_and_geometry
 from Parameters.FilterParameters import FilterParameters
+import Plots
 
 
 
 
 # Set parameters
-number_of_control_points = 2000
+number_of_control_points = 200
 image_bands = 0
 control_tracking_area_size = 80
 control_cell_size = 60
-distance_of_tracked_points = 5
+distance_of_tracked_points = 50
 movement_tracking_area_size = 60
 movement_cell_size = 20
 cross_correlation_threshold_alignment = 0.85
@@ -24,7 +27,7 @@ cross_correlation_threshold_movement = 0.5
 # tracking_results.geojson will always be saved, since it contains the full information.
 save_files = ["movement_bearing_valid_tif", "movement_bearing_outlier_filtered_tif",
               "movement_rate_valid_tif", "movement_rate_outlier_filtered_tif", "invalid_mask_tif", "lod_mask_tif",
-              "statistical_parameters_txt"]
+              "statistical_parameters_txt", "LoD_points_geojson"]
 
 
 # === FILTER PARAMETERS ===
@@ -49,9 +52,6 @@ filter_parameters = FilterParameters({
 })
 
 
-
-# Set filter parameters
-
 Kaiserberg_pair_19_21 = ImagePair(
     parameter_dict={"image_alignment_number_of_control_points": number_of_control_points,
                     "used_image_bands": image_bands,
@@ -69,21 +69,24 @@ Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Test_Data/Orthophotos
                                             observation_date_2="29-09-1970",
                                             selected_channels=0)
 
-
-
 polygon_outside_RG = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_outside_rock_glacier_adjusted.shp")
 polygon_outside_RG = polygon_outside_RG.to_crs(crs=31254)
 
 rock_glacier_polygon = gpd.read_file("../Test_Data/Orthophotos_Kaiserberg_historic/Area_inside_rock_glacier.shp")
 rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=31254)
 
-# Kaiserberg_pair_19_21.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
 
-Kaiserberg_pair_19_21.load_results("../Test_results/full_results/tracking_results_1953_1970.geojson", reference_area=polygon_outside_RG)
+Kaiserberg_pair_19_21.perform_point_tracking(reference_area=polygon_outside_RG, tracking_area=rock_glacier_polygon)
+
+# Kaiserberg_pair_19_21.load_results("../Test_results/full_results/tracking_results_1953_1970.geojson", reference_area=polygon_outside_RG)
 
 
 Kaiserberg_pair_19_21.full_filter(reference_area=polygon_outside_RG, filter_parameters=filter_parameters)
+
 Kaiserberg_pair_19_21.filter_outliers(filter_parameters=filter_parameters)
+
+
+
 
 Kaiserberg_pair_19_21.plot_tracking_results_with_valid_mask()
 

@@ -2,6 +2,7 @@ import geopandas as gpd
 import numpy as np
 import scipy
 import sklearn
+import matplotlib.pyplot as plt
 
 from ImageTracking.TrackMovement import track_movement_lsm
 from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_number_of_points
@@ -64,7 +65,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                 cross_correlation_threshold=cross_correlation_threshold,
                                                 save_columns=["movement_row_direction",
                                                               "movement_column_direction",
-                                                              "movement_distance_pixels"]
+                                                              "movement_distance_pixels",
+                                                              "movement_bearing_pixels"]
                                                 )
     tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
     if len(tracked_control_pixels_valid) == 0:
@@ -78,30 +80,38 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
                                             + tracked_control_pixels_valid["movement_column_direction"])
 
-
-    model_row = sklearn.linear_model.LinearRegression().fit(
+    model_row = sklearn.linear_model.LinearRegression()
+    model_row.fit(
         np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
                         tracked_control_pixels_valid["new_row"]
     )
 
-    model_column = sklearn.linear_model.LinearRegression().fit(
+    model_column = sklearn.linear_model.LinearRegression()
+    model_column.fit(
         np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
                         tracked_control_pixels_valid["new_column"]
     )
 
-    transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
-                                     [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
+
+
+    sampling_transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
+                                               [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
 
     indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[0]), np.arange(0, image1_matrix.shape[1]))
                        ).T.reshape(-1, 2).T
-    moved_indices = move_indices_from_transformation_matrix(transformation_matrix, indices)
-
+    moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
     image2_matrix_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, image2_matrix.shape[0]),
                                                                  np.arange(0, image2_matrix.shape[1]),
                                                                  image2_matrix)
-    print("Resampling the second image matrix with transformation matrix\n" + str(transformation_matrix) +
+    print("Resampling the second image matrix with transformation matrix\n" + str(sampling_transformation_matrix) +
           "\nThis may take some time.")
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
-    return [image1_matrix, moved_image2_matrix]
+
+    # residuals_row = model_row.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_row"]
+    # residuals_column = model_column.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_column"]
+    # plt.scatter(residuals_row, residuals_column)
+    # plt.show()
+
+    return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]
 

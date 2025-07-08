@@ -150,5 +150,19 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     if save_path is None:
         fig.show()
     else:
-        fig.savefig(save_path, bbox_inches='tight')
+        fig.savefig(save_path, bbox_inches='tight')#
+
+
+def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
+    fig, ax = plt.subplots()
+    ax.grid(True, which='both')
+
+    ax.axhline(y=0, color='k')
+    ax.axvline(x=0, color='k')
+    # ax.set_xlim((-1,1))
+    # ax.set_ylim((-1,1))
+
+    ax.scatter(moving_points["movement_row_direction"],
+               moving_points["movement_column_direction"])
+    plt.show()
 

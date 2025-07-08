@@ -3,6 +3,8 @@ import requests
 import imageio.v3
 import numpy as np
 
+import Plots.MakePlots
+
 
 def download_wms_data(minx: float, miny: float, maxx: float, maxy: float, width_image_pixels: float,
                       height_image_pixels: float, epsg_code, layer_name,
@@ -46,9 +48,10 @@ import rasterio.plot
 import shapely
 import skimage
 from datetime import datetime
+
 from ImageTracking.ImagePair import ImagePair
 from Parameters.FilterParameters import FilterParameters
-
+from Plots.MakePlots import plot_raster_and_geometry
 
 # improve figure quality
 plt.rcParams['figure.dpi'] = 300
@@ -60,12 +63,12 @@ epsg_code = 31254
 # Set parameters
 number_of_control_points = 2000
 image_bands = 0
-control_tracking_area_size = 60
-control_cell_size = 40
+control_tracking_area_size = 120
+control_cell_size = 100
 distance_of_tracked_points = 5
-movement_cell_size = 30
+movement_cell_size = 25
 cross_correlation_threshold_alignment = 0.85
-cross_correlation_threshold_movement = 0.6
+cross_correlation_threshold_movement = 0.5
 
 
 # === SAVE OPTIONS ===
@@ -80,7 +83,7 @@ save_files = ["movement_bearing_valid_tif", "movement_bearing_outlier_filtered_t
 # Filters points whose movement bearing deviates more than the given threshold from the movement bearing of surrounding
 # points
 filter_parameters = FilterParameters({
-    "level_of_detection_quantile": 0.9,
+    "level_of_detection_quantile": 0.2,
     "number_of_points_for_level_of_detection": 1000,
     # Filters points, whose movement bearings deviate more than the given threshold from the movementt rate of surrounding points
     "difference_movement_bearing_threshold": 360, # in degrees
@@ -99,17 +102,17 @@ filter_parameters = FilterParameters({
 
 
 #
-# available_layer_names = ["Image_1999_2004", "Image_2004_2009", "Image_2009_2012", "Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
-# flight_years = [2003, 2009, 2010, 2015, 2020, 2023]
-# flight_years_str = ["05-09-2003", "09-09-2009", "31-07-2010", "03-08-2015", "08-09-2020", "06-09-2023"]
+available_layer_names = ["Image_1999_2004", "Image_2004_2009", "Image_2009_2012", "Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
+flight_years = [2003, 2007, 2010, 2015, 2020, 2023]
+flight_years_str = ["05-09-2003", "24-09-2007", "31-07-2010", "03-08-2015", "08-09-2020", "06-09-2023"]
 
 # Possible layer names: ["Image_1949_1954", "Image_1970_1982", "Image_1999_2004", "Image_2004_2009", "Image_2009_2012", "Image_2013_2015", "Image_2019_2021", "Image_Aktuell_RGB"]
-available_layer_names = ["Image_1949_1954", "Image_1970_1982"]
-flight_years = [1953, 1971]
-flight_years_str = ["02-09-1953", "19-08-1971"]
+# available_layer_names = ["Image_1949_1954", "Image_1970_1982"]
+# flight_years = [1953, 1971]
+# flight_years_str = ["02-09-1953", "19-08-1971"]
 
 # is already in EPSG:31254, otherwise transform!!
-rock_glacier_inventory_tyrol = gpd.read_file("../Rock_glacier_analysis_Tyrol/rock_glacier_inventory_tyrol/rock_glacier_polygons_tyrol.shp")
+rock_glacier_inventory_tyrol = gpd.read_file("../Rock_glacier_analysis_Tyrol/rock_glacier_inventory_tyrol/rock_glacier_polygons_tyrol_changed.shp")
 
 rock_glacier_id = 201
 rock_glacier_id = 443
@@ -134,10 +137,10 @@ for layer_name_picture1 in available_layer_names[:-1]:
     # change index of the single feature dataframe to 0
     single_rock_glacier.set_index(np.arange(1), inplace=True)
 
-    minx = single_rock_glacier.bounds.loc[0, 'minx'] - 100
-    miny = single_rock_glacier.bounds.loc[0, 'miny'] - 100
-    maxx = single_rock_glacier.bounds.loc[0, 'maxx'] + 100
-    maxy = single_rock_glacier.bounds.loc[0, 'maxy'] + 100
+    minx = single_rock_glacier.bounds.loc[0, 'minx'] - 200
+    miny = single_rock_glacier.bounds.loc[0, 'miny'] - 200
+    maxx = single_rock_glacier.bounds.loc[0, 'maxx'] + 200
+    maxy = single_rock_glacier.bounds.loc[0, 'maxy'] + 200
 
     extent_corners = gpd.GeoDataFrame(["minx_miny", "maxx_miny", "minx_maxy", "maxx_maxy"],
                                       columns=["names"],
@@ -152,7 +155,8 @@ for layer_name_picture1 in available_layer_names[:-1]:
                                    crs=single_rock_glacier.crs)
 
     reference_area = gpd.GeoDataFrame(geometry=extent_area.difference(single_rock_glacier, align=False))
-
+    reference_area = gpd.GeoDataFrame(geometry=reference_area.difference(
+        rock_glacier_inventory_tyrol.union_all().buffer(20), align=False))
 
     width_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[1].geometry)
     height_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[2].geometry)
@@ -160,7 +164,7 @@ for layer_name_picture1 in available_layer_names[:-1]:
     width_image_pixels = np.ceil(width_image_crs_unit * pixels_per_metre)
     height_image_pixels = np.ceil(height_image_crs_unit * pixels_per_metre)
 
-    if (width_image_pixels > 6000 or height_image_pixels > 6000):
+    if width_image_pixels > 6000 or height_image_pixels > 6000:
         print("Skipping since images with more than 6000 pixels edge length cannot be downloaded.")
         continue
 
@@ -212,16 +216,17 @@ for layer_name_picture1 in available_layer_names[:-1]:
                                                      image_transform=raster_transform_image1, crs=reference_area.crs)
 
 
-    image_pair.equalize_adapthist_images()
-    print(image_pair.tracking_parameters.movement_tracking_area_size)
+    # image_pair.equalize_adapthist_images()
 
     image_pair.perform_point_tracking(reference_area=reference_area, tracking_area=single_rock_glacier)
 
     image_pair.full_filter(reference_area=reference_area, filter_parameters=filter_parameters)
 
-    image_pair.plot_tracking_results_with_valid_mask()
+    Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform, image_pair.tracked_control_points)
+    Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform, image_pair.level_of_detection_points)
+    Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform, image_pair.tracking_results)
 
-    image_pair.save_full_results("../Test_results_Tirol/" + str(rock_glacier_id) + "/full_results", save_files=save_files)
+    image_pair.save_full_results("../Test_results_Tirol/" + str(rock_glacier_id) + "/full_results_with_radiometric_adjustment", save_files=save_files)
 
 
 

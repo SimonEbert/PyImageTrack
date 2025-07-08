@@ -27,7 +27,7 @@ class ImageBatch:
 
         self.lod_points = None
 
-    def load_images_from_file_list(self, list_of_image_files: list[str], list_of_observation_dates: list[str],
+    def load_images_from_file_list(self, list_of_image_files: list[str], list_of_observation_dates: list,
                                    pixels_per_metre: float, maximal_assumed_movement_rate: float):
         if len(list_of_image_files) != len(list_of_observation_dates):
             raise ValueError('Number of image files does not match the number of observation dates.')

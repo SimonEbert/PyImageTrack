@@ -163,7 +163,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         initial_shift_values = [0, 0]
 
     # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
-    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1]]
+    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1], 0, 1]
     # calculate transformation matrix form of the coefficients
     transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
                                       [coefficients[3], coefficients[4], coefficients[5]]])
@@ -202,10 +202,13 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         moved_cell_matrix_dy_times_y = np.multiply(moved_cell_matrix_dy,
                                                    indices[1, :].reshape(tracked_cell_matrix.shape))
 
+
+
         model = sklearn.linear_model.LinearRegression().fit(
             np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
                              moved_cell_matrix_dx.flatten(), moved_cell_matrix_dy_times_x.flatten(),
-                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten()]),
+                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten(),
+                             np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()]),
             (tracked_cell_matrix - moved_cell_matrix).flatten())
 
         coefficient_adjustment = model.coef_
@@ -224,7 +227,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         # define the position of the newly calculated central point
         new_moved_central_point = np.array([new_central_row, new_central_column])
         # if the adjustment results in less than 0.1 pixel adjustment between the considered points, stop the iteration
-        if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.1:
+        if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.04:
             break
 
         # continue iteration and redefine the previous moved central point
@@ -303,7 +306,7 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
 
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
                        movement_cell_size: int = 50, movement_tracking_area_size: int = 60,
-                       cross_correlation_threshold: int = 0.8,
+                       cross_correlation_threshold: float = 0.8,
                        save_columns: list[str] = None) -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)

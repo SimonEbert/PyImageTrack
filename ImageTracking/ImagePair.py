@@ -55,6 +55,7 @@ class ImagePair:
 
         # Meta-Data and results
         self.crs = None
+        self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
         self.level_of_detection_points = None
@@ -183,13 +184,17 @@ class ImagePair:
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
-        [_, new_image2_matrix] = (
+        [_, new_image2_matrix, tracked_control_points] = (
             align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
                                    image_transform=self.image1_transform, reference_area=reference_area,
                                     number_of_control_points=
                                     self.tracking_parameters.image_alignment_number_of_control_points,
                                     cross_correlation_threshold=
                                     self.tracking_parameters.cross_correlation_threshold_alignment))
+
+        years_between_observations = (self.image2_observation_date - self.image1_observation_date).days / 365.25
+        self.tracked_control_points = georeference_tracked_points(tracked_control_points, self.image1_transform,
+                                                                  self.crs, years_between_observations)
 
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
