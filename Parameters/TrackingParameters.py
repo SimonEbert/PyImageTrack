@@ -13,6 +13,7 @@ class TrackingParameters:
         self.movement_cell_size = parameter_dict.get('movement_cell_size')
         self.cross_correlation_threshold_alignment = parameter_dict.get('cross_correlation_threshold_alignment')
         self.cross_correlation_threshold_movement = parameter_dict.get('cross_correlation_threshold_movement')
+        self.maximal_alignment_movement = parameter_dict.get('maximal_alignment_movement')
 
 
     def __str__(self):
@@ -26,4 +27,5 @@ class TrackingParameters:
                 f'\tmovement tracking area size: {self.movement_tracking_area_size}\n'
                 f'\tmovement cell size: {self.movement_cell_size}\n'
                 f'\tcross correlation threshold alignment: {self.cross_correlation_threshold_alignment}\n'
-                f'\tcross correlation threshold movement: {self.cross_correlation_threshold_movement}\n')
+                f'\tcross correlation threshold movement: {self.cross_correlation_threshold_movement}\n'
+                f'\tmaximal alignment movement: {self.maximal_alignment_movement}\n')

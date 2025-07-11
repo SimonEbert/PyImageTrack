@@ -189,6 +189,8 @@ class ImagePair:
                                    image_transform=self.image1_transform, reference_area=reference_area,
                                     number_of_control_points=
                                     self.tracking_parameters.image_alignment_number_of_control_points,
+                                    cell_size=self.tracking_parameters.image_alignment_control_cell_size,
+                                    tracking_area_size=self.tracking_parameters.image_alignment_control_tracking_area_size,
                                     cross_correlation_threshold=
                                     self.tracking_parameters.cross_correlation_threshold_alignment))
 
@@ -406,7 +408,7 @@ class ImagePair:
             A list, giving the files that should be saved. Possible options are: "movement_bearing_valid_tif", "movement_bearing_full_tif",
               "movement_rate_valid_tif", "movement_rate_full_tif",
               "movement_rate_with_lod_points_tif", "movement_bearing_with_lod_points_tif",
-              "statistical_parameters_csv", "LoD_points_geojson".
+              "statistical_parameters_csv", "LoD_points_geojson", "control_points_geojson", "first_image_matrix", "second_image_matrix".
               The tracking parameters and the full tracking results (as geojson) will always be saved to prevent loss of
               data.
         Returns
@@ -473,6 +475,39 @@ class ImagePair:
             self.level_of_detection_points.to_file(
                 folder_path + "/LoD_points_" + str(self.image1_observation_date.year) + "_"
                 + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
+
+
+        if "control_points_geojson" in save_files:
+            self.tracked_control_points.to_file(
+                folder_path + "/control_points_" + str(self.image1_observation_date.year) + "_"
+                + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
+
+        if "first_image_matrix" in save_files:
+            metadata = {
+                'driver': 'GTiff',
+                'count': 1,  # Number of bands
+                'dtype': self.image1_matrix.dtype,  # Adjust if necessary
+                'crs': str(self.crs),  # Define the Coordinate Reference System (CRS)
+                'width': self.image1_matrix.shape[1],  # Number of columns (x)
+                'height': self.image1_matrix.shape[0],  # Number of rows (y)
+                'transform': self.image1_transform,  # Affine transform for georeferencing
+            }
+            with rasterio.open(folder_path + "/image_" + str(self.image1_observation_date.year) + ".tif", 'w', **metadata) as dst:
+                dst.write(self.image1_matrix, 1)
+
+        if "second_image_matrix" in save_files:
+            metadata = {
+                'driver': 'GTiff',
+                'count': 1,  # Number of bands
+                'dtype': self.image2_matrix.dtype,  # Adjust if necessary
+                'crs': str(self.crs),  # Define the Coordinate Reference System (CRS)
+                'width': self.image2_matrix.shape[1],  # Number of columns (x)
+                'height': self.image2_matrix.shape[0],  # Number of rows (y)
+                'transform': self.image2_transform,  # Affine transform for georeferencing
+            }
+            with rasterio.open(folder_path + "/image_" + str(self.image2_observation_date.year) + ".tif", 'w',
+                               **metadata) as dst:
+                dst.write(self.image2_matrix, 1)
 
         if "statistical_parameters_txt" in save_files:
             total_number_of_points = len(self.tracking_results)

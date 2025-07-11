@@ -13,8 +13,8 @@ from CreateGeometries.HandleGeometries import georeference_tracked_points
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
                             number_of_control_points: int, cell_size: int = 50, tracking_area_size: int = 60,
-                            cross_correlation_threshold: float = 0.8
-                            ):
+                            cross_correlation_threshold: float = 0.8,
+                            maximal_alignment_movement: float = None):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
@@ -45,6 +45,9 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     cross_correlation_threshold: float = 0.8
         Threshold for which points will be used for aligning the image. Only cells that match with a correlation
         coefficient higher than this value will be considered.
+    maximal_alignment_movement: float = None
+        Gives the maximal movement in pixels (!) allowed for a single point to be taken into consideration for the
+        alignment. If None (the default) no filter is applied.
     Returns
     ----------
     [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
@@ -54,10 +57,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     if len(reference_area) == 0:
         raise ValueError("No polygon provided in the reference area GeoDataFrame. Please provide a GeoDataFrame with "
                          "exactly one element.")
-
     reference_area_point_grid = grid_points_on_polygon_by_number_of_points(reference_area,
                                                                            number_of_points=number_of_control_points)
-
     tracked_control_pixels = track_movement_lsm(image1_matrix, image2_matrix, image_transform,
                                                 points_to_be_tracked=reference_area_point_grid,
                                                 movement_cell_size=cell_size,
@@ -69,6 +70,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                               "movement_bearing_pixels"]
                                                 )
     tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
+    if maximal_alignment_movement is not None:
+        tracked_control_pixels_valid = tracked_control_pixels_valid[tracked_control_pixels_valid["movement_distance_pixels"] <= maximal_alignment_movement]
     if len(tracked_control_pixels_valid) == 0:
         raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
                          "threshold. Cross-correlation values were " + str(
