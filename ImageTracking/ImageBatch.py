@@ -32,14 +32,14 @@ class ImageBatch:
         if len(list_of_image_files) != len(list_of_observation_dates):
             raise ValueError('Number of image files does not match the number of observation dates.')
 
-        for i in range(len(list_of_image_files) - 1):
+        for i in range(len(list_of_image_files) - 2):
             file1 = list_of_image_files[i]
-            file2 = list_of_image_files[i + 1]
+            file2 = list_of_image_files[i + 2]
             observation_date1 = list_of_observation_dates[i]
-            observation_date2 = list_of_observation_dates[i + 1]
+            observation_date2 = list_of_observation_dates[i + 2]
             self.list_of_image_pairs.append(ImagePair(self.tracking_parameter_dict))
 
-            observation_time_difference = list_of_observation_dates[i + 1] - list_of_observation_dates[i]
+            observation_time_difference = list_of_observation_dates[i + 2] - list_of_observation_dates[i]
 
             years_between_observations = observation_time_difference.days / 365.25
             movement_tracking_area_size = np.ceil(
