@@ -83,22 +83,34 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
                                             + tracked_control_pixels_valid["movement_column_direction"])
 
-    model_row = sklearn.linear_model.LinearRegression()
-    model_row.fit(
-        np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
-                        tracked_control_pixels_valid["new_row"]
-    )
+    # model_row = sklearn.linear_model.LinearRegression()
+    # model_row.fit(
+    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+    #                     tracked_control_pixels_valid["new_row"]
+    # )
+    #
+    # model_column = sklearn.linear_model.LinearRegression()
+    # model_column.fit(
+    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+    #                     tracked_control_pixels_valid["new_column"]
+    # )
+    # sampling_transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
+    #                                            [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
 
-    model_column = sklearn.linear_model.LinearRegression()
-    model_column.fit(
-        np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
-                        tracked_control_pixels_valid["new_column"]
-    )
+
+    linear_model_input = np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])
+    linear_model_output = np.column_stack([tracked_control_pixels_valid["new_row"],tracked_control_pixels_valid["new_column"]])
+    linear_model_input_train = linear_model_input[0::2,:]
+    linear_model_output_train = linear_model_output[0::2,:]
+    linear_model_input_test = linear_model_input[1::2,:]
+    linear_model_output_test = linear_model_output[1::2,:]
+    transformation_linear_model = sklearn.linear_model.LinearRegression()
+    transformation_linear_model.fit(linear_model_input_train, linear_model_output_train)
+
+    sampling_transformation_matrix = np.array([[transformation_linear_model.coef_[0,0],transformation_linear_model.coef_[0,1],transformation_linear_model.intercept_[0]],
+                                              [transformation_linear_model.coef_[1,0],transformation_linear_model.coef_[1,1],transformation_linear_model.intercept_[1]]])
 
 
-
-    sampling_transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
-                                               [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
 
     indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[0]), np.arange(0, image1_matrix.shape[1]))
                        ).T.reshape(-1, 2).T
@@ -114,7 +126,19 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     # residuals_row = model_row.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_row"]
     # residuals_column = model_column.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_column"]
     # plt.scatter(residuals_row, residuals_column)
-    # plt.show()
+    # plt.title("Row_model_score: " + str(model_row.score(
+    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+    #                     tracked_control_pixels_valid["new_column"])) + "\nColumn_model_score: "
+    #                                     + str(model_column.score(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+    #                     tracked_control_pixels_valid["new_column"]))
+    #           )
+
+    residuals = transformation_linear_model.predict(linear_model_input_test) - linear_model_output_test
+    plt.scatter(residuals[:, 0], residuals[:, 1])
+    plt.title("Model_score:" + str(transformation_linear_model.score(linear_model_input_test, linear_model_output_test))
+               + "\nResidual correlation" + str(np.corrcoef(residuals[:,0], residuals[:,1])[0, 1]))
+    plt.show()
+
 
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]
 
