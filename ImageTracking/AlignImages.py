@@ -86,22 +86,54 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
                                             + tracked_control_pixels_valid["movement_column_direction"])
 
-    model_row = sklearn.linear_model.LinearRegression()
-    model_row.fit(
-        np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
-                        tracked_control_pixels_valid["new_row"]
-    )
+    # model_row = sklearn.linear_model.LinearRegression()
+    # model_row.fit(
+    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+    #                     tracked_control_pixels_valid["new_row"]
+    # )
+    #
+    # model_column = sklearn.linear_model.LinearRegression()
+    # model_column.fit(
+    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
+    #                     tracked_control_pixels_valid["new_column"]
+    # )
+    # sampling_transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
+    #                                            [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
 
-    model_column = sklearn.linear_model.LinearRegression()
-    model_column.fit(
-        np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
-                        tracked_control_pixels_valid["new_column"]
-    )
+
+    linear_model_input = np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])
+    linear_model_output = np.column_stack([tracked_control_pixels_valid["new_row"],tracked_control_pixels_valid["new_column"]])
+    # linear_model_input_train = linear_model_input[0::2,:]
+    # linear_model_output_train = linear_model_output[0::2,:]
+    # linear_model_input_test = linear_model_input[1::2,:]
+    # linear_model_output_test = linear_model_output[1::2,:]
+    transformation_linear_model = sklearn.linear_model.LinearRegression()
+    transformation_linear_model.fit(linear_model_input, linear_model_output)
 
 
+    residuals = transformation_linear_model.predict(linear_model_input) - linear_model_output
 
-    sampling_transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
-                                               [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
+    fig, ax = plt.subplots()
+    ax.grid(True, which='both')
+
+    ax.axhline(y=0, color='k')
+    ax.axvline(x=0, color='k')
+    # ax.set_xlim((-1,1))
+    # ax.set_ylim((-1,1))
+    plt.scatter(residuals[:, 0], residuals[:, 1])
+    plt.title("Model_score:" + str(transformation_linear_model.score(linear_model_input, linear_model_output))
+              + "\nResidual correlation" + str(np.corrcoef(residuals[:, 0], residuals[:, 1])[0, 1]))
+    plt.show()
+
+    if np.abs(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) > 0.7:
+        print("Skipping this image pair due to poor alignment (correlation between row and column residuals: " + str(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) + ")")
+        raise ValueError("Valid alignment was not possible.")
+
+
+    sampling_transformation_matrix = np.array([[transformation_linear_model.coef_[0,0],transformation_linear_model.coef_[0,1],transformation_linear_model.intercept_[0]],
+                                              [transformation_linear_model.coef_[1,0],transformation_linear_model.coef_[1,1],transformation_linear_model.intercept_[1]]])
+
+
 
     indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[0]), np.arange(0, image1_matrix.shape[1]))
                        ).T.reshape(-1, 2).T
@@ -114,25 +146,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
 
-    residuals_row = model_row.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_row"]
-    residuals_column = model_column.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_column"]
 
-    # fig, ax = plt.subplots()
-    # ax.grid(True, which='both')
-    #
-    # ax.axhline(y=0, color='k')
-    # ax.axvline(x=0, color='k')
-    # # ax.set_xlim((-1,1))
-    # # ax.set_ylim((-1,1))
-    # ax.scatter(residuals_row, residuals_column)
-    # plt.title("Mean of the residual movement: "
-    #       + str(np.mean(np.linalg.norm(np.column_stack((residuals_row, residuals_column)), axis=1)))
-    #       + "\nCorrelation coefficient: " + str(np.corrcoef(residuals_row, residuals_column)[0,1]))
-    # plt.show()
 
-    if np.abs(np.corrcoef(residuals_row, residuals_column)[0,1]) > 0.6:
-        print("Skipping this image pair due to poor alignment (correlation between row and column residuals: " + str(np.corrcoef(residuals_row, residuals_column)[0,1]))
-        raise ValueError("Valid alignment was not possible.")
 
 
 

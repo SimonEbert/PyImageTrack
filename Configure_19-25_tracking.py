@@ -73,12 +73,12 @@ rock_glacier_inventory_shapefile = rock_glacier_inventory_shapefile.to_crs(epsg=
 
 valid_tracking_fraction_dataframe = pd.DataFrame()
 
-for polygon_id in np.arange(1, 82):
+for polygon_id in [1,4]:# in np.arange(1, 82):
 
     # polygon 60-78 are the glaciers, 28, 29, 31-34, 36, 53-54, 58, 59 have no data from 2019
     # if 60 <= polygon_id < 79 or 28 <= polygon_id < 30 or 31 <= polygon_id < 35 or polygon_id == 36 or 53 <= polygon_id < 55 or 58 <= polygon_id < 60:
     #     continue
-    if 60 <= polygon_id <79 or 2 <= polygon_id < 4:
+    if 60 <= polygon_id <79:
         continue
 
     print("Starting to assess polygon ", polygon_id)
@@ -119,7 +119,7 @@ for polygon_id in np.arange(1, 82):
     extent_area = Polygon_Image_Batch.data_bounds
     reference_area = gpd.GeoDataFrame(
                  geometry=extent_area.difference(
-                     rock_glacier_inventory_shapefile.union_all().buffer(100), align=False))
+                     rock_glacier_inventory_shapefile.union_all().buffer(0), align=False))
 
     single_rock_glacier = rock_glacier_inventory_shapefile.loc[
                 rock_glacier_inventory_shapefile["OBJECTID"] == polygon_id,]
@@ -129,8 +129,8 @@ for polygon_id in np.arange(1, 82):
     # buffer around rock glacier since inventory quality is not perfect
     single_rock_glacier = gpd.GeoDataFrame(geometry=single_rock_glacier.geometry,#.buffer(50),
                                                    crs=rock_glacier_inventory_shapefile.crs)
-    # reference_area = gpd.GeoDataFrame(
-    #     geometry=reference_area.intersection(single_rock_glacier.buffer(300)))
+    reference_area = gpd.GeoDataFrame(
+        geometry=reference_area.intersection(single_rock_glacier.buffer(100)))
 
     if image_enhancement:
         Polygon_Image_Batch.equalize_adapthist_images()

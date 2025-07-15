@@ -429,6 +429,7 @@ class ImagePair:
         -------
         """
 
+        os.makedirs(folder_path, exist_ok=True)
 
         if "first_image_matrix" in save_files:
             metadata = {
@@ -457,7 +458,6 @@ class ImagePair:
 
         if not self.valid_alignment_possible:
             return
-        os.makedirs(folder_path, exist_ok=True)
 
         self.tracking_results.to_file(folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
                                       + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
