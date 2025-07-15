@@ -16,7 +16,7 @@ from Plots.MakePlots import plot_raster_and_geometry
 from Parameters.FilterParameters import FilterParameters
 
 # Set parameters for this project
-image_enhancement = False
+image_enhancement = True
 maximal_assumed_movement_rate = 3.5
 pixels_per_metre = 2
 epsg_code = 32719
@@ -28,21 +28,22 @@ logger_filename = "./results.log"
 alignment_via_lsm = True
 number_of_control_points = 2000
 image_bands = 0
-control_tracking_area_size = 70
-control_cell_size = 50
+control_tracking_area_size = 50
+control_cell_size = 30
 tracking_method = "lsm"
 distance_of_tracked_points = 5
 movement_cell_size = 25
-level_of_detection_quantile = 0.5
+level_of_detection_quantile = 0.9
 cross_correlation_threshold_alignment = 0.9
 cross_correlation_threshold_movement = 0.75
+maximal_alignment_movement = None # In Pixels !!
 
 
 # === SAVE OPTIONS ===
 # tracking_results.geojson will always be saved, since it contains the full information.
 save_files = ["movement_bearing_valid_tif",
               "movement_rate_valid_tif", "invalid_mask_tif", "lod_mask_tif",
-              "statistical_parameters_txt", "LoD_points_geojson"#, "control_points_geojson",
+              "statistical_parameters_txt", "LoD_points_geojson", "control_points_geojson",
               "first_image_matrix", "second_image_matrix"]
 
 # === FILTER PARAMETERS ===
@@ -77,7 +78,7 @@ for polygon_id in np.arange(1, 82):
     # polygon 60-78 are the glaciers, 28, 29, 31-34, 36, 53-54, 58, 59 have no data from 2019
     # if 60 <= polygon_id < 79 or 28 <= polygon_id < 30 or 31 <= polygon_id < 35 or polygon_id == 36 or 53 <= polygon_id < 55 or 58 <= polygon_id < 60:
     #     continue
-    if 60 <= polygon_id <79:
+    if 60 <= polygon_id <79 or 2 <= polygon_id < 4:
         continue
 
     print("Starting to assess polygon ", polygon_id)
@@ -107,6 +108,7 @@ for polygon_id in np.arange(1, 82):
             "movement_cell_size": movement_cell_size,
             "cross_correlation_threshold_alignment": cross_correlation_threshold_alignment,
             "cross_correlation_threshold_movement": cross_correlation_threshold_movement,
+            "maximal_alignment_movement": maximal_alignment_movement
     })
 
 
@@ -125,7 +127,7 @@ for polygon_id in np.arange(1, 82):
     single_rock_glacier.set_index(np.arange(1), inplace=True)
 
     # buffer around rock glacier since inventory quality is not perfect
-    single_rock_glacier = gpd.GeoDataFrame(geometry=single_rock_glacier.geometry.buffer(50),
+    single_rock_glacier = gpd.GeoDataFrame(geometry=single_rock_glacier.geometry,#.buffer(50),
                                                    crs=rock_glacier_inventory_shapefile.crs)
     # reference_area = gpd.GeoDataFrame(
     #     geometry=reference_area.intersection(single_rock_glacier.buffer(300)))
@@ -137,14 +139,16 @@ for polygon_id in np.arange(1, 82):
     Polygon_Image_Batch.calculate_and_filter_lod(filter_parameters=filter_parameters, reference_area=reference_area)
     Polygon_Image_Batch.filter_outliers(filter_parameters=filter_parameters)
 
-    Polygon_Image_Batch.save_full_results("../Analysis_rock_glaciers_Argentina/Tracking_results_skipped/poly" + str(polygon_id), save_files=save_files)
+    Polygon_Image_Batch.save_full_results("../Analysis_rock_glaciers_Argentina/Tracking_results_alignment_check/poly" + str(polygon_id), save_files=save_files)
 
     for image_pair in Polygon_Image_Batch.list_of_image_pairs:
+        if not image_pair.valid_alignment_possible:
+            continue
         valid_tracking_fraction_dataframe.loc[polygon_id,
             str(image_pair.image1_observation_date.year) + "_" + str(image_pair.image2_observation_date.year)]\
                 = image_pair.tracking_results["valid"].mean()
 
-    valid_tracking_fraction_dataframe.to_csv("../Analysis_rock_glaciers_Argentina/Tracking_results_skipped/valid_results_fraction.csv")
+    valid_tracking_fraction_dataframe.to_csv("../Analysis_rock_glaciers_Argentina/Tracking_results_alignment_check/valid_results_fraction.csv")
 
 #     for filename_1 in list_of_observations[:-1]:
 #

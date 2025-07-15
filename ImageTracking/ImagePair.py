@@ -38,6 +38,7 @@ from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
 class ImagePair:
     def __init__(self, parameter_dict: dict = None):
         self.images_aligned = False
+        self.valid_alignment_possible = None
         # self.mask_array = None
 
         # Data
@@ -184,15 +185,22 @@ class ImagePair:
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
-        [_, new_image2_matrix, tracked_control_points] = (
-            align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
-                                   image_transform=self.image1_transform, reference_area=reference_area,
-                                    number_of_control_points=
-                                    self.tracking_parameters.image_alignment_number_of_control_points,
-                                    cell_size=self.tracking_parameters.image_alignment_control_cell_size,
-                                    tracking_area_size=self.tracking_parameters.image_alignment_control_tracking_area_size,
-                                    cross_correlation_threshold=
-                                    self.tracking_parameters.cross_correlation_threshold_alignment))
+        try:
+            [_, new_image2_matrix, tracked_control_points] = (
+                align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
+                                       image_transform=self.image1_transform, reference_area=reference_area,
+                                        number_of_control_points=
+                                        self.tracking_parameters.image_alignment_number_of_control_points,
+                                        cell_size=self.tracking_parameters.image_alignment_control_cell_size,
+                                        tracking_area_size=self.tracking_parameters.image_alignment_control_tracking_area_size,
+                                        cross_correlation_threshold=
+                                        self.tracking_parameters.cross_correlation_threshold_alignment,
+                                        maximal_alignment_movement=self.tracking_parameters.maximal_alignment_movement))
+            self.valid_alignment_possible = True
+        except:
+            self.valid_alignment_possible = False
+            return
+
 
         years_between_observations = (self.image2_observation_date - self.image1_observation_date).days / 365.25
         self.tracked_control_points = georeference_tracked_points(tracked_control_points, self.image1_transform,
@@ -261,6 +269,8 @@ class ImagePair:
         None
         """
         self.align_images(reference_area)
+        if not self.valid_alignment_possible:
+            return
         tracked_points = self.track_points(tracking_area)
         self.tracking_results = tracked_points
 
@@ -314,6 +324,8 @@ class ImagePair:
             -------
 
                """
+        if not self.valid_alignment_possible:
+            return
         print("Filtering outliers. This may take a moment.")
         self.filter_parameters = filter_parameters
         self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters)
@@ -377,6 +389,9 @@ class ImagePair:
         Returns
         -------
         """
+
+        if not self.valid_alignment_possible:
+            return
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection)
 
     def full_filter(self, reference_area, filter_parameters: FilterParameters):
@@ -391,7 +406,6 @@ class ImagePair:
                                                        kernel_size=50)
         self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
                                                        kernel_size=50)
-
 
 
 
@@ -415,6 +429,34 @@ class ImagePair:
         -------
         """
 
+
+        if "first_image_matrix" in save_files:
+            metadata = {
+                'driver': 'GTiff',
+                'count': 1,  # Number of bands
+                'dtype': self.image1_matrix.dtype,  # Adjust if necessary
+                'crs': str(self.crs),  # Define the Coordinate Reference System (CRS)
+                'width': self.image1_matrix.shape[1],  # Number of columns (x)
+                'height': self.image1_matrix.shape[0],  # Number of rows (y)
+                'transform': self.image1_transform,  # Affine transform for georeferencing
+            }
+
+            with rasterio.open(folder_path + "/image_" + str(self.image1_observation_date.year) + ".tif", 'w', **metadata) as dst:
+                dst.write(self.image1_matrix, 1)
+
+        if "second_image_matrix" in save_files:
+            metadata = {
+                'driver': 'GTiff',
+                'count': 1,  # Number of bands
+                'dtype': self.image2_matrix.dtype,  # Adjust if necessary
+                'crs': str(self.crs),  # Define the Coordinate Reference System (CRS)
+                'width': self.image2_matrix.shape[1],  # Number of columns (x)
+                'height': self.image2_matrix.shape[0],  # Number of rows (y)
+                'transform': self.image2_transform,  # Affine transform for georeferencing
+            }
+
+        if not self.valid_alignment_possible:
+            return
         os.makedirs(folder_path, exist_ok=True)
 
         self.tracking_results.to_file(folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
@@ -482,32 +524,6 @@ class ImagePair:
                 folder_path + "/control_points_" + str(self.image1_observation_date.year) + "_"
                 + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")
 
-        if "first_image_matrix" in save_files:
-            metadata = {
-                'driver': 'GTiff',
-                'count': 1,  # Number of bands
-                'dtype': self.image1_matrix.dtype,  # Adjust if necessary
-                'crs': str(self.crs),  # Define the Coordinate Reference System (CRS)
-                'width': self.image1_matrix.shape[1],  # Number of columns (x)
-                'height': self.image1_matrix.shape[0],  # Number of rows (y)
-                'transform': self.image1_transform,  # Affine transform for georeferencing
-            }
-            with rasterio.open(folder_path + "/image_" + str(self.image1_observation_date.year) + ".tif", 'w', **metadata) as dst:
-                dst.write(self.image1_matrix, 1)
-
-        if "second_image_matrix" in save_files:
-            metadata = {
-                'driver': 'GTiff',
-                'count': 1,  # Number of bands
-                'dtype': self.image2_matrix.dtype,  # Adjust if necessary
-                'crs': str(self.crs),  # Define the Coordinate Reference System (CRS)
-                'width': self.image2_matrix.shape[1],  # Number of columns (x)
-                'height': self.image2_matrix.shape[0],  # Number of rows (y)
-                'transform': self.image2_transform,  # Affine transform for georeferencing
-            }
-            with rasterio.open(folder_path + "/image_" + str(self.image2_observation_date.year) + ".tif", 'w',
-                               **metadata) as dst:
-                dst.write(self.image2_matrix, 1)
 
         if "statistical_parameters_txt" in save_files:
             total_number_of_points = len(self.tracking_results)

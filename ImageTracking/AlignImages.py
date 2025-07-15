@@ -8,6 +8,7 @@ from ImageTracking.TrackMovement import track_movement_lsm
 from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_number_of_points
 from ImageTracking.TrackMovement import move_indices_from_transformation_matrix
 from Plots.MakePlots import plot_movement_of_points
+from Plots.MakePlots import plot_distribution_of_point_movement
 from CreateGeometries.HandleGeometries import georeference_tracked_points
 
 
@@ -67,9 +68,11 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                 save_columns=["movement_row_direction",
                                                               "movement_column_direction",
                                                               "movement_distance_pixels",
-                                                              "movement_bearing_pixels"]
+                                                              "movement_bearing_pixels",
+                                                              "correlation_coefficient"]
                                                 )
     tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
+
     if maximal_alignment_movement is not None:
         tracked_control_pixels_valid = tracked_control_pixels_valid[tracked_control_pixels_valid["movement_distance_pixels"] <= maximal_alignment_movement]
     if len(tracked_control_pixels_valid) == 0:
@@ -111,10 +114,28 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
 
-    # residuals_row = model_row.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_row"]
-    # residuals_column = model_column.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_column"]
-    # plt.scatter(residuals_row, residuals_column)
+    residuals_row = model_row.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_row"]
+    residuals_column = model_column.predict(np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])) - tracked_control_pixels_valid["new_column"]
+
+    # fig, ax = plt.subplots()
+    # ax.grid(True, which='both')
+    #
+    # ax.axhline(y=0, color='k')
+    # ax.axvline(x=0, color='k')
+    # # ax.set_xlim((-1,1))
+    # # ax.set_ylim((-1,1))
+    # ax.scatter(residuals_row, residuals_column)
+    # plt.title("Mean of the residual movement: "
+    #       + str(np.mean(np.linalg.norm(np.column_stack((residuals_row, residuals_column)), axis=1)))
+    #       + "\nCorrelation coefficient: " + str(np.corrcoef(residuals_row, residuals_column)[0,1]))
     # plt.show()
+
+    if np.abs(np.corrcoef(residuals_row, residuals_column)[0,1]) > 0.6:
+        print("Skipping this image pair due to poor alignment (correlation between row and column residuals: " + str(np.corrcoef(residuals_row, residuals_column)[0,1]))
+        raise ValueError("Valid alignment was not possible.")
+
+
+
 
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]
 

@@ -107,6 +107,7 @@ class ImageBatch:
             image_pair.image2_matrix = equalize_adapthist_images(image_pair.image2_matrix,
                                                            kernel_size=50)
 
+
     def calculate_and_filter_lod(self, filter_parameters: FilterParameters, reference_area: gpd.GeoDataFrame = None):
         if self.filter_parameters is None:
             self.filter_parameters = filter_parameters
@@ -130,6 +131,8 @@ class ImageBatch:
         for image_pair in self.list_of_image_pairs:
             image_pair.save_full_results(folder_path=folder_path + "/" + str(image_pair.image1_observation_date.year) + "_" + str(image_pair.image2_observation_date.year), save_files=save_files)
 
+            if not image_pair.valid_alignment_possible:
+                continue
             tracking_results = image_pair.tracking_results
             tracking_results = tracking_results.add_suffix("_" + str(image_pair.image1_observation_date.year) + "_" + str(image_pair.image2_observation_date.year))
             tracking_results = tracking_results.rename(columns={("geometry_" + str(image_pair.image1_observation_date.year) + "_" + str(image_pair.image2_observation_date.year)): "geometry"})

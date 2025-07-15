@@ -166,3 +166,6 @@ def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
                moving_points["movement_column_direction"])
     plt.show()
 
+
+
+
