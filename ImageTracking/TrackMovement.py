@@ -260,10 +260,10 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     tracked_cell_vector = tracked_cell_vector - np.mean(tracked_cell_vector)
     tracked_cell_vector = tracked_cell_vector / np.linalg.norm(tracked_cell_vector)
     corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
-    if corr > 0.85:
-        rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
-        rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
-        rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
+    # if corr > 0.85:
+    #     rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
+    #     rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
+    #     rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
 
     # time.sleep(10)
 
@@ -304,8 +304,8 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
     track_cell1 = get_submatrix_symmetric(central_index=central_index, shape=(tracked_cell_size, tracked_cell_size),
                                           matrix=shared_image_matrix1)
 
-    # get the second image section as search cell
-    search_area2 = get_submatrix_symmetric(central_index=central_index,
+    # get the second image section as search cell# ToDO: Why this??!
+    search_area2 = get_submatrix_symmetric(central_index=np.array(central_index)-np.array([2,3]),
                                            shape=(search_area_size, search_area_size),
                                            matrix=shared_image_matrix2)
     if len(search_area2) == 0:

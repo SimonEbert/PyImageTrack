@@ -37,9 +37,10 @@ Test_Image_Pair.load_images_from_file(filename_1="../Lisa_Kaunertal/Testdaten_Al
                                             observation_date_2="01-07-2023",
                                             selected_channels=0, NA_value=-9999)
 
-image1_submatrix = get_submatrix_symmetric([1500,5500], [100,100], Test_Image_Pair.image1_matrix)
-image2_submatrix = get_submatrix_symmetric([1500,5500], [100,100], Test_Image_Pair.image2_matrix)
+print(Test_Image_Pair.image1_matrix.shape, Test_Image_Pair.image2_matrix.shape)
 
+image1_submatrix = get_submatrix_symmetric([1500,5500], [500,500], Test_Image_Pair.image1_matrix)
+image2_submatrix = get_submatrix_symmetric([1499,5498], [500,500], Test_Image_Pair.image2_matrix)
 rasterio.plot.show(image1_submatrix)
 rasterio.plot.show(image2_submatrix)
 
