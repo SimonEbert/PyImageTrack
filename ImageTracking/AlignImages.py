@@ -103,31 +103,29 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
 
     linear_model_input = np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])
     linear_model_output = np.column_stack([tracked_control_pixels_valid["new_row"],tracked_control_pixels_valid["new_column"]])
-    # linear_model_input_train = linear_model_input[0::2,:]
-    # linear_model_output_train = linear_model_output[0::2,:]
-    # linear_model_input_test = linear_model_input[1::2,:]
-    # linear_model_output_test = linear_model_output[1::2,:]
     transformation_linear_model = sklearn.linear_model.LinearRegression()
     transformation_linear_model.fit(linear_model_input, linear_model_output)
 
 
     residuals = transformation_linear_model.predict(linear_model_input) - linear_model_output
+    tracked_control_pixels_valid["residuals_row"] = residuals[:,0]
+    tracked_control_pixels_valid["residuals_column"] = residuals[:,1]
 
-    fig, ax = plt.subplots()
-    ax.grid(True, which='both')
+    # fig, ax = plt.subplots()
+    # ax.grid(True, which='both')
+    #
+    # ax.axhline(y=0, color='k')
+    # ax.axvline(x=0, color='k')
+    # # ax.set_xlim((-1,1))
+    # # ax.set_ylim((-1,1))
+    # plt.scatter(residuals[:, 0], residuals[:, 1])
+    # plt.title("Model_score:" + str(transformation_linear_model.score(linear_model_input, linear_model_output))
+    #           + "\nResidual correlation" + str(np.corrcoef(residuals[:, 0], residuals[:, 1])[0, 1]))
+    # plt.show()
 
-    ax.axhline(y=0, color='k')
-    ax.axvline(x=0, color='k')
-    # ax.set_xlim((-1,1))
-    # ax.set_ylim((-1,1))
-    plt.scatter(residuals[:, 0], residuals[:, 1])
-    plt.title("Model_score:" + str(transformation_linear_model.score(linear_model_input, linear_model_output))
-              + "\nResidual correlation" + str(np.corrcoef(residuals[:, 0], residuals[:, 1])[0, 1]))
-    plt.show()
-
-    if np.abs(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) > 0.7:
-        print("Skipping this image pair due to poor alignment (correlation between row and column residuals: " + str(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) + ")")
-        raise ValueError("Valid alignment was not possible.")
+    # if np.abs(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) > 0.7:
+    #     print("Skipping this image pair due to poor alignment (correlation between row and column residuals: " + str(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) + ")")
+    #     raise ValueError("Valid alignment was not possible.")
 
 
     sampling_transformation_matrix = np.array([[transformation_linear_model.coef_[0,0],transformation_linear_model.coef_[0,1],transformation_linear_model.intercept_[0]],
@@ -145,11 +143,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
           "\nThis may take some time.")
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
-
-
-
-
-
 
 
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]

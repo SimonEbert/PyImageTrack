@@ -69,7 +69,7 @@ class ImagePair:
             self.image2_matrix = self.image2_matrix[selected_channels, :, :]
 
     def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
-                              selected_channels: int = None):
+                              selected_channels: int = None, NA_value: float = None):
         """
         Loads two image files from the respective file paths. The order of the provided image paths is expected to
         align with the observation order, that is the first image is assumed to be the earlier observation. The two
@@ -107,7 +107,8 @@ class ImagePair:
         intersection = poly1.intersection(poly2)
         # leave a buffer to the boundary so that every search_cell is contained in the valid data area
         image_bounds = gpd.GeoDataFrame(gpd.GeoDataFrame({'geometry': [intersection]}, crs=self.crs).buffer(
-            -max(-file1.transform[4],file1.transform[0])*self.tracking_parameters.movement_tracking_area_size))
+            -max(-file1.transform[4],file1.transform[0])*self.tracking_parameters.movement_tracking_area_size)
+            )
         # set correct geometry column
         image_bounds = image_bounds.rename(columns={0: "geometry"})
         image_bounds.set_geometry("geometry", inplace=True)
@@ -119,7 +120,12 @@ class ImagePair:
         self.image1_observation_date = datetime.strptime(observation_date_1, "%d-%m-%Y").date()
         self.image2_observation_date = datetime.strptime(observation_date_2, "%d-%m-%Y").date()
 
+        if NA_value is not None:
+            self.image1_matrix[self.image1_matrix == NA_value] = 0
+            self.image2_matrix[self.image2_matrix == NA_value] = 0
+
         self.select_image_channels(selected_channels=selected_channels)
+
 
     def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
                                               image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
@@ -185,9 +191,9 @@ class ImagePair:
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
-        try:
-            [_, new_image2_matrix, tracked_control_points] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
+
+        [_, new_image2_matrix, tracked_control_points] = (
+            align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
                                        image_transform=self.image1_transform, reference_area=reference_area,
                                         number_of_control_points=
                                         self.tracking_parameters.image_alignment_number_of_control_points,
@@ -196,11 +202,8 @@ class ImagePair:
                                         cross_correlation_threshold=
                                         self.tracking_parameters.cross_correlation_threshold_alignment,
                                         maximal_alignment_movement=self.tracking_parameters.maximal_alignment_movement))
-            self.valid_alignment_possible = True
-        except:
-            self.valid_alignment_possible = False
-            return
 
+        self.valid_alignment_possible = True
 
         years_between_observations = (self.image2_observation_date - self.image1_observation_date).days / 365.25
         self.tracked_control_points = georeference_tracked_points(tracked_control_points, self.image1_transform,
@@ -456,8 +459,8 @@ class ImagePair:
                 'transform': self.image2_transform,  # Affine transform for georeferencing
             }
 
-        if not self.valid_alignment_possible:
-            return
+            with rasterio.open(folder_path + "/image_" + str(self.image2_observation_date.year) + ".tif", 'w', **metadata) as dst:
+                dst.write(self.image2_matrix, 1)
 
         self.tracking_results.to_file(folder_path + "/tracking_results_" + str(self.image1_observation_date.year) + "_"
                                       + str(self.image2_observation_date.year) + ".geojson", driver="GeoJSON")

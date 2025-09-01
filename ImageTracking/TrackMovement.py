@@ -8,6 +8,8 @@ import sklearn
 import datetime
 import scipy
 import rasterio
+import matplotlib.pyplot as plt
+import time
 
 from CreateGeometries.HandleGeometries import get_submatrix_symmetric
 from ImageTracking.TrackingResults import TrackingResults
@@ -40,12 +42,15 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
     # for multichannel images, flattening ensures that always the same band is being compared
     tracked_vector = tracked_cell_matrix.flatten()
 
+
+    # normalize the tracked vector
+    tracked_vector = tracked_vector - np.mean(tracked_vector)
+
+
     if np.linalg.norm(tracked_vector) == 0:
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="cross-correlation",
                                cross_correlation_coefficient=np.nan,
                                tracking_success=False)
-    # normalize the tracked vector
-    tracked_vector = tracked_vector - np.mean(tracked_vector)
     tracked_vector = tracked_vector / np.linalg.norm(tracked_vector)
     for i in np.arange(np.ceil(height_tracked_cell / 2), height_search_cell - np.ceil(height_tracked_cell / 2)):
         for j in np.arange(np.ceil(width_tracked_cell / 2), width_search_cell - np.ceil(width_tracked_cell / 2)):
@@ -55,8 +60,8 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
                                                             search_cell_matrix)
             # flatten the comparison cell matrix
             search_subcell_vector = search_subcell_matrix.flatten()
-            if np.linalg.norm(search_subcell_vector) == 0:
-                continue
+            # if np.linalg.norm(search_subcell_vector) == 0:
+            #     continue
 
             # initialize correlation for the current central pixel (i,j)
             corr = 0
@@ -64,11 +69,13 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
             if np.any(search_subcell_vector):
                 # normalize search_subcell vector
                 search_subcell_vector = search_subcell_vector - np.mean(search_subcell_vector)
+                if np.linalg.norm(search_subcell_vector) == 0:
+                    continue
                 search_subcell_vector = search_subcell_vector / np.linalg.norm(search_subcell_vector)
                 corr = np.correlate(tracked_vector, search_subcell_vector, mode='valid')
-            if len(corr) != 1:
-                logging.info("Correlation was " + str(corr) + ". Skipping")
-                continue
+            # if len(corr) != 1:
+            #     logging.info("Correlation was " + str(corr) + ". Skipping")
+            #     continue
             if float(corr) > best_correlation:
                 best_correlation = float(corr)
                 best_correlation_coordinates = [i, j]
@@ -163,7 +170,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         initial_shift_values = [0, 0]
 
     # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
-    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1], 0, 1]
+    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1]]# , 0, 1]
     # calculate transformation matrix form of the coefficients
     transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
                                       [coefficients[3], coefficients[4], coefficients[5]]])
@@ -172,12 +179,10 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                                                                np.arange(0, search_cell_matrix.shape[-1]),
                                                                search_cell_matrix)
 
-    # search_cell_spline = ImageInterpolator(search_cell_matrix)
 
     iteration = 0
-    optimization_start_time = datetime.datetime.now()
     # Point to check the stopping condition. If the distance between the previous and current central point is smaller
-    # than 0.1 (pixels), the iteration halts. For the first comparison, this point is initialized which has
+    # than 0.1 (pixels), the iteration halts. For the first comparison, this point is initialized as NaN which has
     # distance > 0.1 to the central point always
     previous_moved_central_point = np.array([np.nan, np.nan])
 
@@ -207,8 +212,9 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         model = sklearn.linear_model.LinearRegression().fit(
             np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
                              moved_cell_matrix_dx.flatten(), moved_cell_matrix_dy_times_x.flatten(),
-                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten(),
-                             np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()]),
+                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten()#,
+                             # np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()
+                             ]),
             (tracked_cell_matrix - moved_cell_matrix).flatten())
 
         coefficient_adjustment = model.coef_
@@ -244,6 +250,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         tracked_cell_matrix.shape)
 
+
     # flatten the comparison cell matrix
     moved_cell_submatrix_vector = moved_cell_matrix.flatten()
 
@@ -253,6 +260,12 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     tracked_cell_vector = tracked_cell_vector - np.mean(tracked_cell_vector)
     tracked_cell_vector = tracked_cell_vector / np.linalg.norm(tracked_cell_vector)
     corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
+    if corr > 0.85:
+        rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
+        rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
+        rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
+
+    # time.sleep(10)
 
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
@@ -361,7 +374,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
-    with multiprocessing.Pool(processes=multiprocessing.cpu_count()) as pool:
+
+    with multiprocessing.Pool(processes=multiprocessing.cpu_count()-11) as pool:
         tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
                                 total=len(list_of_central_indices),
                                           desc="Tracking points",
@@ -375,6 +389,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     movement_column_direction = [results.movement_cols for results in tracking_results]
     # create dataframe with all tracked points results
     tracked_pixels = pd.DataFrame({"row": rows, "column": cols})
+
     if save_columns is None:
         save_columns = ["movement_row_direction", "movement_column_direction",
                         "movement_distance_pixels", "movement_bearing_pixels"]
