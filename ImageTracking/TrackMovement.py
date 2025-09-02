@@ -168,7 +168,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         initial_shift_values = [0, 0]
 
     # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
-    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1]]# , 0, 1]
+    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1], 0, 1]
     # calculate transformation matrix form of the coefficients
     transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
                                       [coefficients[3], coefficients[4], coefficients[5]]])
@@ -210,8 +210,8 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         model = sklearn.linear_model.LinearRegression().fit(
             np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
                              moved_cell_matrix_dx.flatten(), moved_cell_matrix_dy_times_x.flatten(),
-                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten()#,
-                             # np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()
+                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten(),
+                             np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()
                              ]),
             (tracked_cell_matrix - moved_cell_matrix).flatten())
 

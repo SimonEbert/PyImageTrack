@@ -67,7 +67,7 @@ Kaiserberg_pair_19_21 = ImagePair(
 
 Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Lisa_Kaunertal/Testdaten_Alignment/2022-07_HS_10.tif",
                                             observation_date_1="01-07-2022",
-                                            filename_2="../Lisa_Kaunertal/Testdaten_Alignment/2023-07_HS_10.tif",
+                                            filename_2="../Lisa_Kaunertal/Testdaten_Alignment/2022-07_HS_10.tif",
                                             observation_date_2="01-07-2023",
                                             selected_channels=0, NA_value=-9999)
 
