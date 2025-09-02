@@ -16,6 +16,7 @@ from ImageTracking.TrackingResults import TrackingResults
 from CreateGeometries.HandleGeometries import get_raster_indices_from_points
 from ImageTracking.ImageInterpolator import ImageInterpolator
 from Plots.MakePlots import plot_raster_and_geometry
+from Parameters.TrackingParameters import TrackingParameters
 
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
@@ -73,9 +74,6 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
                     continue
                 search_subcell_vector = search_subcell_vector / np.linalg.norm(search_subcell_vector)
                 corr = np.correlate(tracked_vector, search_subcell_vector, mode='valid')
-            # if len(corr) != 1:
-            #     logging.info("Correlation was " + str(corr) + ". Skipping")
-            #     continue
             if float(corr) > best_correlation:
                 best_correlation = float(corr)
                 best_correlation_coordinates = [i, j]
@@ -233,7 +231,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         # define the position of the newly calculated central point
         new_moved_central_point = np.array([new_central_row, new_central_column])
         # if the adjustment results in less than 0.1 pixel adjustment between the considered points, stop the iteration
-        if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.04:
+        if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.01:
             break
 
         # continue iteration and redefine the previous moved central point
@@ -261,18 +259,16 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     tracked_cell_vector = tracked_cell_vector / np.linalg.norm(tracked_cell_vector)
     corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
     # if corr > 0.85:
-    #     rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
-    #     rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
-    #     rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
+    #      rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
+    #      rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
+    #      rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
 
-    # time.sleep(10)
 
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
                                        tracking_method="least-squares", tracking_success=True,
                                        cross_correlation_coefficient=float(corr))
-
     return tracking_results
 
 
@@ -304,8 +300,8 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
     track_cell1 = get_submatrix_symmetric(central_index=central_index, shape=(tracked_cell_size, tracked_cell_size),
                                           matrix=shared_image_matrix1)
 
-    # get the second image section as search cell# ToDO: Why this??!
-    search_area2 = get_submatrix_symmetric(central_index=np.array(central_index)-np.array([2,3]),
+    # get the second image section as search cell
+    search_area2 = get_submatrix_symmetric(central_index=np.array(central_index),
                                            shape=(search_area_size, search_area_size),
                                            matrix=shared_image_matrix2)
     if len(search_area2) == 0:
@@ -318,8 +314,7 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
 
 
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
-                       movement_cell_size: int = 50, movement_tracking_area_size: int = 60,
-                       cross_correlation_threshold: float = 0.8,
+                       tracking_parameters: TrackingParameters, alignment_tracking: bool = False,
                        save_columns: list[str] = None) -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)
@@ -338,16 +333,12 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     points_to_be_tracked :
         A GeoPandas-GeoDataFrame giving the position of points that will be tracked. Points will be converted to matrix
         indices for referencing during tracking.
-    movement_cell_size : int = 50
-        The size of the cells in pixels, which will be created in order to compare the two images. The function
-        get_submatrix_symmetric is used for extracting the image section based on this value. This parameter determines
-        the size ob detectable object as well as the influence of boundary effects.
-    movement_tracking_area_size : int = 60
-        The size of the area in pixels, where fitting image sections are being searched. This parameter determines the
-        maximum detectable movement rate and influences computation speed. This value must be higher than the parameter
-        cell_size.
-    cross_correlation_threshold: int = 0.8
-        The threshold below which trackings will not be accepted.
+    tracking_parameters : TrackingParameters
+        The tracking parameters used for tracking
+    alignment_tracking : bool = False
+        If the tracking parameters for alignment from the tracking parameters class should be used. Defaults to False,
+        i.e. it used the tracking parameters associated with movement (e.g. movement_cell_size instead of
+        alignment_cell_size)
     save_columns: list[str] = None
         The columns to be saved to the results dataframe. Default is None, which will save "movement_row_direction",
         "movement_column_direction", "movement_distance_pixels", and "movement_bearing_pixels".
@@ -362,6 +353,16 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     if len(points_to_be_tracked) == 0:
         raise ValueError("No points provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
                          "with  at least one element.")
+
+    # extract relevant tracking parameters based on alignment_tracking variable
+    if alignment_tracking:
+        movement_cell_size = tracking_parameters.image_alignment_control_cell_size
+        movement_tracking_area_size = tracking_parameters.image_alignment_control_tracking_area_size
+        cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_alignment
+    else:
+        movement_cell_size = tracking_parameters.movement_cell_size
+        movement_tracking_area_size = tracking_parameters.movement_tracking_area_size
+        cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
 
     # ToDo: Find a way to make these variables NOT global
     global shared_image_matrix1, shared_image_matrix2, shared_tracked_cell_size, shared_search_area_size

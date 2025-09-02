@@ -7,15 +7,14 @@ import matplotlib.pyplot as plt
 from ImageTracking.TrackMovement import track_movement_lsm
 from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_number_of_points
 from ImageTracking.TrackMovement import move_indices_from_transformation_matrix
+from Parameters.TrackingParameters import TrackingParameters
 from Plots.MakePlots import plot_movement_of_points
 from Plots.MakePlots import plot_distribution_of_point_movement
 from CreateGeometries.HandleGeometries import georeference_tracked_points
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
-                            number_of_control_points: int, cell_size: int = 50, tracking_area_size: int = 60,
-                            cross_correlation_threshold: float = 0.8,
-                            maximal_alignment_movement: float = None):
+                            tracking_parameters: TrackingParameters):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
@@ -35,20 +34,9 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     reference_area : gpd.GeoDataFrame
         A single-element GeoDataFrame, containing a polygon for specifying the reference area used for the alignment.
         This is the area, where no movement is suspected.
-    number_of_control_points: int
-        An approximation of how many points should be created on the reference_area polygon to track possible camera
-        position differences. For details see grid_points_on_polygon.
-    cell_size: int = 50
-        The size of image sections in pixels which are compared during the tracking. See track_movement for details.
-    tracking_area_size: int = 60
-        The size of the image sections in pixels which are used as a search area during the tracking. Must be greater
-        than the parameter cell_size. See track_movement for details.
-    cross_correlation_threshold: float = 0.8
-        Threshold for which points will be used for aligning the image. Only cells that match with a correlation
-        coefficient higher than this value will be considered.
-    maximal_alignment_movement: float = None
-        Gives the maximal movement in pixels (!) allowed for a single point to be taken into consideration for the
-        alignment. If None (the default) no filter is applied.
+    tracking_parameters: TrackingParameters
+        The tracking parameters used for alignment. Uses the parameters specified for alignment, e.g.
+        image_alignment_control_tracking_area_size
     Returns
     ----------
     [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
@@ -58,13 +46,14 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     if len(reference_area) == 0:
         raise ValueError("No polygon provided in the reference area GeoDataFrame. Please provide a GeoDataFrame with "
                          "exactly one element.")
+
+    number_of_control_points = tracking_parameters.image_alignment_number_of_control_points
+    maximal_alignment_movement = tracking_parameters.maximal_alignment_movement
     reference_area_point_grid = grid_points_on_polygon_by_number_of_points(reference_area,
                                                                            number_of_points=number_of_control_points)
     tracked_control_pixels = track_movement_lsm(image1_matrix, image2_matrix, image_transform,
                                                 points_to_be_tracked=reference_area_point_grid,
-                                                movement_cell_size=cell_size,
-                                                movement_tracking_area_size=tracking_area_size,
-                                                cross_correlation_threshold=cross_correlation_threshold,
+                                                tracking_parameters=tracking_parameters,alignment_tracking=True,
                                                 save_columns=["movement_row_direction",
                                                               "movement_column_direction",
                                                               "movement_distance_pixels",
@@ -86,21 +75,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
                                             + tracked_control_pixels_valid["movement_column_direction"])
 
-    # model_row = sklearn.linear_model.LinearRegression()
-    # model_row.fit(
-    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
-    #                     tracked_control_pixels_valid["new_row"]
-    # )
-    #
-    # model_column = sklearn.linear_model.LinearRegression()
-    # model_column.fit(
-    #     np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]]),
-    #                     tracked_control_pixels_valid["new_column"]
-    # )
-    # sampling_transformation_matrix = np.array([[model_row.coef_[0],model_row.coef_[1],model_row.intercept_],
-    #                                            [model_column.coef_[0],model_column.coef_[1],model_column.intercept_]])
-
-
     linear_model_input = np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])
     linear_model_output = np.column_stack([tracked_control_pixels_valid["new_row"],tracked_control_pixels_valid["new_column"]])
     transformation_linear_model = sklearn.linear_model.LinearRegression()
@@ -113,7 +87,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
 
     # fig, ax = plt.subplots()
     # ax.grid(True, which='both')
-    #
     # ax.axhline(y=0, color='k')
     # ax.axvline(x=0, color='k')
     # # ax.set_xlim((-1,1))

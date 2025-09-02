@@ -195,13 +195,7 @@ class ImagePair:
         [_, new_image2_matrix, tracked_control_points] = (
             align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
                                        image_transform=self.image1_transform, reference_area=reference_area,
-                                        number_of_control_points=
-                                        self.tracking_parameters.image_alignment_number_of_control_points,
-                                        cell_size=self.tracking_parameters.image_alignment_control_cell_size,
-                                        tracking_area_size=self.tracking_parameters.image_alignment_control_tracking_area_size,
-                                        cross_correlation_threshold=
-                                        self.tracking_parameters.cross_correlation_threshold_alignment,
-                                        maximal_alignment_movement=self.tracking_parameters.maximal_alignment_movement))
+                                        tracking_parameters=self.tracking_parameters))
 
         self.valid_alignment_possible = True
 
@@ -241,11 +235,8 @@ class ImagePair:
 
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
-                                            movement_cell_size=self.tracking_parameters.movement_cell_size,
-                                            movement_tracking_area_size=
-                                            self.tracking_parameters.movement_tracking_area_size,
-                                            cross_correlation_threshold=self.tracking_parameters.cross_correlation_threshold_movement
-                                            )
+                                            tracking_parameters=self.tracking_parameters,
+                                            alignment_tracking=False)
         # calculate the years between observations from the two given observation dates
         years_between_observations = (self.image2_observation_date - self.image1_observation_date).days / 365.25
         georeferenced_tracked_points = georeference_tracked_points(tracked_pixels=tracked_points,

@@ -38,7 +38,6 @@ def get_submatrix_symmetric(central_index, shape, matrix):
         submatrix = matrix[
                     int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
                     int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
-
     return submatrix
 
 

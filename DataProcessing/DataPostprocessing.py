@@ -37,9 +37,7 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
     points = points_for_lod_calculation
     tracked_points = TrackMovement.track_movement_lsm(
         image1_matrix=image1_matrix, image2_matrix=image2_matrix,image_transform=image_transform,
-        points_to_be_tracked=points, movement_cell_size=tracking_parameters.movement_cell_size,
-        movement_tracking_area_size=tracking_parameters.movement_tracking_area_size,
-        cross_correlation_threshold=tracking_parameters.cross_correlation_threshold_movement,
+        points_to_be_tracked=points, tracking_parameters=tracking_parameters,alignment_tracking=False,
         save_columns=["movement_row_direction",
                       "movement_column_direction",
                       "movement_distance_pixels",

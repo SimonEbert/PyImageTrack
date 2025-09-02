@@ -40,7 +40,7 @@ Test_Image_Pair.load_images_from_file(filename_1="../Lisa_Kaunertal/Testdaten_Al
 print(Test_Image_Pair.image1_matrix.shape, Test_Image_Pair.image2_matrix.shape)
 
 image1_submatrix = get_submatrix_symmetric([1500,5500], [500,500], Test_Image_Pair.image1_matrix)
-image2_submatrix = get_submatrix_symmetric([1499,5498], [500,500], Test_Image_Pair.image2_matrix)
+image2_submatrix = get_submatrix_symmetric([1500,5500], [500,500], Test_Image_Pair.image2_matrix)
 rasterio.plot.show(image1_submatrix)
 rasterio.plot.show(image2_submatrix)
 
@@ -69,3 +69,5 @@ metadata = {
 
 with rasterio.open("/media/simon/Swap/Dokumente/Studium/14.Semester/HiWi_Arbeit_PyImageTrack/Lisa_Kaunertal" + "/image_" + str(Test_Image_Pair.image2_observation_date.year) + ".tif", 'w', **metadata) as dst:
                 dst.write(Test_Image_Pair.image2_matrix, 1)
+
+
