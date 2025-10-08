@@ -24,9 +24,6 @@ class ImageInterpolator:
     def ev(self, xi, yi, dx=0, dy=0):
         evaluated_matrix = np.empty(self.image_matrix.shape, dtype=float)
         for i in range(self.image_channels):
-            print(xi.shape, yi.shape)
-            print(self.spline_list[i].ev(xi, yi, dx, dy).shape)
-
             evaluated_matrix[i, :, :] = self.spline_list[i].ev(xi, yi, dx, dy).reshape(self.image_matrix.shape[-2:])
         return evaluated_matrix
 

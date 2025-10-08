@@ -41,58 +41,11 @@ def get_submatrix_symmetric(central_index, shape, matrix):
     return submatrix
 
 
-def grid_points_on_polygon_by_number_of_points(polygon: gpd.GeoDataFrame, number_of_points: int = 10):
-    """
-    Creates an evenly spaced grid of points inside the given polygon. An approximation of the number of created points
-    can be given, the actual number of points may differ depending on the shape of the polygon. The resulting
-    GeoDataFrame will have the same coordinate reference system as the polygon.
-    Parameters
-    ----------
-    polygon: gpd.GeoDataFrame
-        The polygon where the points will be created.
-    number_of_points: int = 10
-        The approximate number of points to be created. The function calculates an approximate spacing based on this
-        number and the area ratio of the given polygon and its enclosing rectangle so that the resulting grid is exactly
-        evenly spaced and contains roughly this number of points.
-    Returns
-    ----------
-    points: A GeoDataFrame containing the created points.
-    """
-    minlongitude, minlatitude, maxlongitude, maxlatitude = polygon.bounds.iloc[0]
+def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
+                                       distance_of_points: float = 10,
+                                       distance_px: float = None,
+                                       pixel_size: float = None): 
 
-    length_latitude = np.abs(maxlatitude - minlatitude)
-    length_longitude = np.abs(maxlongitude - minlongitude)
-    enclosing_rectangle = shapely.Polygon((
-        (minlongitude, minlatitude),
-        (maxlongitude, minlatitude),
-        (maxlongitude, maxlatitude),
-        (minlongitude, maxlatitude),
-        (minlongitude, minlatitude)
-    ))
-
-    enclosing_rectangle = gpd.GeoDataFrame(index=[0], crs=polygon.crs, geometry=[enclosing_rectangle])
-
-    area_ratio = (enclosing_rectangle.area / polygon.area).iloc[0]
-    number_of_latitude_points = np.sqrt(length_latitude / length_longitude * number_of_points)
-    number_of_longitude_points = (length_longitude / length_latitude * number_of_latitude_points)
-    number_of_latitude_points *= np.sqrt(area_ratio)
-    number_of_longitude_points *= np.sqrt(area_ratio)
-    number_of_latitude_points = np.ceil(number_of_latitude_points)
-    number_of_longitude_points = np.ceil(number_of_longitude_points)
-
-    points = []
-    for lat in np.arange(minlatitude, maxlatitude, length_latitude / number_of_latitude_points):
-        for lon in np.arange(minlongitude, maxlongitude, length_longitude / number_of_longitude_points):
-            points.append(shapely.Point(lon, lat))
-
-    points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
-
-    points = points[points.intersects(polygon.loc[0, "geometry"])]
-    print("Created " + str(len(points)) + " points on the polygon.")
-    return points
-
-
-def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_points: float = 10):
     minx = polygon.bounds.loc[0, 'minx']
     miny = polygon.bounds.loc[0, 'miny']
     maxx = polygon.bounds.loc[0, 'maxx']
@@ -106,22 +59,35 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame, distance_of_po
                                                 shapely.geometry.Point(maxx, maxy)],
                                       crs=polygon.crs)
 
-    width_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[1].geometry)
+    width_image_crs_unit  = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[1].geometry)
     height_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[2].geometry)
 
-    number_of_points_width = width_image_crs_unit / distance_of_points
+    number_of_points_width  = width_image_crs_unit  / distance_of_points
     number_of_points_height = height_image_crs_unit / distance_of_points
+
     points = []
     for x in np.arange(minx, maxx, width_image_crs_unit / number_of_points_width):
         for y in np.arange(miny, maxy, height_image_crs_unit / number_of_points_height):
             points.append(shapely.geometry.Point(x, y))
 
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
-
     points = points[points.intersects(polygon.loc[0, "geometry"])]
-    print("Created " + str(len(points)) + " points on the polygon with distance " + str(distance_of_points) + " " +
-          str(points.crs.axis_info[0].unit_name) + ".")
+
+    unit_name = points.crs.axis_info[0].unit_name
+    if distance_px is None:
+        print(
+            f"Created {len(points)} points on the polygon "
+            f"with distance {distance_of_points:.1f} {unit_name}."
+        )
+    else:
+        print(
+            f"Created {len(points)} points on the polygon "
+            f"with distance {distance_of_points:.1f} {unit_name} "
+            f"({distance_px:.1f} px)."
+        )
+
     return points
+
 
 
 def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
@@ -256,3 +222,34 @@ def circular_std_deg(angles_deg):
     # Convert back to degrees
     circ_std_deg = np.rad2deg(circ_std_rad)
     return circ_std_deg
+
+
+def get_submatrix_rect_from_extents(central_index, extents, matrix):
+    """
+    Extract an asymmetric rectangular submatrix around `central_index` using the extents
+    tuple (pos_x, neg_x, pos_y, neg_y), measured in pixels from the center.
+    It safely clips to matrix bounds and supports both 2D and 3D (channels-first) arrays.
+
+    Returns
+    -------
+    submatrix : np.ndarray
+        The extracted search window.
+    center_in_submatrix : tuple(int, int)
+        The (row, col) coordinates of the original center pixel inside the returned submatrix.
+    """
+    pos_x, neg_x, pos_y, neg_y = map(int, extents)
+    row_c = int(central_index[0])
+    col_c = int(central_index[1])
+
+    r0 = max(0, row_c - neg_y)
+    r1 = min(matrix.shape[-2], row_c + pos_y + 1)
+    c0 = max(0, col_c - neg_x)
+    c1 = min(matrix.shape[-1], col_c + pos_x + 1)
+
+    if len(matrix.shape) == 3:
+        sub = matrix[:, r0:r1, c0:c1]
+    else:
+        sub = matrix[r0:r1, c0:c1]
+
+    center_in_sub = (row_c - r0, col_c - c0)
+    return sub, center_in_sub

@@ -5,21 +5,17 @@ import numpy as np
 import logging
 import tqdm
 import sklearn
-import datetime
 import scipy
-import rasterio
-import matplotlib.pyplot as plt
-import time
 
-from CreateGeometries.HandleGeometries import get_submatrix_symmetric
+from CreateGeometries.HandleGeometries import get_submatrix_symmetric, get_submatrix_rect_from_extents
 from ImageTracking.TrackingResults import TrackingResults
 from CreateGeometries.HandleGeometries import get_raster_indices_from_points
-from ImageTracking.ImageInterpolator import ImageInterpolator
-from Plots.MakePlots import plot_raster_and_geometry
 from Parameters.TrackingParameters import TrackingParameters
+from Parameters.AlignmentParameters import AlignmentParameters
 
 
-def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray):
+
+def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):
     """
         Calculates the movement of an image section using the cross-correlation approach.
         Parameters
@@ -85,15 +81,26 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
                                tracking_success=False)
 
 
-    movement_for_best_correlation = np.floor(np.subtract(best_correlation_coordinates,
-                                                         [search_cell_matrix.shape[-2] / 2,
-                                                          search_cell_matrix.shape[-1] / 2]))
-    tracking_results = TrackingResults(movement_rows=movement_for_best_correlation[0],
-                                       movement_cols=movement_for_best_correlation[1],
-                                       tracking_method="cross-correlation",
-                                       cross_correlation_coefficient=best_correlation,
-                                       tracking_success=True)
+    # Use the provided logical center inside the search window if given (asymmetric windows)
+    if search_center is None:
+        central_row = search_cell_matrix.shape[-2] / 2
+        central_col = search_cell_matrix.shape[-1] / 2
+    else:
+        central_row, central_col = map(float, search_center)
+
+    movement_for_best_correlation = np.floor(
+        np.subtract(best_correlation_coordinates, [central_row, central_col])
+    )
+
+    tracking_results = TrackingResults(
+        movement_rows=movement_for_best_correlation[0],
+        movement_cols=movement_for_best_correlation[1],
+        tracking_method="cross-correlation",
+        cross_correlation_coefficient=best_correlation,
+        tracking_success=True
+    )
     return tracking_results
+
 
 
 def move_indices_from_transformation_matrix(transformation_matrix: np.array, indices: np.array):
@@ -122,7 +129,7 @@ def move_indices_from_transformation_matrix(transformation_matrix: np.array, ind
 
 
 def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray,
-                   initial_shift_values: np.array = None) -> TrackingResults:
+                   initial_shift_values: np.array = None, search_center=None) -> TrackingResults:
     """
     Tracks the movement of a given image section ('tracked_cell_matrix') within a given search cell
     ('search_cell_matrix') using the least-squares approach. Initial shift values can be provided, otherwise the cross-
@@ -147,8 +154,12 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     """
 
     # assign indices in respect to indexing in the search cell matrix
-    central_row = np.round(search_cell_matrix.shape[-2] / 2)
-    central_column = np.round(search_cell_matrix.shape[-1] / 2)
+    if search_center is None:
+        central_row = np.round(search_cell_matrix.shape[-2] / 2)
+        central_column = np.round(search_cell_matrix.shape[-1] / 2)
+    else:
+        central_row = float(search_center[0])
+        central_column = float(search_center[1])
 
     indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - tracked_cell_matrix.shape[-2] / 2),
                                              np.ceil(central_row + tracked_cell_matrix.shape[-2] / 2)),
@@ -157,7 +168,9 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                        ).T.reshape(-1, 2).T
 
     if initial_shift_values is None:
-        cross_correlation_results = track_cell_cc(tracked_cell_matrix, search_cell_matrix)
+        cross_correlation_results = track_cell_cc(
+            tracked_cell_matrix, search_cell_matrix, search_center=search_center
+        )
         initial_shift_values = [cross_correlation_results.movement_rows, cross_correlation_results.movement_cols]
         if np.isnan(initial_shift_values[0]):
             logging.info("Cross-correlation did not provide a result. Skipping.")
@@ -293,29 +306,54 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
         converge after 50 iterations), the shift values and the transformation matrix are set to np.nan and None,
         respectively.
     """
-    tracked_cell_size = shared_tracked_cell_size
-    search_area_size = shared_search_area_size
+    # Extract the tracked (template) cell from image1
+    track_cell1 = get_submatrix_symmetric(
+        central_index=central_index,
+        shape=(shared_tracked_cell_size, shared_tracked_cell_size),
+        matrix=shared_image_matrix1
+    )
 
-    # get the first image section as tracked cell
-    track_cell1 = get_submatrix_symmetric(central_index=central_index, shape=(tracked_cell_size, tracked_cell_size),
-                                          matrix=shared_image_matrix1)
+    # Build the search window from extents
+    if shared_control_search_extents is not None:
+        # Alignment mode
+        search_area2, center_in_search = get_submatrix_rect_from_extents(
+            central_index=np.array(central_index),
+            extents=shared_control_search_extents,
+            matrix=shared_image_matrix2
+        )
+        search_center = center_in_search
+    elif shared_search_extents is not None:
+        # Movement mode
+        search_area2, center_in_search = get_submatrix_rect_from_extents(
+            central_index=np.array(central_index),
+            extents=shared_search_extents,
+            matrix=shared_image_matrix2
+        )
+        search_center = center_in_search
+    else:
+        # No extents configured (should be prevented earlier)
+        return TrackingResults(
+            movement_rows=np.nan, movement_cols=np.nan,
+            tracking_method="least-squares",
+            transformation_matrix=None, tracking_success=False
+        )
 
-    # get the second image section as search cell
-    search_area2 = get_submatrix_symmetric(central_index=np.array(central_index),
-                                           shape=(search_area_size, search_area_size),
-                                           matrix=shared_image_matrix2)
-    if len(search_area2) == 0:
-        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
-                               transformation_matrix=None,
-                               tracking_success=False)
+    # Guard against empty windows (e.g., near borders)
+    if getattr(search_area2, "size", 0) == 0:
+        return TrackingResults(
+            movement_rows=np.nan, movement_cols=np.nan,
+            tracking_method="least-squares",
+            transformation_matrix=None, tracking_success=False
+        )
+
     logging.info("Tracking point" + str(central_index))
-    tracking_results = track_cell_lsm(track_cell1, search_area2)
+    tracking_results = track_cell_lsm(track_cell1, search_area2, search_center=search_center)
     return tracking_results
 
 
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
-                       tracking_parameters: TrackingParameters, alignment_tracking: bool = False,
-                       save_columns: list[str] = None) -> pd.DataFrame:
+                       tracking_parameters: TrackingParameters = None, alignment_parameters: AlignmentParameters = None, alignment_tracking: bool = False,
+                       save_columns: list[str] = None,  task_label: str = "Tracking points") -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)
     using the least-squares approach.
@@ -354,32 +392,51 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         raise ValueError("No points provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
                          "with  at least one element.")
 
-    # extract relevant tracking parameters based on alignment_tracking variable
+    # extract relevant parameters
     if alignment_tracking:
-        movement_cell_size = tracking_parameters.image_alignment_control_cell_size
-        movement_tracking_area_size = tracking_parameters.image_alignment_control_tracking_area_size
-        cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_alignment
+        if alignment_parameters is None:
+            raise ValueError("alignment_tracking=True requires alignment_parameters.")
+        movement_cell_size = alignment_parameters.control_cell_size
+        cross_correlation_threshold = alignment_parameters.cross_correlation_threshold_alignment
     else:
+        if tracking_parameters is None:
+            raise ValueError("alignment_tracking=False requires tracking_parameters.")
         movement_cell_size = tracking_parameters.movement_cell_size
-        movement_tracking_area_size = tracking_parameters.movement_tracking_area_size
         cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
 
     # ToDo: Find a way to make these variables NOT global
-    global shared_image_matrix1, shared_image_matrix2, shared_tracked_cell_size, shared_search_area_size
+    global shared_image_matrix1, shared_image_matrix2, shared_tracked_cell_size, shared_search_extents, shared_control_search_extents
     shared_image_matrix1 = image1_matrix
     shared_image_matrix2 = image2_matrix
     shared_tracked_cell_size = movement_cell_size
-    shared_search_area_size = movement_tracking_area_size
+    # Configure which asymmetric extents to use depending on mode.
+    # Movement mode reads TrackingParameters.search_extent_px,
+    # Alignment mode reads AlignmentParameters.control_search_extent_px.
+    shared_search_extents = None
+    shared_control_search_extents = None
+
+    if alignment_tracking:
+        if getattr(alignment_parameters, "control_search_extent_px", None):
+            shared_control_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_px)
+        else:
+            raise ValueError("Alignment: control_search_extent_px must be set (tuple posx,negx,posy,negy).")
+    else:
+        if getattr(tracking_parameters, "search_extent_px", None):
+            shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_px)
+        else:
+            raise ValueError("Movement: search_extent_px must be set (tuple posx,negx,posy,negy).")
+
 
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
 
-    with multiprocessing.Pool(processes=multiprocessing.cpu_count()-11) as pool:
+    procs = max(1, multiprocessing.cpu_count() - 1)
+    with multiprocessing.Pool(processes=procs) as pool:
         tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
                                 total=len(list_of_central_indices),
-                                          desc="Tracking points",
+                                          desc=task_label, 
                                           unit="points",
                                           smoothing=0.1,
                                           bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
