@@ -464,7 +464,7 @@ class ImagePair:
                                          level_of_detection_quantile)
 
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
-              + str(self.level_of_detection))
+              + str(np.round(self.level_of_detection, decimals=5)) + " " + str(points_for_lod_calculation.crs.axis_info[0].unit_name) + "/year")
 
     def filter_lod_points(self) -> None:
         """

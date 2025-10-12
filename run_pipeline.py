@@ -8,6 +8,8 @@ import os
 import csv
 from datetime import datetime
 import geopandas as gpd
+import sys
+sys.path.append('..')
 
 from PyImageTrack.ImageTracking.ImagePair import ImagePair
 from PyImageTrack.Parameters.FilterParameters import FilterParameters
@@ -30,7 +32,7 @@ import json
 # ==============================
 # USER CONFIGURATION (paths, data names, CRS)
 # ==============================
-input_folder = "/home/lisa/projects/pyimagetrack/input/hillshades"
+input_folder = "/media/simon/Swap/Dokumente/Studium/14.Semester/HiWi_Arbeit_PyImageTrack/Lisa_Kaunertal/Testdaten_Alignment"
 date_csv_path = os.path.join(input_folder, "image_dates.csv") # can be  set to = None if the day is reflected in the filename
 #date_csv_path = None
 pairs_csv_path = os.path.join(input_folder, "image_pairs.csv") # can be  set to = None if all or successive pairing mode is selected below
@@ -40,7 +42,7 @@ poly_outside_filename = "stable_area_drone.shp"
 poly_inside_filename  = "moving_area_drone.shp"
 poly_CRS = 32632
 
-output_folder = "/home/lisa/projects/pyimagetrack/output/hillshades"
+output_folder = "/media/simon/Swap/Dokumente/Studium/14.Semester/HiWi_Arbeit_PyImageTrack/Lisa_Kaunertal/test_results"
 pairing_mode = "custom"            # options: "all", "successive", "custom" (=from image_pairs.csv)
 
 use_fake_georeferencing = False        # set True only when processing non-ortho JPGs
