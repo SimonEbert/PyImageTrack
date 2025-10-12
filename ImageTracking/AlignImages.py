@@ -2,19 +2,18 @@ import geopandas as gpd
 import numpy as np
 import scipy
 import sklearn
-import matplotlib.pyplot as plt
 
 from ImageTracking.TrackMovement import track_movement_lsm
-from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_number_of_points
 from ImageTracking.TrackMovement import move_indices_from_transformation_matrix
-from Parameters.TrackingParameters import TrackingParameters
+from Parameters.AlignmentParameters import AlignmentParameters
 from Plots.MakePlots import plot_movement_of_points
 from Plots.MakePlots import plot_distribution_of_point_movement
-from CreateGeometries.HandleGeometries import georeference_tracked_points
+from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
+
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
-                            tracking_parameters: TrackingParameters):
+                            alignment_parameters: AlignmentParameters):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
@@ -34,9 +33,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     reference_area : gpd.GeoDataFrame
         A single-element GeoDataFrame, containing a polygon for specifying the reference area used for the alignment.
         This is the area, where no movement is suspected.
-    tracking_parameters: TrackingParameters
-        The tracking parameters used for alignment. Uses the parameters specified for alignment, e.g.
-        image_alignment_control_tracking_area_size
+    alignment_parameters: AlignmentParameters
+        The alignment parameters used for alignment, e.g. control_search_size_px
     Returns
     ----------
     [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
@@ -47,18 +45,34 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         raise ValueError("No polygon provided in the reference area GeoDataFrame. Please provide a GeoDataFrame with "
                          "exactly one element.")
 
-    number_of_control_points = tracking_parameters.image_alignment_number_of_control_points
-    maximal_alignment_movement = tracking_parameters.maximal_alignment_movement
-    reference_area_point_grid = grid_points_on_polygon_by_number_of_points(reference_area,
-                                                                           number_of_points=number_of_control_points)
+    number_of_control_points = alignment_parameters.number_of_control_points
+    maximal_alignment_movement = alignment_parameters.maximal_alignment_movement
+
+    # Estimate grid spacing from polygon area:
+    # Spacing ≈ sqrt(area / desired_number_of_points)
+    poly_area = float(reference_area.geometry.iloc[0].area)
+    if number_of_control_points <= 0 or not np.isfinite(poly_area) or poly_area <= 0:
+        raise ValueError("Invalid reference area or number_of_control_points for alignment grid.")
+
+    approx_spacing = np.sqrt(poly_area / float(number_of_control_points))
+
+    reference_area_point_grid = grid_points_on_polygon_by_distance(
+        polygon=reference_area,
+        distance_of_points=approx_spacing,
+        distance_px=None
+    )
+
+
+
     tracked_control_pixels = track_movement_lsm(image1_matrix, image2_matrix, image_transform,
                                                 points_to_be_tracked=reference_area_point_grid,
-                                                tracking_parameters=tracking_parameters,alignment_tracking=True,
+                                                alignment_parameters=alignment_parameters, alignment_tracking=True,
                                                 save_columns=["movement_row_direction",
                                                               "movement_column_direction",
                                                               "movement_distance_pixels",
                                                               "movement_bearing_pixels",
-                                                              "correlation_coefficient"]
+                                                              "correlation_coefficient"],
+                                                task_label="Tracking points for alignment"
                                                 )
     tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
 

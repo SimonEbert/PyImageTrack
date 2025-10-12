@@ -1,8 +1,6 @@
 import numpy as np
-from shapely import intersection
 import geopandas as gpd
 from functools import reduce
-import rasterio
 
 from ImageTracking.ImagePair import ImagePair
 from Parameters.TrackingParameters import TrackingParameters
@@ -43,11 +41,16 @@ class ImageBatch:
 
             observation_time_difference = list_of_observation_dates[i + 1] - list_of_observation_dates[i]
 
-            years_between_observations = observation_time_difference.days / 365.25
-            movement_tracking_area_size = np.ceil(
+            delta_hours = observation_time_difference.total_seconds() / 3600.0
+            years_between_observations = delta_hours / (24.0 * 365.25)
+
+            # Derive a symmetric search extent (posx=negx=posy=negy) from your movement budget [px]
+            movement_budget_px = np.ceil(
                 2 * maximal_assumed_movement_rate * years_between_observations * pixels_per_metre
-                + self.tracking_parameters.movement_cell_size)
-            self.list_of_image_pairs[-1].tracking_parameters.movement_tracking_area_size = movement_tracking_area_size
+                + self.tracking_parameters.movement_cell_size
+            )
+            half_extent = int(max(1, np.floor(movement_budget_px / 2)))
+            self.list_of_image_pairs[-1].tracking_parameters.search_extent_px = (half_extent, half_extent, half_extent, half_extent)
 
             observation_date1 = observation_date1.strftime("%d-%m-%Y")
             observation_date2 = observation_date2.strftime("%d-%m-%Y")
