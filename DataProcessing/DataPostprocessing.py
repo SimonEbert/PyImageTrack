@@ -1,7 +1,5 @@
 import geopandas as gpd
 import numpy as np
-from functools import reduce
-import operator
 
 from ImageTracking import TrackMovement
 from CreateGeometries.HandleGeometries import georeference_tracked_points

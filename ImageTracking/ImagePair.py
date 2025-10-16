@@ -2,7 +2,6 @@ import geopandas as gpd
 import rasterio
 import rasterio.plot
 from rasterio.crs import CRS
-from datetime import datetime, timedelta
 import logging
 from geocube.api.core import make_geocube
 import os
