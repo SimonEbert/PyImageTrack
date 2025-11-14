@@ -23,6 +23,7 @@ from CreateGeometries.HandleGeometries import georeference_tracked_points
 # Plotting
 from Plots.MakePlots import plot_movement_of_points
 from Plots.MakePlots import plot_movement_of_points_with_valid_mask
+from Plots.MakePlots import plot_raster_and_geometry
 # DataPreProcessing
 from DataProcessing.ImagePreprocessing import equalize_adapthist_images
 # filter functions
@@ -316,14 +317,18 @@ class ImagePair:
             pixel_size=px_size,
         )
 
+
+
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
                                             alignment_tracking=False,
                                             task_label="Tracking points for movement tracking")
+
         # calculate the years between observations from the two given observation dates
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
+
 
         georeferenced_tracked_points = georeference_tracked_points(tracked_pixels=tracked_points,
                                                                    raster_transform=self.image1_transform,
@@ -700,7 +705,7 @@ class ImagePair:
             number_of_outliers = int(is_outlier.sum())
             valid_lod_points = 0
             total_lod_points = 0
-            if hasattr(self, "level_of_detection_points"):
+            if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None):
                 valid_lod_points = int(self.level_of_detection_points["valid"].sum())
                 total_lod_points = len(self.level_of_detection_points)
 
@@ -710,10 +715,10 @@ class ImagePair:
                 except Exception:
                     return np.nan
 
-            with open(
+            with (open(
                 f"{folder_path}/statistical_results_{self.image1_observation_date.year}_{self.image2_observation_date.year}.txt",
                 "w",
-            ) as statistics_file:
+            ) as statistics_file):
                 lod_str = (
                     f"{self.level_of_detection:.2f}"
                     if getattr(self, "level_of_detection", None) is not None
@@ -776,7 +781,8 @@ class ImagePair:
                     + f"\tQ99: {_fmt(np.nanquantile(ref_df2['movement_distance_per_year'], 0.99))}\n"
                 )
 
-                if hasattr(self, "level_of_detection_points") and len(self.level_of_detection_points) > 0:
+                if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None
+                ) and len(self.level_of_detection_points) > 0:
                     statistics_file.write(
                         "Movement rate of LoD points:\n"
                         + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points['movement_distance_per_year']))}\n"

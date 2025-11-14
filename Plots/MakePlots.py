@@ -85,7 +85,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     if point_color is None:
         point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=1, marker=".", alpha=1.0,
                             # missing_kwds={'color': 'gray'}
-                            vmin=0, vmax=3.5,
+                            # vmin=0, vmax=3.5,
                             )
     else:
         point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)

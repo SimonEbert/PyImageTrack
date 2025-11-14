@@ -70,9 +70,10 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
                     continue
                 search_subcell_vector = search_subcell_vector / np.linalg.norm(search_subcell_vector)
                 corr = np.correlate(tracked_vector, search_subcell_vector, mode='valid')
-            if float(corr) > best_correlation:
-                best_correlation = float(corr)
-                best_correlation_coordinates = [i, j]
+            if len(corr) == 1:
+                if float(corr) > best_correlation:
+                    best_correlation = float(corr)
+                    best_correlation_coordinates = [i, j]
     if best_correlation <= 0:
         logging.info("Found no matching with positive correlation. Skipping")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan,
