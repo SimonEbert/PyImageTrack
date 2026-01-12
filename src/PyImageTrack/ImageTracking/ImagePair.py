@@ -10,29 +10,28 @@ from geocube.api.core import make_geocube
 from rasterio.crs import CRS
 from shapely.geometry import box
 
-from src import AlignmentParameters
-from src import FilterParameters
-# Parameter classes
-from src import TrackingParameters
-from src import align_images_lsm_scarce
-# filter functions
-from src import calculate_lod_points
-from src import crop_images_to_intersection
-# DataPreProcessing
-from src import equalize_adapthist_images
-from src import filter_lod_points
-from src import filter_outliers_full
-from src import georeference_tracked_points
-from src import grid_points_on_polygon_by_distance
-# Date Handling
-from src import parse_date
-# Plotting
-from src import plot_movement_of_points
-from src import plot_movement_of_points_with_valid_mask
+from PyImageTrack.CreateGeometries.HandleGeometries import crop_images_to_intersection
+from PyImageTrack.CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
 # Geometry Handling
-from src import random_points_on_polygon_by_number
+from PyImageTrack.CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
+# DataPre- and PostProcessing
+from PyImageTrack.DataProcessing.DataPostprocessing import calculate_lod_points
+from PyImageTrack.DataProcessing.DataPostprocessing import filter_lod_points
+from PyImageTrack.DataProcessing.DataPostprocessing import filter_outliers_full
+from PyImageTrack.DataProcessing.DataPostprocessing import georeference_tracked_points
+from PyImageTrack.DataProcessing.ImagePreprocessing import equalize_adapthist_images
 # Alignment and Tracking functions
-from src import track_movement_lsm
+from PyImageTrack.ImageTracking.AlignImages import align_images_lsm_scarce
+from PyImageTrack.ImageTracking.TrackMovement import track_movement_lsm
+# Parameter classes
+from PyImageTrack.Parameters import AlignmentParameters
+from PyImageTrack.Parameters import FilterParameters
+from PyImageTrack.Parameters import TrackingParameters
+# Plotting
+from PyImageTrack.Plots.MakePlots import plot_movement_of_points
+from PyImageTrack.Plots.MakePlots import plot_movement_of_points_with_valid_mask
+# Date Handling
+from PyImageTrack.Utils import parse_date
 
 
 class ImagePair:

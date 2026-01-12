@@ -3,10 +3,10 @@ import numpy as np
 import scipy
 import sklearn
 
-from src import AlignmentParameters
-from src import grid_points_on_polygon_by_distance
-from src import move_indices_from_transformation_matrix
-from src import track_movement_lsm
+from PyImageTrack.CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
+from PyImageTrack.ImageTracking.TrackMovement import move_indices_from_transformation_matrix
+from PyImageTrack.ImageTracking.TrackMovement import track_movement_lsm
+from PyImageTrack.Parameters import AlignmentParameters
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
