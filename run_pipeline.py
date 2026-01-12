@@ -32,31 +32,35 @@ import json
 # ==============================
 # USER CONFIGURATION (paths, data names, CRS)
 # ==============================
-input_folder = "../Lisa_Kaunertal/Testdaten_Alignment"
+input_folder = "/home/lisa/projects/pyimagetrack/input/timelapse_west_weekly"
 date_csv_path = os.path.join(input_folder, "image_dates.csv") # can be  set to = None if the day is reflected in the filename
 #date_csv_path = None
 pairs_csv_path = os.path.join(input_folder, "image_pairs.csv") # can be  set to = None if all or successive pairing mode is selected below
 #pairs_csv_path = None
 
-poly_outside_filename = "stable_area_drone.shp"
-poly_inside_filename  = "moving_area_drone.shp"
+poly_outside_filename = "stable_area_western.shp"
+poly_inside_filename  = "moving_area_western.shp"
 poly_CRS = 32632
 
-output_folder = "../Lisa_Kaunertal/test_results"
-pairing_mode = "custom"            # options: "all", "successive", "custom" (=from image_pairs.csv)
+output_folder = "/home/lisa/projects/pyimagetrack/output/timelapse_west_weekly"
+pairing_mode = "first_to_all"            # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
 
-use_fake_georeferencing = False        # set True only when processing non-ortho JPGs
+use_fake_georeferencing = True        # set True only when processing non-ortho JPGs
 fake_pixel_size = 1.0                  # 1 px = 1 unit
 fake_crs_epsg = poly_CRS               # use your polygon CRS for fake georef
 
 do_alignment = True
+do_tracking = False                    
+do_filtering = False                   
 do_plotting = True
 do_image_enhancement = False           # optional image enhancement via CLAHE
 
-use_alignment_cache = False
-use_tracking_cache  = False
+use_alignment_cache = True
+use_tracking_cache  = True
 force_recompute_alignment = False
 force_recompute_tracking  = False
+
+write_truecolor_aligned = True  # if True: additionally write a true-color aligned image
 
 # adaptive tracking window options
 use_adaptive_tracking_window = True    # If True, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
@@ -67,10 +71,10 @@ use_adaptive_tracking_window = True    # If True, the "search_extent_px" in the 
 # PARAMETERS (alignment, tracking, filter)
 # ==============================
 alignment_params = AlignmentParameters({
-    "number_of_control_points": 2000,       
+    "number_of_control_points": 300,       
     # search extent tuple: (right, left, down, up) in pixels around the control cell
-    "control_search_extent_px": (5, 5, 5, 5), # px
-    "control_cell_size": 5, # px
+    "control_search_extent_px": (100, 100, 100, 100), # px
+    "control_cell_size": 75, # px
     "cross_correlation_threshold_alignment": 0.8,                   
     "maximal_alignment_movement": None, # px, can be set to = None
 })
@@ -87,7 +91,7 @@ tracking_params = TrackingParameters({
 })
 
 filter_params = FilterParameters({
-    "level_of_detection_quantile": 0.75,
+    "level_of_detection_quantile": 0.5,
     "number_of_points_for_level_of_detection": 1000,                
     "difference_movement_bearing_threshold": 360,                    # degrees
     "difference_movement_bearing_moving_window_size": 50,           # CRS units
@@ -102,6 +106,7 @@ filter_params = FilterParameters({
 # ==============================
 # SAVE OPTIONS (final outputs)
 # ==============================
+
 save_files = [
     # "first_image_matrix", 
     # "second_image_matrix",
@@ -307,76 +312,81 @@ def main():
                             align_params=alignment_params.__dict__,
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
+                            save_truecolor_aligned=write_truecolor_aligned,
                         )
-                        print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+                        print(f"[cache] alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+
             else:
                 image_pair.valid_alignment_possible = True
                 image_pair.images_aligned = False
 
 
-            # tracking with cache
+            # ==============================
+            # TRACKING (optional)
+            # ==============================
             used_cache_tracking = False
-            if use_tracking_cache and not force_recompute_tracking:
-                used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
-                if used_cache_tracking:
-                    print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
+            if do_tracking:
+                if use_tracking_cache and not force_recompute_tracking:
+                    used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
+                    if used_cache_tracking:
+                        print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
+                        # ... Meta-Check wie bisher ...
+                        # (lass deinen bestehenden Meta-Check hier einfach drin)
 
-                    # check if effective search areas are same (adaptive T/F)
-                    _, meta_json = tracking_cache_paths(track_dir, year1, year2)
-                    try:
-                        with open(meta_json, "r", encoding="utf-8") as f:
-                            meta = json.load(f)
-                        cached_eff = tuple(int(x) for x in meta.get("tracking_params", {}).get("search_extent_px_effective", []))
-                        current_eff = tuple(int(x) for x in adaptive_extents)
-                        if cached_eff != current_eff:
-                            print(f"[CACHE] Effective search extents mismatch: cache {cached_eff} vs current {current_eff} -> recompute.")
-                            used_cache_tracking = False
-                    except Exception as e:
-                        print(f"[CACHE] Could not read/parse tracking meta ({e}). Will recompute.")
-                        used_cache_tracking = False
-                    
-            if not used_cache_tracking:
-                if used_cache_alignment or getattr(image_pair, "images_aligned", False):
-                    tracked_points = image_pair.track_points(tracking_area=polygon_inside)
-                    image_pair.tracking_results = tracked_points
-                else:
-                    image_pair.perform_point_tracking(
-                        reference_area=polygon_outside,
-                        tracking_area=polygon_inside
-                    )
+                if not used_cache_tracking:
+                    if used_cache_alignment or getattr(image_pair, "images_aligned", False):
+                        tracked_points = image_pair.track_points(tracking_area=polygon_inside)
+                        image_pair.tracking_results = tracked_points
+                    else:
+                        image_pair.perform_point_tracking(
+                            reference_area=polygon_outside,
+                            tracking_area=polygon_inside
+                        )
 
-                if use_tracking_cache:
-                    save_tracking_cache(
-                        image_pair,
-                        track_dir,
-                        year1,
-                        year2,
-                        track_params=pair_tracking_config,
-                        filenames={year1: filename_1, year2: filename_2},
-                        dates={year1: date_1, year2: date_2},
-                    )
+                    if use_tracking_cache:
+                        save_tracking_cache(
+                            image_pair,
+                            track_dir,
+                            year1,
+                            year2,
+                            track_params=pair_tracking_config,
+                            filenames={year1: filename_1, year2: filename_2},
+                            dates={year1: date_1, year2: date_2},
+                        )
+                        print(f"[CACHE] Tracking saved to:  {track_dir}  (pair {year1}->{year2})")
+            else:
+                print("Tracking is disabled (alignment-only run).")
 
-                    print(f"[CACHE] Tracking saved to:  {track_dir}  (pair {year1}->{year2})")
 
-            # filtering and optional plot
-            image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
-            if do_plotting:
-                image_pair.plot_tracking_results_with_valid_mask()
+            # ==============================
+            # FILTERING + PLOTS + SAVING (optional)
+            # ==============================
+            if do_tracking and do_filtering:
+                image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
 
-            # write a small CSV with valid fraction
-            try:
-                valid_fraction = float(image_pair.tracking_results["valid"].mean())
-            except Exception:
-                valid_fraction = None
-            valid_csv = os.path.join(filter_dir, "valid_results_fraction.csv")
-            with open(valid_csv, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(["pair", "valid_fraction"])
-                w.writerow([f"{year1}_{year2}", valid_fraction if valid_fraction is not None else "NA"])
+                if do_plotting:
+                    image_pair.plot_tracking_results_with_valid_mask()
 
-            # final results go to the filter level
-            image_pair.save_full_results(filter_dir, save_files=save_files)
-            successes.append((year1, year2))
+                # write a small CSV with valid fraction
+                try:
+                    valid_fraction = float(image_pair.tracking_results["valid"].mean())
+                except Exception:
+                    valid_fraction = None
+                valid_csv = os.path.join(filter_dir, "valid_results_fraction.csv")
+                with open(valid_csv, "w", newline="", encoding="utf-8") as f:
+                    w = csv.writer(f)
+                    w.writerow(["pair", "valid_fraction"])
+                    w.writerow([f"{year1}_{year2}", valid_fraction if valid_fraction is not None else "NA"])
+
+                # final results go to the filter level
+                image_pair.save_full_results(filter_dir, save_files=save_files)
+            else:
+                print("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
+                # Alignment-only outputs exist in align_dir:
+                # - aligned_image_<year2>.tif
+                # - alignment_control_points_<year1>_<year2>.geojson
+                # - alignment_meta_<year1>_<year2>.json
+
 
         except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))

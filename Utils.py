@@ -192,11 +192,23 @@ def collect_pairs(input_folder: str,
 
     # 4) Build pairs
     if pairing_mode == "all":
+        # every id with every later id
         year_pairs = list(itertools.combinations(ordered_ids, 2))
+
     elif pairing_mode == "successive":
+        # only neighbours: (t1,t2), (t2,t3), ...
         def _successive_pairs(ids):
-            return [(ids[i], ids[i+1]) for i in range(len(ids)-1)]
+            return [(ids[i], ids[i + 1]) for i in range(len(ids) - 1)]
         year_pairs = _successive_pairs(ordered_ids)
+
+    elif pairing_mode == "first_to_all":
+        # always use the first id as anchor: (first, second), (first, third), ...
+        if len(ordered_ids) < 2:
+            year_pairs = []
+        else:
+            anchor = ordered_ids[0]
+            year_pairs = [(anchor, other) for other in ordered_ids[1:]]
+
     elif pairing_mode == "custom":
         # --- read CSV with auto delimiter (',' or ';') ---
         pairs_df = pd.read_csv(pairs_csv_path, sep=None, engine="python", encoding="utf-8-sig")
