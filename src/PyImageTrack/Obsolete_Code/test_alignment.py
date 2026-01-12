@@ -1,10 +1,7 @@
-import numpy as np
 import rasterio
 
-from ImageTracking.ImagePair import ImagePair
-from ImageTracking.TrackMovement import track_cell_lsm
-from CreateGeometries.HandleGeometries import get_submatrix_symmetric
-
+from src import ImagePair
+from src import get_submatrix_symmetric
 
 # Set parameters
 number_of_control_points = 200

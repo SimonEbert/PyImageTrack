@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "PyImageTrack"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+dependencies = [
+    "geocube",
+    "geopandas",
+    "matplotlib",
+    "numpy",
+    "pandas",
+    "rasterio",
+    "requests",
+    "scipy",
+    "scikit-image",
+    "scikit-learn",
+    "shapely",
+    "tqdm",
+]
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+

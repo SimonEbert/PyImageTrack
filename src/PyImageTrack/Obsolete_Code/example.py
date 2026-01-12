@@ -1,15 +1,7 @@
 import geopandas as gpd
-import rasterio
-import matplotlib.pyplot as plt
-import numpy as np
 
-from ImageTracking.ImagePair import ImagePair
-from Plots.MakePlots import plot_raster_and_geometry
-from Parameters.FilterParameters import FilterParameters
-import Plots
-
-
-
+from src import FilterParameters
+from src import ImagePair
 
 # Set parameters
 number_of_control_points = 200

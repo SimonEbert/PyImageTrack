@@ -1,9 +1,6 @@
-import matplotlib.pyplot as plt
-import requests
 import imageio.v3
 import numpy as np
-
-import Plots.MakePlots
+import requests
 
 
 def download_wms_data(minx: float, miny: float, maxx: float, maxy: float, width_image_pixels: float,
@@ -46,12 +43,9 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import rasterio.plot
 import shapely
-import skimage
-from datetime import datetime
 
-from ImageTracking.ImagePair import ImagePair
-from Parameters.FilterParameters import FilterParameters
-from Plots.MakePlots import plot_raster_and_geometry
+from src import ImagePair
+from src import FilterParameters
 
 # improve figure quality
 plt.rcParams['figure.dpi'] = 300
@@ -222,9 +216,12 @@ for layer_name_picture1 in available_layer_names[:-1]:
 
     image_pair.full_filter(reference_area=reference_area, filter_parameters=filter_parameters)
 
-    Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform, image_pair.tracked_control_points)
-    Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform, image_pair.level_of_detection_points)
-    Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform, image_pair.tracking_results)
+    src.Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform,
+                                                image_pair.tracked_control_points)
+    src.Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform,
+                                                image_pair.level_of_detection_points)
+    src.Plots.MakePlots.plot_movement_of_points(image_pair.image1_matrix, image_pair.image1_transform,
+                                                image_pair.tracking_results)
 
     image_pair.save_full_results("../Test_results_Tirol/" + str(rock_glacier_id) + "/full_results_with_radiometric_adjustment", save_files=save_files)
 

@@ -1,12 +1,13 @@
-import numpy as np
-import geopandas as gpd
 from functools import reduce
 
-from ImageTracking.ImagePair import ImagePair
-from Parameters.TrackingParameters import TrackingParameters
-from DataProcessing.ImagePreprocessing import equalize_adapthist_images
-from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
-from Parameters.FilterParameters import FilterParameters
+import geopandas as gpd
+import numpy as np
+
+from src import FilterParameters
+from src import ImagePair
+from src import TrackingParameters
+from src import equalize_adapthist_images
+from src import random_points_on_polygon_by_number
 
 
 class ImageBatch:

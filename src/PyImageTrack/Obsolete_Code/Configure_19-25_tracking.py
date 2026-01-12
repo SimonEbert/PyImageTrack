@@ -1,21 +1,13 @@
-import geopandas as gpd
-import rasterio
-import matplotlib.pyplot as plt
-import numpy as np
-import os
 import datetime
-import logging
-from rasterio.coords import BoundingBox
-import shapely
-import pandas as pd
+import os
 
+import geopandas as gpd
+import numpy as np
+import pandas as pd
 
 # from ImageTracking.ImagePair import ImagePair
 from ImageTracking.ImageBatch import ImageBatch
-from ImageTracking.ImagePair import ImagePair
-from Plots.MakePlots import plot_raster_and_geometry
-from Parameters.FilterParameters import FilterParameters
-from CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
+from src import FilterParameters
 
 # Set parameters for this project
 image_enhancement = True

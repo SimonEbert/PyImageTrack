@@ -8,11 +8,11 @@ import scipy
 import sklearn
 import tqdm
 
-from CreateGeometries.HandleGeometries import get_raster_indices_from_points
-from CreateGeometries.HandleGeometries import get_submatrix_symmetric, get_submatrix_rect_from_extents
-from ImageTracking.TrackingResults import TrackingResults
-from Parameters.AlignmentParameters import AlignmentParameters
-from Parameters.TrackingParameters import TrackingParameters
+from src import AlignmentParameters
+from src import TrackingParameters
+from src import TrackingResults
+from src import get_raster_indices_from_points
+from src import get_submatrix_symmetric, get_submatrix_rect_from_extents
 
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):

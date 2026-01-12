@@ -9,7 +9,7 @@ import csv
 from datetime import datetime
 import geopandas as gpd
 import sys
-sys.path.append('..')
+sys.path.append('../..')
 
 from PyImageTrack.ImageTracking.ImagePair import ImagePair
 from PyImageTrack.Parameters.FilterParameters import FilterParameters
