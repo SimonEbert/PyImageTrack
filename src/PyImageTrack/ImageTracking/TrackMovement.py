@@ -1,5 +1,7 @@
 import logging
 import multiprocessing
+from functools import partial
+from multiprocessing import shared_memory
 
 import geopandas as gpd
 import numpy as np
@@ -280,7 +282,8 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     return tracking_results
 
 
-def track_cell_lsm_parallelized(central_index: np.ndarray):
+def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name, shape1, shape2, dtype,
+                                tracked_cell_size, control_search_extents=None, search_extents=None):
     """
     Helper function for letting the least-squares approach run parallelized. It takes only a np.ndarray that represents
     one central index that should be tracked. All the other tracking variables (tracked and search cell sizes and the
@@ -299,27 +302,39 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
         converge after 50 iterations), the shift values and the transformation matrix are set to np.nan and None,
         respectively.
     """
+    # Get matrices from shared memory
+    shm1 = multiprocessing.shared_memory.SharedMemory(name=shm1_name)
+    shared_image_matrix1 = np.ndarray(shape1, dtype=dtype, buffer=shm1.buf)
+
+    shm2 = multiprocessing.shared_memory.SharedMemory(name=shm2_name)
+    shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
+
+
+
+
+
+
     # Extract the tracked (template) cell from image1
     track_cell1 = get_submatrix_symmetric(
         central_index=central_index,
-        shape=(shared_tracked_cell_size, shared_tracked_cell_size),
+        shape=(tracked_cell_size, tracked_cell_size),
         matrix=shared_image_matrix1
     )
 
     # Build the search window from extents
-    if shared_control_search_extents is not None:
+    if control_search_extents is not None:
         # Alignment mode
         search_area2, center_in_search = get_submatrix_rect_from_extents(
             central_index=np.array(central_index),
-            extents=shared_control_search_extents,
+            extents=control_search_extents,
             matrix=shared_image_matrix2
         )
         search_center = center_in_search
-    elif shared_search_extents is not None:
+    elif search_extents is not None:
         # Movement mode
         search_area2, center_in_search = get_submatrix_rect_from_extents(
             central_index=np.array(central_index),
-            extents=shared_search_extents,
+            extents=search_extents,
             matrix=shared_image_matrix2
         )
         search_center = center_in_search
@@ -398,11 +413,22 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         movement_cell_size = tracking_parameters.movement_cell_size
         cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
 
-    # ToDo: Find a way to make these variables NOT global
-    global shared_image_matrix1, shared_image_matrix2, shared_tracked_cell_size, shared_search_extents, shared_control_search_extents
-    shared_image_matrix1 = image1_matrix
-    shared_image_matrix2 = image2_matrix
-    shared_tracked_cell_size = movement_cell_size
+    # Create shared memory for image1_matrix
+    shared_memory_image1 = shared_memory.SharedMemory(create=True, size=image1_matrix.nbytes)
+    shared_image_matrix1 = np.ndarray(image1_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image1.buf)
+    shared_image_matrix1[:] = image1_matrix[:]
+    shape_image1 = image1_matrix.shape
+
+    # Create shared memory for image2_matrix
+    shared_memory_image2 = shared_memory.SharedMemory(create=True, size=image2_matrix.nbytes)
+    shared_image_matrix2 = np.ndarray(image2_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image2.buf)
+    shared_image_matrix2[:] = image2_matrix[:]
+    shape_image2 = image2_matrix.shape
+
+    if shared_image_matrix1.dtype != shared_image_matrix1.dtype:
+        raise ValueError("The datatypes of image1 and image2 must be identical.")
+    image1_dtype = image1_matrix.dtype
+
     # Configure which asymmetric extents to use depending on mode.
     # Movement mode reads TrackingParameters.search_extent_px,
     # Alignment mode reads AlignmentParameters.control_search_extent_px.
@@ -425,15 +451,44 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
 
+    # build partial function
+    partial_lsm_tracking_function = partial(
+        track_cell_lsm_parallelized,
+        shm1_name=shared_memory_image1.name,
+        shm2_name=shared_memory_image2.name,
+        shape1=shape_image1,
+        shape2=shape_image2,
+        dtype=image1_dtype,
+        tracked_cell_size=movement_cell_size,
+        control_search_extents=shared_control_search_extents,
+        search_extents=shared_search_extents
+    )
+
     procs = max(1, multiprocessing.cpu_count() - 1)
     with multiprocessing.Pool(processes=procs) as pool:
-        tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
-                                          total=len(list_of_central_indices),
-                                          desc=task_label,
-                                          unit="points",
-                                          smoothing=0.1,
-                                          bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
-                                                     "[{remaining}, {rate_fmt}]"))
+        tracking_results = list(
+            tqdm.tqdm(
+                pool.imap(partial_lsm_tracking_function, list_of_central_indices),
+                total=len(list_of_central_indices),
+                desc=task_label,
+                unit="points",
+                smoothing=0.1,
+                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
+            )
+        )
+        # tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
+        #                                   total=len(list_of_central_indices),
+        #                                   desc=task_label,
+        #                                   unit="points",
+        #                                   smoothing=0.1,
+        #                                   bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
+        #                                              "[{remaining}, {rate_fmt}]"))
+
+    # Clean-up image matrices from shared memory
+    shared_memory_image1.close()
+    shared_memory_image1.unlink()
+    shared_memory_image2.close()
+    shared_memory_image2.unlink()
 
     # access the respective tracked point coordinates and its movement
     movement_row_direction = [results.movement_rows for results in tracking_results]

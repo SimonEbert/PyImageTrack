@@ -1,3 +1,3 @@
-from AlignmentParameters import AlignmentParameters
-from FilterParameters import FilterParameters
-from TrackingParameters import TrackingParameters
+from PyImageTrack.Parameters.AlignmentParameters import AlignmentParameters
+from PyImageTrack.Parameters.FilterParameters import FilterParameters
+from PyImageTrack.Parameters.TrackingParameters import TrackingParameters
