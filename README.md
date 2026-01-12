@@ -15,7 +15,7 @@ The code in this respository is written by Lisa Rehn and Simon Ebert and maintai
 To install PyImageTrack, follow these steps:
 1. Clone the repository: `git clone https://github.com/SimonEbert/PyImageTrack.git`
 2. Navigate to the project directory: `cd PyImageTrack`
-3. Install the required dependencies: `pip install -r requirements.txt`
+3. Install the package: `pip install .`
 
 ## License
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) License.
