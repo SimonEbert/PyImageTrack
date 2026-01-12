@@ -1,13 +1,10 @@
-import numpy as np
 import geopandas as gpd
-import rasterio.plot
 import matplotlib.pyplot as plt
-import scipy.interpolate
-import logging
+import numpy as np
+import rasterio.plot
 
 
 def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geometry: gpd.GeoDataFrame, alpha=0.6):
-
     """
     Plots a matrix representing a raster image with given transform and the geometries of a given GeoDataFrame in one
     figure.
@@ -35,10 +32,10 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 
 def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
-                            point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig = None, ax = None,
+                            point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
                             save_path: str = None, show_arrows: bool = True):
     # ToDo: Change size of the single points for a smooth image regardless of point grid resolution
-    
+
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
     colour scale, while the movement direction is shown with arrows for selected pixels.
@@ -59,14 +56,16 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     masking_polygon: gpd.GeoDataFrame = None
         A single-element GeoDataFrame to allow masking the plotted points to a certain area. If None, the points will
         not be masked.
-    fig = None
+    fig: plt.figure = None
         Specifies the figure for plotting multiple results simultaneously.
-    ax = None
+    ax: plt.ax = None
         Specifies the axes on which to plot the movement of tracked points. If None (the default) the figure is plotted
         onto a new canvas. If fig, ax are not provided, but save_path is, the figure is only saved and not displayed.
     save_path : str = None
         The file location, where the created plot is stored. When no path is given (the default), the figure is not
         saved.
+    show_arrows: bool = True
+        Wether to show direction arrows on the resulting image
     Returns
     ----------
     None
@@ -83,14 +82,15 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         point_movement = gpd.overlay(point_movement, masking_polygon, how="intersection")
 
     if point_color is None:
-        point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=1, marker=".", alpha=1.0,
+        point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=1, marker=".",
+                            alpha=1.0,
                             # missing_kwds={'color': 'gray'}
-                            vmin=0, vmax=3.5,
+                            # vmin=0, vmax=3.5,
                             )
     else:
         point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)
 
-    ax.ticklabel_format(scilimits= (-3,4))
+    ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
         rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
@@ -116,7 +116,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         fig.savefig(save_path, bbox_inches='tight')
 
 
-def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
+def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_transform,
+                                            point_movement: gpd.GeoDataFrame,
                                             save_path: str = None):
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -150,7 +151,7 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     if save_path is None:
         fig.show()
     else:
-        fig.savefig(save_path, bbox_inches='tight')#
+        fig.savefig(save_path, bbox_inches='tight')  #
 
 
 def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
@@ -165,7 +166,3 @@ def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
     ax.scatter(moving_points["movement_row_direction"],
                moving_points["movement_column_direction"])
     plt.show()
-
-
-
-

@@ -16,19 +16,17 @@ number_of_control_points = 200
 image_bands = 0
 control_tracking_area_size = 70 # script still has a bias if this number is 0 or 3 mod 4
 control_cell_size = 50
-distance_of_tracked_points = 50
-movement_tracking_area_size = 62 # script still has a bias if this number is 0 or 3 mod 4
-movement_cell_size = 20
+distance_of_tracked_points_px = 30
+search_extent_px = (75,75,75,75)
+movement_cell_size = 100
 cross_correlation_threshold_alignment = 0.75
-cross_correlation_threshold_movement = 0.5
-maximal_alignment_movement = 4 # In Pixels!
+cross_correlation_threshold_movement = 0
 
 
 # === SAVE OPTIONS ===
 # tracking_results.geojson will always be saved, since it contains the full information.
-save_files = ["first_image_matrix", "second_image_matrix", "movement_bearing_valid_tif", "movement_bearing_outlier_filtered_tif",
-              "movement_rate_valid_tif", "movement_rate_outlier_filtered_tif", "invalid_mask_tif", "lod_mask_tif",
-              "statistical_parameters_txt", "LoD_points_geojson", "control_points_geojson"]
+save_files = ["first_image_matrix", "second_image_matrix",
+              "movement_rate_valid_tif", "statistical_parameters_txt"]
 
 
 # === FILTER PARAMETERS ===
@@ -53,43 +51,46 @@ filter_parameters = FilterParameters({
 })
 
 
-Kaiserberg_pair_19_21 = ImagePair(
+Ritigraben_pair_September = ImagePair(
     parameter_dict={"image_alignment_number_of_control_points": number_of_control_points,
                     "used_image_bands": image_bands,
                     "image_alignment_control_tracking_area_size": control_tracking_area_size,
                     "image_alignment_control_cell_size": control_cell_size,
-                    "distance_of_tracked_points": distance_of_tracked_points,
-                    "movement_tracking_area_size": movement_tracking_area_size,
+                    "distance_of_tracked_points_px": distance_of_tracked_points_px,
+                    "search_extent_px": search_extent_px,
                     "movement_cell_size": movement_cell_size,
                     "cross_correlation_threshold_alignment": cross_correlation_threshold_alignment,
-                    "cross_correlation_threshold_movement": cross_correlation_threshold_movement,
-                    "maximal_alignment_movement": maximal_alignment_movement})
+                    "cross_correlation_threshold_movement": cross_correlation_threshold_movement})
 
-Kaiserberg_pair_19_21.load_images_from_file(filename_1="../Lisa_Kaunertal/Testdaten_Alignment/2022-07_HS_10.tif",
+Ritigraben_pair_September.load_images_from_file(filename_1="/home/simon/Documents/Promotion/Ritigraben/Hillshades_September/Hillshade-2025-08-27_12-34-10_5cm.tif",
                                             observation_date_1="01-07-2022",
-                                            filename_2="../Lisa_Kaunertal/Testdaten_Alignment/2022-07_HS_10.tif",
+                                            filename_2="/home/simon/Documents/Promotion/Ritigraben/Hillshades_September/Hillshade-2025-08-31_15-13-20_5cm.tif",
                                             observation_date_2="01-07-2023",
                                             selected_channels=0, NA_value=-9999)
 
-polygon_outside_RG = gpd.read_file("../Lisa_Kaunertal/Testdaten_Alignment/Area_outside_rock_glacier.shp")
-polygon_outside_RG = polygon_outside_RG.to_crs(crs=32632)
+# polygon_outside_RG = gpd.read_file("../Lisa_Kaunertal/Testdaten_Alignment/Area_outside_rock_glacier.shp")
+# polygon_outside_RG = polygon_outside_RG.to_crs(crs=32632)
 
-rock_glacier_polygon = gpd.read_file("../Lisa_Kaunertal/Testdaten_Alignment/Area_inside_rock_glacier.shp")
-rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=32632)
+# rock_glacier_polygon = gpd.read_file("../Lisa_Kaunertal/Testdaten_Alignment/Area_inside_rock_glacier.shp")
+# rock_glacier_polygon = rock_glacier_polygon.to_crs(crs=32632)
+
+polygon_to_be_tracked = gpd.read_file("/home/simon/Documents/Promotion/Ritigraben/Hillshades_September/Hillshade_extent.shp")
+
 
 
 # Kaiserberg_pair_19_21.save_full_results("../Lisa_Kaunertal/full_results", save_files=["first_image_matrix", "second_image_matrix"])
 
 
 
-Kaiserberg_pair_19_21.align_images(polygon_outside_RG)
+# Kaiserberg_pair_19_21.align_images(polygon_outside_RG)
 
-Kaiserberg_pair_19_21.tracking_results = Kaiserberg_pair_19_21.track_points(rock_glacier_polygon)
-
-# Kaiserberg_pair_19_21.load_results("../Test_results/full_results/tracking_results_1953_1970.geojson", reference_area=polygon_outside_RG)
+# Ritigraben_pair_September.tracking_results = Ritigraben_pair_September.track_points(polygon_to_be_tracked)
 
 
-Kaiserberg_pair_19_21.full_filter(reference_area=polygon_outside_RG, filter_parameters=filter_parameters)
+
+Ritigraben_pair_September.tracking_results = gpd.read_file("../Lisa_Kaunertal/full_results/tracking_results_2022_2023.geojson")
+
+# Kaiserberg_pair_19_21.full_filter(reference_area=polygon_outside_RG, filter_parameters=filter_parameters)
 #
 # Kaiserberg_pair_19_21.filter_outliers(filter_parameters=filter_parameters)
 
@@ -98,4 +99,4 @@ Kaiserberg_pair_19_21.full_filter(reference_area=polygon_outside_RG, filter_para
 #
 # Kaiserberg_pair_19_21.plot_tracking_results_with_valid_mask()
 
-Kaiserberg_pair_19_21.save_full_results("../Lisa_Kaunertal/full_results", save_files=save_files)
+Ritigraben_pair_September.save_full_results("../Lisa_Kaunertal/full_results", save_files=save_files)

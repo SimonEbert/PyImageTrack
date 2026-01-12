@@ -1,18 +1,18 @@
-import geopandas as gpd
-import multiprocessing
-import pandas as pd
-import numpy as np
 import logging
-import tqdm
-import sklearn
-import scipy
+import multiprocessing
 
+import geopandas as gpd
+import numpy as np
+import pandas as pd
+import scipy
+import sklearn
+import tqdm
+
+from CreateGeometries.HandleGeometries import get_raster_indices_from_points
 from CreateGeometries.HandleGeometries import get_submatrix_symmetric, get_submatrix_rect_from_extents
 from ImageTracking.TrackingResults import TrackingResults
-from CreateGeometries.HandleGeometries import get_raster_indices_from_points
-from Parameters.TrackingParameters import TrackingParameters
 from Parameters.AlignmentParameters import AlignmentParameters
-
+from Parameters.TrackingParameters import TrackingParameters
 
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):
@@ -20,9 +20,12 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
         Calculates the movement of an image section using the cross-correlation approach.
         Parameters
         ----------
+        search_center: list
+            A 2-element array containing the row (first entry) and column (second entry) of the respective search window
+            center
         tracked_cell_matrix: np.ndarray
-            An array (a section of the first image), which is compared to sections of the search_cell_matrix (a section of
-            the second image).
+            An array (a section of the first image), which is compared to sections of the search_cell_matrix (a section
+            of the second image).
         search_cell_matrix: np.ndarray
             An array, which delimits the area in which possible matching image sections are searched.
         Returns
@@ -39,10 +42,8 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
     # for multichannel images, flattening ensures that always the same band is being compared
     tracked_vector = tracked_cell_matrix.flatten()
 
-
     # normalize the tracked vector
     tracked_vector = tracked_vector - np.mean(tracked_vector)
-
 
     if np.linalg.norm(tracked_vector) == 0:
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="cross-correlation",
@@ -70,16 +71,16 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
                     continue
                 search_subcell_vector = search_subcell_vector / np.linalg.norm(search_subcell_vector)
                 corr = np.correlate(tracked_vector, search_subcell_vector, mode='valid')
-            if float(corr) > best_correlation:
-                best_correlation = float(corr)
-                best_correlation_coordinates = [i, j]
+            if len(corr) == 1:
+                if float(corr) > best_correlation:
+                    best_correlation = float(corr)
+                    best_correlation_coordinates = [i, j]
     if best_correlation <= 0:
         logging.info("Found no matching with positive correlation. Skipping")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan,
                                tracking_method="cross-correlation",
                                cross_correlation_coefficient=np.nan,
                                tracking_success=False)
-
 
     # Use the provided logical center inside the search window if given (asymmetric windows)
     if search_center is None:
@@ -100,7 +101,6 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
         tracking_success=True
     )
     return tracking_results
-
 
 
 def move_indices_from_transformation_matrix(transformation_matrix: np.array, indices: np.array):
@@ -190,7 +190,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                                                                np.arange(0, search_cell_matrix.shape[-1]),
                                                                search_cell_matrix)
 
-
     iteration = 0
     # Point to check the stopping condition. If the distance between the previous and current central point is smaller
     # than 0.1 (pixels), the iteration halts. For the first comparison, this point is initialized as NaN which has
@@ -217,8 +216,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                                                    indices[0, :].reshape(tracked_cell_matrix.shape))
         moved_cell_matrix_dy_times_y = np.multiply(moved_cell_matrix_dy,
                                                    indices[1, :].reshape(tracked_cell_matrix.shape))
-
-
 
         model = sklearn.linear_model.LinearRegression().fit(
             np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
@@ -261,7 +258,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         tracked_cell_matrix.shape)
 
-
     # flatten the comparison cell matrix
     moved_cell_submatrix_vector = moved_cell_matrix.flatten()
 
@@ -276,15 +272,12 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     #      rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
     #      rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
 
-
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
                                        tracking_method="least-squares", tracking_success=True,
                                        cross_correlation_coefficient=float(corr))
     return tracking_results
-
-
 
 
 def track_cell_lsm_parallelized(central_index: np.ndarray):
@@ -352,8 +345,9 @@ def track_cell_lsm_parallelized(central_index: np.ndarray):
 
 
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
-                       tracking_parameters: TrackingParameters = None, alignment_parameters: AlignmentParameters = None, alignment_tracking: bool = False,
-                       save_columns: list[str] = None,  task_label: str = "Tracking points") -> pd.DataFrame:
+                       tracking_parameters: TrackingParameters = None, alignment_parameters: AlignmentParameters = None,
+                       alignment_tracking: bool = False,
+                       save_columns: list[str] = None, task_label: str = "Tracking points") -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)
     using the least-squares approach.
@@ -426,7 +420,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         else:
             raise ValueError("Movement: search_extent_px must be set (tuple posx,negx,posy,negy).")
 
-
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
@@ -435,8 +428,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     procs = max(1, multiprocessing.cpu_count() - 1)
     with multiprocessing.Pool(processes=procs) as pool:
         tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
-                                total=len(list_of_central_indices),
-                                          desc=task_label, 
+                                          total=len(list_of_central_indices),
+                                          desc=task_label,
                                           unit="points",
                                           smoothing=0.1,
                                           bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
@@ -476,4 +469,3 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     if "correlation_coefficient" not in save_columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
     return tracked_pixels_above_cc_threshold
-

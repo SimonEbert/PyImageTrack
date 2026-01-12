@@ -1,6 +1,7 @@
 # PyImageTrack/Parameters/TrackingParameters.py
 class TrackingParameters:
     """Container for tracking-related parameters (no alignment fields)."""
+
     def __init__(self, parameter_dict: dict):
         self.image_bands = parameter_dict.get("image_bands")
         self.distance_of_tracked_points_px = parameter_dict.get("distance_of_tracked_points_px")
