@@ -1,10 +1,12 @@
 # PyImageTrack/Utils.py
+import itertools
 import os
 import re
-import itertools
-import pandas as pd
 from datetime import datetime, timedelta
 from typing import Optional
+
+import pandas as pd
+
 
 def _round_to_nearest_hour(dt: datetime) -> datetime:
     """Round to nearest hour (>=30 min rounds up)."""
@@ -13,6 +15,7 @@ def _round_to_nearest_hour(dt: datetime) -> datetime:
     else:
         dt = dt.replace(minute=0, second=0, microsecond=0)
     return dt
+
 
 def parse_date(s: str) -> datetime:
     """
@@ -65,8 +68,9 @@ def parse_date(s: str) -> datetime:
 
     raise ValueError(f"Unsupported date format: {s!r}")
 
+
 def _successive_pairs(sorted_years):
-    return [(sorted_years[i], sorted_years[i+1]) for i in range(len(sorted_years) - 1)]
+    return [(sorted_years[i], sorted_years[i + 1]) for i in range(len(sorted_years) - 1)]
 
 
 def collect_pairs(input_folder: str,
@@ -74,7 +78,6 @@ def collect_pairs(input_folder: str,
                   pairs_csv_path: Optional[str] = None,
                   pairing_mode: str = "all",
                   extensions: Optional[tuple] = None):
-
     """
     Build pairs and return:
       - year_pairs: list of (id1, id2)
@@ -108,7 +111,6 @@ def collect_pairs(input_folder: str,
 
     img_files = [f for f in os.listdir(input_folder) if f.lower().endswith(exts)]
 
-
     id_to_file = {}
     id_to_date = {}
     id_hastime_from_filename = {}
@@ -121,7 +123,6 @@ def collect_pairs(input_folder: str,
         path = os.path.join(input_folder, f)
         lead = lead.rstrip("-_")  # '1953_' -> '1953', '1953-09_' -> '1953-09'
 
-
         # Case: YYYYMMDD-HHMMSS...
         if re.match(r'^\d{8}[-_]\d{6}', lead):
             dt = parse_date(lead)  # rounded to nearest hour
@@ -132,7 +133,7 @@ def collect_pairs(input_folder: str,
 
         # Case: DD-MM-YYYY at start (e.g., 02-09-1953_*.tif)
         elif re.match(r'^\d{2}-\d{2}-\d{4}', lead):
-            dt = parse_date(lead)  
+            dt = parse_date(lead)
             id_ = dt.strftime("%Y-%m-%d")
             id_to_file[id_] = path
             id_to_date[id_] = dt.strftime("%Y-%m-%d")
@@ -195,7 +196,8 @@ def collect_pairs(input_folder: str,
         year_pairs = list(itertools.combinations(ordered_ids, 2))
     elif pairing_mode == "successive":
         def _successive_pairs(ids):
-            return [(ids[i], ids[i+1]) for i in range(len(ids)-1)]
+            return [(ids[i], ids[i + 1]) for i in range(len(ids) - 1)]
+
         year_pairs = _successive_pairs(ordered_ids)
     elif pairing_mode == "custom":
         # --- read CSV with auto delimiter (',' or ';') ---
@@ -239,7 +241,7 @@ def collect_pairs(input_folder: str,
                 if cand:
                     return cand[0]
                 raise KeyError(f"No file ID matching time token '{key}' found in input folder.")
-            
+
             # 1b) DD-MM-YYYY (normalize to YYYY-MM-DD and resolve)
             if re.match(r"^\d{2}-\d{2}-\d{4}", lead):
                 key = parse_date(lead).strftime("%Y-%m-%d")
@@ -297,9 +299,9 @@ def collect_pairs(input_folder: str,
                     raise KeyError(f"CSV token '{lead}' is a year, but no image_dates.csv was provided.")
                 if lead not in csv_year_to_date:
                     raise KeyError(f"Year '{lead}' not found in image_dates.csv.")
-                mapped = str(csv_year_to_date[lead]).strip()      # e.g. '02-09-1953'
+                mapped = str(csv_year_to_date[lead]).strip()  # e.g. '02-09-1953'
                 try:
-                    norm = parse_date(mapped).strftime("%Y-%m-%d") # '1953-09-02'
+                    norm = parse_date(mapped).strftime("%Y-%m-%d")  # '1953-09-02'
                 except Exception:
                     norm = mapped
                 if norm in id_to_file:
@@ -331,7 +333,6 @@ def collect_pairs(input_folder: str,
 
         year_pairs = pairs
 
-
     return year_pairs, id_to_file, id_to_date, id_hastime_from_filename
 
 
@@ -339,12 +340,14 @@ def ensure_dir(path: str):
     """Create directory if missing."""
     os.makedirs(path, exist_ok=True)
 
+
 def float_compact(x):
     """Compact float to short string without trailing zeros."""
     if isinstance(x, float):
         s = f"{x:.3f}".rstrip("0").rstrip(".")
         return s or "0"
     return str(x)
+
 
 def _get(obj, name, default="NA"):
     """Return attribute or dict key `name` from `obj`, supporting both objects and dicts."""
@@ -376,6 +379,7 @@ def abbr_alignment(ap):
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "A_" + "_".join(parts)
 
+
 def abbr_tracking(tp):
     """Short code for tracking parameters; supports objects or dicts."""
     parts = []
@@ -396,6 +400,7 @@ def abbr_tracking(tp):
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "T_" + "_".join(parts)
 
+
 def abbr_filter(fp) -> str:
     fc = float_compact
     parts = [
@@ -411,5 +416,3 @@ def abbr_filter(fp) -> str:
         f"sdRw{fc(fp.standard_deviation_movement_rate_moving_window_size)}",
     ]
     return "F_" + "_".join(parts)
-
-

@@ -3,13 +3,10 @@ import numpy as np
 import scipy
 import sklearn
 
-from ImageTracking.TrackMovement import track_movement_lsm
-from ImageTracking.TrackMovement import move_indices_from_transformation_matrix
-from Parameters.AlignmentParameters import AlignmentParameters
-from Plots.MakePlots import plot_movement_of_points
-from Plots.MakePlots import plot_distribution_of_point_movement
 from CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
-
+from ImageTracking.TrackMovement import move_indices_from_transformation_matrix
+from ImageTracking.TrackMovement import track_movement_lsm
+from Parameters.AlignmentParameters import AlignmentParameters
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
@@ -62,8 +59,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         distance_px=None
     )
 
-
-
     tracked_control_pixels = track_movement_lsm(image1_matrix, image2_matrix, image_transform,
                                                 points_to_be_tracked=reference_area_point_grid,
                                                 alignment_parameters=alignment_parameters, alignment_tracking=True,
@@ -77,48 +72,35 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
 
     if maximal_alignment_movement is not None:
-        tracked_control_pixels_valid = tracked_control_pixels_valid[tracked_control_pixels_valid["movement_distance_pixels"] <= maximal_alignment_movement]
+        tracked_control_pixels_valid = tracked_control_pixels_valid[
+            tracked_control_pixels_valid["movement_distance_pixels"] <= maximal_alignment_movement]
     if len(tracked_control_pixels_valid) == 0:
         raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
                          "threshold. Cross-correlation values were " + str(
-            list(tracked_control_pixels["correlation_coefficient"])) + "\n(None-values may signify problems during tracking).")
+            list(tracked_control_pixels[
+                     "correlation_coefficient"])) + "\n(None-values may signify problems during tracking).")
 
     print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for alignment.")
     tracked_control_pixels_valid["new_row"] = (tracked_control_pixels_valid["row"]
-                                         + tracked_control_pixels_valid["movement_row_direction"])
+                                               + tracked_control_pixels_valid["movement_row_direction"])
     tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
-                                            + tracked_control_pixels_valid["movement_column_direction"])
+                                                  + tracked_control_pixels_valid["movement_column_direction"])
 
     linear_model_input = np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])
-    linear_model_output = np.column_stack([tracked_control_pixels_valid["new_row"],tracked_control_pixels_valid["new_column"]])
+    linear_model_output = np.column_stack(
+        [tracked_control_pixels_valid["new_row"], tracked_control_pixels_valid["new_column"]])
     transformation_linear_model = sklearn.linear_model.LinearRegression()
     transformation_linear_model.fit(linear_model_input, linear_model_output)
 
-
     residuals = transformation_linear_model.predict(linear_model_input) - linear_model_output
-    tracked_control_pixels_valid["residuals_row"] = residuals[:,0]
-    tracked_control_pixels_valid["residuals_column"] = residuals[:,1]
+    tracked_control_pixels_valid["residuals_row"] = residuals[:, 0]
+    tracked_control_pixels_valid["residuals_column"] = residuals[:, 1]
 
-    # fig, ax = plt.subplots()
-    # ax.grid(True, which='both')
-    # ax.axhline(y=0, color='k')
-    # ax.axvline(x=0, color='k')
-    # # ax.set_xlim((-1,1))
-    # # ax.set_ylim((-1,1))
-    # plt.scatter(residuals[:, 0], residuals[:, 1])
-    # plt.title("Model_score:" + str(transformation_linear_model.score(linear_model_input, linear_model_output))
-    #           + "\nResidual correlation" + str(np.corrcoef(residuals[:, 0], residuals[:, 1])[0, 1]))
-    # plt.show()
-
-    # if np.abs(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) > 0.7:
-    #     print("Skipping this image pair due to poor alignment (correlation between row and column residuals: " + str(np.corrcoef(residuals[:,0], residuals[:,1])[0,1]) + ")")
-    #     raise ValueError("Valid alignment was not possible.")
-
-
-    sampling_transformation_matrix = np.array([[transformation_linear_model.coef_[0,0],transformation_linear_model.coef_[0,1],transformation_linear_model.intercept_[0]],
-                                              [transformation_linear_model.coef_[1,0],transformation_linear_model.coef_[1,1],transformation_linear_model.intercept_[1]]])
-
-
+    sampling_transformation_matrix = np.array(
+        [[transformation_linear_model.coef_[0, 0], transformation_linear_model.coef_[0, 1],
+          transformation_linear_model.intercept_[0]],
+         [transformation_linear_model.coef_[1, 0], transformation_linear_model.coef_[1, 1],
+          transformation_linear_model.intercept_[1]]])
 
     indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[0]), np.arange(0, image1_matrix.shape[1]))
                        ).T.reshape(-1, 2).T
@@ -131,6 +113,4 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
 
-
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]
-

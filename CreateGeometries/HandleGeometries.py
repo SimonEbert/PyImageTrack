@@ -1,10 +1,10 @@
 import geopandas as gpd
-import shapely
 import numpy as np
-import rasterio.transform
 import pandas as pd
-import rasterio.mask
 import rasterio
+import rasterio.mask
+import rasterio.transform
+import shapely
 
 
 def get_submatrix_symmetric(central_index, shape, matrix):
@@ -30,22 +30,21 @@ def get_submatrix_symmetric(central_index, shape, matrix):
     # matrix is three-dimensional if there are several channels
     if len(matrix.shape) == 3:
         submatrix = matrix[
-                    :,
-                    int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
-                    int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
+            :,
+            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
+            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
     else:
 
         submatrix = matrix[
-                    int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
-                    int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
+            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
+            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
     return submatrix
 
 
 def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
                                        distance_of_points: float = 10,
                                        distance_px: float = None,
-                                       pixel_size: float = None): 
-
+                                       pixel_size: float = None):
     minx = polygon.bounds.loc[0, 'minx']
     miny = polygon.bounds.loc[0, 'miny']
     maxx = polygon.bounds.loc[0, 'maxx']
@@ -59,10 +58,10 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
                                                 shapely.geometry.Point(maxx, maxy)],
                                       crs=polygon.crs)
 
-    width_image_crs_unit  = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[1].geometry)
+    width_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[1].geometry)
     height_image_crs_unit = extent_corners.iloc[0].geometry.distance(extent_corners.iloc[2].geometry)
 
-    number_of_points_width  = width_image_crs_unit  / distance_of_points
+    number_of_points_width = width_image_crs_unit / distance_of_points
     number_of_points_height = height_image_crs_unit / distance_of_points
 
     points = []
@@ -87,7 +86,6 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
         )
 
     return points
-
 
 
 def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
@@ -192,7 +190,7 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
     #                                                  "movement_column_direction",
     #                                                  "movement_distance_pixels", "movement_bearing_pixels"]],
     #                                                 geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
-    georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels,geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
+    georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels, geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
         [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
          raster_transform[0] * georeferenced_tracked_pixels.loc[:, "movement_column_direction"].values], axis=0)

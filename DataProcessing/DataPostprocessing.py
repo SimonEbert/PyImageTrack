@@ -1,11 +1,11 @@
 import geopandas as gpd
 import numpy as np
 
-from ImageTracking import TrackMovement
-from CreateGeometries.HandleGeometries import georeference_tracked_points
-from Parameters.TrackingParameters import TrackingParameters
 from CreateGeometries.HandleGeometries import circular_std_deg
+from CreateGeometries.HandleGeometries import georeference_tracked_points
+from ImageTracking import TrackMovement
 from Parameters.FilterParameters import FilterParameters
+from Parameters.TrackingParameters import TrackingParameters
 
 
 def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
@@ -30,8 +30,8 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
     """
     points = points_for_lod_calculation
     tracked_points = TrackMovement.track_movement_lsm(
-        image1_matrix=image1_matrix, image2_matrix=image2_matrix,image_transform=image_transform,
-        points_to_be_tracked=points, tracking_parameters=tracking_parameters,alignment_tracking=False,
+        image1_matrix=image1_matrix, image2_matrix=image2_matrix, image_transform=image_transform,
+        points_to_be_tracked=points, tracking_parameters=tracking_parameters, alignment_tracking=False,
         save_columns=["movement_row_direction",
                       "movement_column_direction",
                       "movement_distance_pixels",
@@ -53,10 +53,12 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
 
     return tracked_points
 
+
 def _ensure_bool_col(df, col):
     if col not in df.columns:
         df[col] = False
     return df[col].astype(bool).to_numpy()
+
 
 def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: float) -> gpd.GeoDataFrame:
     """
@@ -112,16 +114,16 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
         return tracking_results
 
     available_outlier_columns = list(
-        set(["is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
-             "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"])
+        {"is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
+         "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"}
         & set(tracking_results.columns))
 
     if available_outlier_columns:
         is_outlier = (
-            _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
+                _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
         )
         tracking_results["is_outlier"] = is_outlier
 
@@ -134,7 +136,8 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
     if "is_bearing_difference_outlier" not in tracking_results_non_outliers.columns:
         tracking_results["is_bearing_difference_outlier"] = False
     for i in list(tracking_results.index.values):
-        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i], inclusion_distance)
+        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
+                                                                             inclusion_distance)
         if not any(list_is_within_current_point):
             continue
         surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point, :]
@@ -143,12 +146,13 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
         difference = abs(average_movement_bearing - tracking_results.loc[i, "movement_bearing_pixels"]) % 360
         angular_difference = min(difference, 360 - difference)
         if angular_difference > rotation_threshold:
-            tracking_results.loc[i,"is_bearing_difference_outlier"] = True
+            tracking_results.loc[i, "is_bearing_difference_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
+
 def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.GeoDataFrame,
-                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+                                                        filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
     """
     Filters rotation outliers from the tracking results dataframe. All points that have neighbouring points such that
     the standard deviation of the movement bearing exceeds the given threshold (specified in filter_parameters), will be
@@ -181,16 +185,16 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
         return tracking_results
 
     available_outlier_columns = list(
-        set(["is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
-             "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"])
+        {"is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
+         "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"}
         & set(tracking_results.columns))
 
     if available_outlier_columns:
         is_outlier = (
-            _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
+                _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
         )
         tracking_results["is_outlier"] = is_outlier
 
@@ -203,21 +207,22 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
     if "is_bearing_standard_deviation_outlier" not in tracking_results_non_outliers.columns:
         tracking_results["is_bearing_standard_deviation_outlier"] = False
     for i in list(tracking_results.index.values):
-        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i], inclusion_distance)
+        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
+                                                                             inclusion_distance)
         if not any(list_is_within_current_point):
             continue
-        surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point,:]
+        surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point, :]
         movement_bearings = surrounding_points["movement_bearing_pixels"]
         valid_movement_bearings = movement_bearings[~np.isnan(movement_bearings)]
         standard_deviation = circular_std_deg(valid_movement_bearings)
         if standard_deviation > standard_deviation_threshold:
-            tracking_results.loc[i,"is_bearing_standard_deviation_outlier"] = True
+            tracking_results.loc[i, "is_bearing_standard_deviation_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
 
 def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
-                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+                                             filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
     """
     Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
      average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
@@ -256,10 +261,10 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
 
     if available_outlier_columns:
         is_outlier = (
-            _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
+                _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
         )
         tracking_results["is_outlier"] = is_outlier
 
@@ -272,19 +277,22 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
     if "is_movement_rate_difference_outlier" not in tracking_results_non_outliers.columns:
         tracking_results["is_movement_rate_difference_outlier"] = False
     for i in list(tracking_results.index.values):
-        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i], inclusion_distance)
+        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
+                                                                             inclusion_distance)
         if not any(list_is_within_current_point):
             continue
-        surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point,:]
+        surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point, :]
         average_movement_rate = np.nanmedian(surrounding_points["movement_distance_per_year"])
 
-        if np.abs(average_movement_rate - tracking_results.loc[i,"movement_distance_per_year"]) > movement_rate_threshold:
-            tracking_results.loc[i,"is_movement_rate_difference_outlier"] = True
+        if np.abs(average_movement_rate - tracking_results.loc[
+            i, "movement_distance_per_year"]) > movement_rate_threshold:
+            tracking_results.loc[i, "is_movement_rate_difference_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
+
 def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDataFrame,
-                                                filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+                                                     filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
     """
     Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
      average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
@@ -323,10 +331,10 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
 
     if available_outlier_columns:
         is_outlier = (
-            _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
-            | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
+                _ensure_bool_col(tracking_results, "is_bearing_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_bearing_standard_deviation_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_difference_outlier")
+                | _ensure_bool_col(tracking_results, "is_movement_rate_standard_deviation_outlier")
         )
         tracking_results["is_outlier"] = is_outlier
 
@@ -339,22 +347,20 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
     if "is_movement_rate_standard_deviation_outlier" not in tracking_results_non_outliers.columns:
         tracking_results["is_movement_rate_standard_deviation_outlier"] = False
     for i in list(tracking_results.index.values):
-        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i], inclusion_distance)
+        list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
+                                                                             inclusion_distance)
         if not any(list_is_within_current_point):
             continue
-        surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point,:]
+        surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point, :]
         standard_deviation_movement_rate = np.nanstd(surrounding_points["movement_distance_per_year"])
-        if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i,"movement_distance_per_year"]) >
+        if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i, "movement_distance_per_year"]) >
                 movement_rate_threshold):
-            tracking_results.loc[i,"is_movement_rate_standard_deviation_outlier"] = True
+            tracking_results.loc[i, "is_movement_rate_standard_deviation_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
 
 def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
-
-
-
     filtered_tracking_results = filter_outliers_movement_bearing_difference(tracking_results, filter_parameters)
     filtered_tracking_results = filter_outliers_movement_bearing_standard_deviation(
         filtered_tracking_results, filter_parameters)
@@ -363,4 +369,3 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     filtered_tracking_results = filter_outliers_movement_rate_standard_deviation(
         filtered_tracking_results, filter_parameters)
     return filtered_tracking_results
-

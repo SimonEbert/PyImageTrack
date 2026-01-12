@@ -1,5 +1,3 @@
-
-
 class FilterParameters:
     def __init__(self, parameter_dict):
         # Level of Detection

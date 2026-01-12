@@ -21,4 +21,3 @@ class TrackingResults:
                 f'\tmovement columns: {self.movement_cols}\n'
                 f'\tCorrelation coefficient: {self.cross_correlation_coefficient}\n'
                 f'\ttracking success: {self.tracking_success}')
-

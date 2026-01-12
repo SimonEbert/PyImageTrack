@@ -1,11 +1,15 @@
 # PyImageTrack/Parameters/AlignmentParameters.py
 class AlignmentParameters:
     """Container for alignment-related parameters."""
+
     def __init__(self, parameter_dict: dict):
-        self.number_of_control_points = parameter_dict.get("number_of_control_points") or parameter_dict.get("image_alignment_number_of_control_points")
+        self.number_of_control_points = parameter_dict.get("number_of_control_points") or parameter_dict.get(
+            "image_alignment_number_of_control_points")
         self.control_search_extent_px = parameter_dict.get("control_search_extent_px")
-        self.control_search_extent_deltas = parameter_dict.get("control_search_extent_deltas", self.control_search_extent_px)
-        self.control_cell_size = parameter_dict.get("control_cell_size") or parameter_dict.get("image_alignment_control_cell_size")
+        self.control_search_extent_deltas = parameter_dict.get("control_search_extent_deltas",
+                                                               self.control_search_extent_px)
+        self.control_cell_size = parameter_dict.get("control_cell_size") or parameter_dict.get(
+            "image_alignment_control_cell_size")
         self.cross_correlation_threshold_alignment = parameter_dict.get("cross_correlation_threshold_alignment")
         self.maximal_alignment_movement = parameter_dict.get("maximal_alignment_movement")
 
