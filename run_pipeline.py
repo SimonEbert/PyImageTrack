@@ -4,8 +4,18 @@
 Orchestrator: align, track, filter, plot, save with caching.
 """
 
-import os
+import argparse
 import csv
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError as exc:
+    raise ModuleNotFoundError(
+        "tomllib is required to read TOML configs. Use Python 3.11+ or install tomli."
+    ) from exc
+
 import geopandas as gpd
 
 from .ImageTracking.ImagePair import ImagePair
@@ -24,106 +34,119 @@ from .Cache import (
 )
 
 
+def _load_config(path: str) -> dict:
+    path_obj = Path(path)
+    if not path_obj.is_absolute():
+        repo_root = Path(__file__).resolve().parent.parent
+        path_obj = repo_root / path_obj
+    with path_obj.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _get(cfg: dict, section: str, key: str, default=None):
+    if section not in cfg or key not in cfg[section]:
+        return default
+    return cfg[section][key]
+
+
+def _require(cfg: dict, section: str, key: str):
+    if section not in cfg or key not in cfg[section]:
+        raise KeyError(f"Missing required config value: [{section}] {key}")
+    return cfg[section][key]
+
+
+def _as_optional_value(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in ("", "none", "null"):
+        return None
+    return value
+
+
 # ==============================
-# USER CONFIGURATION (paths, data names, CRS)
+# CONFIG (TOML)
 # ==============================
-input_folder = "/home/lisa/projects/pyimagetrack/input/hillshades"
-date_csv_path = os.path.join(input_folder, "image_dates.csv") # can be  set to = None if the day is reflected in the filename
-#date_csv_path = None
-pairs_csv_path = os.path.join(input_folder, "image_pairs.csv") # can be  set to = None if all or successive pairing mode is selected below
-#pairs_csv_path = None
+parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
+parser.add_argument("--config", required=True, help="Path to TOML config file")
+args = parser.parse_args()
 
-poly_outside_filename = "stable_area_drone.shp"
-poly_inside_filename  = "moving_area_drone.shp"
-poly_CRS = 32632
+cfg = _load_config(args.config)
 
-output_folder = "/home/lisa/projects/pyimagetrack/output/hillshade"
-pairing_mode = "custom"            # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
+input_folder = _require(cfg, "paths", "input_folder")
+output_folder = _require(cfg, "paths", "output_folder")
 
-use_fake_georeferencing = False        # set True only when processing non-ortho JPGs
-fake_pixel_size = 1.0                  # 1 px = 1 unit
-fake_crs_epsg = poly_CRS               # use your polygon CRS for fake georef
+date_csv_path = _as_optional_value(_get(cfg, "paths", "date_csv_path"))
+pairs_csv_path = _as_optional_value(_get(cfg, "paths", "pairs_csv_path"))
 
-do_alignment = True
-do_tracking = True                    
-do_filtering = True                   
-do_plotting = True
-do_image_enhancement = False           # optional image enhancement via CLAHE
+poly_outside_filename = _require(cfg, "polygons", "outside_filename")
+poly_inside_filename = _require(cfg, "polygons", "inside_filename")
+poly_CRS = _require(cfg, "polygons", "crs_epsg")
 
-use_alignment_cache = True
-use_tracking_cache  = True
-force_recompute_alignment = False
-force_recompute_tracking  = False
+pairing_mode = _require(cfg, "pairing", "mode")
 
-write_truecolor_aligned = False  # if True: additionally write a true-color aligned image
+use_fake_georeferencing = bool(_get(cfg, "fake_georef", "use_fake_georeferencing", False))
+fake_pixel_size = float(_get(cfg, "fake_georef", "fake_pixel_size", 1.0))
+fake_crs_epsg = _as_optional_value(_get(cfg, "fake_georef", "fake_crs_epsg", poly_CRS))
+
+downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
+downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
+
+do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
+do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
+do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
+do_plotting = bool(_get(cfg, "flags", "do_plotting", True))
+do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
+
+use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
+use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
+force_recompute_alignment = bool(_get(cfg, "cache", "force_recompute_alignment", False))
+force_recompute_tracking = bool(_get(cfg, "cache", "force_recompute_tracking", False))
+
+write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
 # adaptive tracking window options
-use_adaptive_tracking_window = True    # If True, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
-#pixels_per_metre = 1.0                 # px per metre (depends on raster resolution)
-#maximal_assumed_movement_rate = 3.5    # m/year (upper bound used for search window scaling)
+use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
 
 # ==============================
 # PARAMETERS (alignment, tracking, filter)
 # ==============================
 alignment_params = AlignmentParameters({
-    "number_of_control_points": 2000,       
+    "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
     # search extent tuple: (right, left, down, up) in pixels around the control cell
-    "control_search_extent_px": (5, 5, 5, 5), # px
-    "control_cell_size": 5, # px
-    "cross_correlation_threshold_alignment": 0.8,                   
-    "maximal_alignment_movement": None, # px, can be set to = None
+    "control_search_extent_px": tuple(_require(cfg, "alignment", "control_search_extent_px")),
+    "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
+    "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
+    "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
 })
 
 tracking_params = TrackingParameters({
-    "image_bands": 0,
-    "distance_of_tracked_points_px": 50, # px
-    "movement_cell_size": 100, # px
-    "cross_correlation_threshold_movement": 0.5,
+    "image_bands": _require(cfg, "tracking", "image_bands"),
+    "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
+    "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
+    "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
     # search extent tuple: (right, left, down, up) in pixels around the movement cell
-    # usually this refers to the offset in px between the images, 
+    # usually this refers to the offset in px between the images,
     # but if the adaptive mode is used, this means the expected offset in px per year
-    "search_extent_px": (20, 5, 5, 20), # px OR px / year
+    "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
 })
 
 filter_params = FilterParameters({
-    "level_of_detection_quantile": 0.5,
-    "number_of_points_for_level_of_detection": 1000,                
-    "difference_movement_bearing_threshold": 360,                    # degrees
-    "difference_movement_bearing_moving_window_size": 50,           # CRS units
-    "standard_deviation_movement_bearing_threshold": 360,            # degrees
-    "standard_deviation_movement_bearing_moving_window_size": 50,   # CRS units
-    "difference_movement_rate_threshold": 10,                      # CRS units / year
-    "difference_movement_rate_moving_window_size": 10,              # CRS units
-    "standard_deviation_movement_rate_threshold": 10,              # CRS units / year
-    "standard_deviation_movement_rate_moving_window_size": 50,      # CRS units
+    "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
+    "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
+    "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
+    "difference_movement_bearing_moving_window_size": _require(cfg, "filter", "difference_movement_bearing_moving_window_size"),
+    "standard_deviation_movement_bearing_threshold": _require(cfg, "filter", "standard_deviation_movement_bearing_threshold"),
+    "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_bearing_moving_window_size"),
+    "difference_movement_rate_threshold": _require(cfg, "filter", "difference_movement_rate_threshold"),
+    "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
+    "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
+    "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
 })
 
 # ==============================
 # SAVE OPTIONS (final outputs)
 # ==============================
-
-save_files = [
-    # "first_image_matrix", 
-    # "second_image_matrix",
-    "movement_bearing_valid_tif",
-    "movement_rate_valid_tif",
-    "movement_bearing_outlier_filtered_tif", 
-    "movement_rate_outlier_filtered_tif",
-    "movement_bearing_LoD_filtered_tif",
-    "movement_rate_LoD_filtered_tif",
-    "movement_bearing_all_tif", 
-    "movement_rate_all_tif",
-    "mask_invalid_tif",
-    "mask_LoD_tif",
-    "mask_outlier_md_tif",
-    "mask_outlier_msd_tif",
-    "mask_outlier_bd_tif",
-    "mask_outlier_bsd_tif",
-    # "LoD_points_geojson",
-    # "control_points_geojson",
-    "statistical_parameters_txt",
-
-]
+save_files = list(_require(cfg, "save", "files"))
 
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
@@ -273,6 +296,7 @@ def main():
             param_dict["use_fake_georeferencing"]           = bool(use_fake_georeferencing)
             param_dict["fake_crs_epsg"]                     = int(fake_crs_epsg) if fake_crs_epsg is not None else None
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
+            param_dict["downsample_factor"]                 = int(downsample_factor)
 
  
             image_pair = ImagePair(parameter_dict=param_dict)

@@ -74,6 +74,9 @@ class ImagePair:
             parameter_dict.get("use_fake_georeferencing", False)) if parameter_dict else False
         self.fake_crs_epsg = parameter_dict.get("fake_crs_epsg", None) if parameter_dict else None
         self.fake_pixel_size = float(parameter_dict.get("fake_pixel_size", 1.0)) if parameter_dict else 1.0
+        self.downsample_factor = int(parameter_dict.get("downsample_factor", 1)) if parameter_dict else 1
+        if self.downsample_factor < 1:
+            self.downsample_factor = 1
 
         # Meta-Data and results
         self.crs = None
@@ -89,6 +92,19 @@ class ImagePair:
         a = float(self.image1_transform.a)
         e = float(self.image1_transform.e)
         return max(abs(a), abs(e))
+
+    def _downsample_array(self, arr: np.ndarray, factor: int) -> np.ndarray:
+        if factor <= 1:
+            return arr
+        if arr.ndim == 3:
+            return arr[:, ::factor, ::factor]
+        return arr[::factor, ::factor]
+
+    def _downsample_transform(self, transform, factor: int):
+        if factor <= 1:
+            return transform
+        from affine import Affine
+        return transform * Affine.scale(factor, factor)
 
     def select_image_channels(self, selected_channels: int = None):
         if selected_channels is None:
@@ -127,6 +143,10 @@ class ImagePair:
         no_crs_either = (file1.crs is None) or (file2.crs is None)
         force_fake = self.use_fake_georeferencing or no_crs_either
 
+        factor = getattr(self, "downsample_factor", 1)
+        if factor is None or factor < 1:
+            factor = 1
+
         if not force_fake:
             if file1.crs != file2.crs:
                 raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
@@ -138,8 +158,17 @@ class ImagePair:
             poly2 = box(*file2.bounds)
             intersection = poly1.intersection(poly2)
 
+            ([self.image1_matrix, self.image1_transform],
+             [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
+
+            if factor > 1:
+                self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
+                self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
+                self.image1_transform = self._downsample_transform(self.image1_transform, factor)
+                self.image2_transform = self._downsample_transform(self.image2_transform, factor)
+
             # Keep search windows inside valid area
-            px_size = max(-file1.transform[4], file1.transform[0])  # pixel size (>0)
+            px_size = max(-file1.transform[4], file1.transform[0]) * factor  # pixel size (>0)
             ext = getattr(self.tracking_parameters, "search_extent_px", None)
             if not ext:
                 raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
@@ -151,9 +180,6 @@ class ImagePair:
             image_bounds = image_bounds.rename(columns={0: "geometry"})
             image_bounds.set_geometry("geometry", inplace=True)
             self.image_bounds = image_bounds
-
-            ([self.image1_matrix, self.image1_transform],
-             [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
         else:
             # FAKE georeferencing path (e.g., JPGs)
@@ -174,9 +200,13 @@ class ImagePair:
             self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
                 self.image2_matrix[:h, :w]
 
+            if factor > 1:
+                self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
+                self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
+
             # Synthetic transform: origin (0,0) upper-left, pixel size = fake_pixel_size
             from affine import Affine
-            px = float(self.fake_pixel_size)
+            px = float(self.fake_pixel_size) * factor
             tform = Affine(px, 0, 0, 0, -px, 0)  # x = px*col ; y = -px*row
 
             self.image1_transform = tform
