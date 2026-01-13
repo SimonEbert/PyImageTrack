@@ -1,0 +1,13 @@
+geocube>=0.7.1
+geopandas>=1.0.1
+matplotlib>=3.9.2
+numpy>=2.1.1
+pandas>=2.2.2
+rasterio>=1.4.3
+requests>=2.32.4
+scipy>=1.14.1
+scikit-image>=0.25.2
+scikit-learn>=1.6.1
+shapely>=2.0.6
+tqdm>=4.67.1
+tomli>=2.0.1; python_version < "3.11"

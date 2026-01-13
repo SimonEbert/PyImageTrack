@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "PyImageTrack"
+version = "0.2"
+description = "A Python library for image tracking on rock glaciers"
+authors = [
+  { name = "Simon Ebert", email = "simon.ebert.kn@gmx.de" },
+  { name = "Lisa Rehn", email = "lisa.s.rehn@gmail.com" },
+]
+maintainers = [
+  { name = "Lisa Rehn", email = "lisa.s.rehn@gmail.com" },
+]
+readme = "README.md"
+requires-python = ">=3.8"
+
+[project.scripts]
+pyimagetrack-run = "PyImageTrack.run_pipeline:main"
+
+[tool.setuptools]
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["PyImageTrack*"]
