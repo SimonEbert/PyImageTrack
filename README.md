@@ -17,5 +17,16 @@ To install PyImageTrack, follow these steps:
 2. Navigate to the project directory: `cd PyImageTrack`
 3. Install the required dependencies: `pip install -r requirements.txt`
 
+## Usage
+Pipeline runs are configured via TOML files in `configs/`.
+
+Example:
+```
+/home/lisa/projects/pyimagetrack/.venv/bin/python -m PyImageTrack.run_pipeline --config configs/drone_HS.toml
+```
+
+Notes:
+
+
 ## License
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) License.
