@@ -1,1 +1,18 @@
 .idea/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+
+# data
+input/
+output/
+
+# local artifacts
+wsl
