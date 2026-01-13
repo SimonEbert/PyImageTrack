@@ -19,22 +19,27 @@ from ..Parameters.AlignmentParameters import AlignmentParameters
 
 # Alignment and Tracking functions
 from .TrackMovement import track_movement_lsm, move_indices_from_transformation_matrix
-from ..CreateGeometries.HandleGeometries import crop_images_to_intersection
-from ..CreateGeometries.HandleGeometries import georeference_tracked_points
-from ..CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
-# Geometry Handling
-from ..CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
+from ..CreateGeometries.HandleGeometries import (
+    crop_images_to_intersection,
+    georeference_tracked_points,
+    grid_points_on_polygon_by_distance,
+    random_points_on_polygon_by_number,
+)
 # filter functions
-from ..DataProcessing.DataPostprocessing import calculate_lod_points
-from ..DataProcessing.DataPostprocessing import filter_lod_points
-from ..DataProcessing.DataPostprocessing import filter_outliers_full
+from ..DataProcessing.DataPostprocessing import (
+    calculate_lod_points,
+    filter_lod_points,
+    filter_outliers_full,
+)
 # DataPreProcessing
 from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images
 from .AlignImages import align_images_lsm_scarce
 # Alignment and Tracking functions
 # Plotting
-from ..Plots.MakePlots import plot_movement_of_points
-from ..Plots.MakePlots import plot_movement_of_points_with_valid_mask
+from ..Plots.MakePlots import (
+    plot_movement_of_points,
+    plot_movement_of_points_with_valid_mask,
+)
 # Date Handling
 from ..Utils import parse_date
 

@@ -167,7 +167,6 @@ def main():
     polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename)).to_crs(epsg=poly_CRS)
     polygon_inside  = gpd.read_file(os.path.join(input_folder, poly_inside_filename)).to_crs(epsg=poly_CRS)
 
-    align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
 
     successes, skipped = [], []
@@ -185,12 +184,15 @@ def main():
         date_1 = id_to_date[year1]
         date_2 = id_to_date[year2]
 
-        def _fmt_label(id_key, date_str):
-            return parse_date(date_str).strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
-                else parse_date(date_str).strftime("%Y-%m-%d")
+        dt1 = parse_date(date_1)
+        dt2 = parse_date(date_2)
 
-        label_1 = _fmt_label(year1, date_1)
-        label_2 = _fmt_label(year2, date_2)
+        def _fmt_label(id_key, dt):
+            return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
+                else dt.strftime("%Y-%m-%d")
+
+        label_1 = _fmt_label(year1, dt1)
+        label_2 = _fmt_label(year2, dt2)
         print(f"\nProcessed image pair: {year1} ({label_1}) → {year2} ({label_2})")
 
         print(f"   File 1: {filename_1}")
@@ -198,8 +200,6 @@ def main():
 
         try:
             # compute years_between (hour-precise)
-            dt1 = parse_date(date_1)
-            dt2 = parse_date(date_2)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
 
@@ -256,7 +256,8 @@ def main():
             align_dir  = os.path.join(base_pair_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
             filter_dir = os.path.join(track_dir,     filter_code)
-            ensure_dir(align_dir); ensure_dir(track_dir); ensure_dir(filter_dir)
+            for d in (align_dir, track_dir, filter_dir):
+                ensure_dir(d)
 
             # Params for ImagePair:
             #   - effective extents in the fields the algorithms read
