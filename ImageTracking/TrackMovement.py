@@ -8,11 +8,11 @@ import scipy
 import sklearn
 import tqdm
 
-from CreateGeometries.HandleGeometries import get_raster_indices_from_points
-from CreateGeometries.HandleGeometries import get_submatrix_symmetric, get_submatrix_rect_from_extents
-from ImageTracking.TrackingResults import TrackingResults
-from Parameters.AlignmentParameters import AlignmentParameters
-from Parameters.TrackingParameters import TrackingParameters
+from ..CreateGeometries.HandleGeometries import get_raster_indices_from_points
+from ..CreateGeometries.HandleGeometries import get_submatrix_symmetric, get_submatrix_rect_from_extents
+from .TrackingResults import TrackingResults
+from ..Parameters.AlignmentParameters import AlignmentParameters
+from ..Parameters.TrackingParameters import TrackingParameters
 
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):
@@ -61,20 +61,30 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
             # if np.linalg.norm(search_subcell_vector) == 0:
             #     continue
 
-            # initialize correlation for the current central pixel (i,j)
-            corr = 0
-            # check if the search subcell vectors has any non-zero elements (to avoid dividing by zero)
+            # Initialize correlation for the current central pixel (i, j)
+            corr = None
+
+            # Only compute correlation if the search vector has any non-zero elements
             if np.any(search_subcell_vector):
-                # normalize search_subcell vector
+                # Normalize search_subcell vector
                 search_subcell_vector = search_subcell_vector - np.mean(search_subcell_vector)
                 if np.linalg.norm(search_subcell_vector) == 0:
                     continue
                 search_subcell_vector = search_subcell_vector / np.linalg.norm(search_subcell_vector)
-                corr = np.correlate(tracked_vector, search_subcell_vector, mode='valid')
-            if len(corr) == 1:
-                if float(corr) > best_correlation:
-                    best_correlation = float(corr)
-                    best_correlation_coordinates = [i, j]
+
+                # np.correlate returns a 1-element ndarray for equal-length vectors
+                corr = np.correlate(tracked_vector, search_subcell_vector, mode="valid")
+
+            # If corr was not computed (e.g., all-zero window), skip this candidate
+            if corr is None:
+                continue
+
+            # corr is an ndarray here; take the scalar value safely
+            corr_val = float(corr[0])
+            if corr_val > best_correlation:
+                best_correlation = corr_val
+                best_correlation_coordinates = [i, j]
+
     if best_correlation <= 0:
         logging.info("Found no matching with positive correlation. Skipping")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan,

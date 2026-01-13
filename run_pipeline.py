@@ -8,20 +8,18 @@ import os
 import csv
 from datetime import datetime
 import geopandas as gpd
-import sys
-sys.path.append('..')
 
-from PyImageTrack.ImageTracking.ImagePair import ImagePair
-from PyImageTrack.Parameters.FilterParameters import FilterParameters
-from PyImageTrack.Parameters.AlignmentParameters import AlignmentParameters
-from PyImageTrack.Parameters.TrackingParameters import TrackingParameters
+from .ImageTracking.ImagePair import ImagePair
+from .Parameters.FilterParameters import FilterParameters
+from .Parameters.AlignmentParameters import AlignmentParameters
+from .Parameters.TrackingParameters import TrackingParameters
 
-from PyImageTrack.Utils import (
+from .Utils import (
     collect_pairs, ensure_dir, abbr_alignment, 
     abbr_tracking, abbr_filter, parse_date,
 )
 
-from PyImageTrack.Cache import (
+from .Cache import (
     load_alignment_cache, save_alignment_cache,
     load_tracking_cache, save_tracking_cache,
     tracking_cache_paths,
@@ -32,26 +30,26 @@ import json
 # ==============================
 # USER CONFIGURATION (paths, data names, CRS)
 # ==============================
-input_folder = "/home/lisa/projects/pyimagetrack/input/timelapse_west_weekly"
+input_folder = "/home/lisa/projects/pyimagetrack/input/hillshades"
 date_csv_path = os.path.join(input_folder, "image_dates.csv") # can be  set to = None if the day is reflected in the filename
 #date_csv_path = None
 pairs_csv_path = os.path.join(input_folder, "image_pairs.csv") # can be  set to = None if all or successive pairing mode is selected below
 #pairs_csv_path = None
 
-poly_outside_filename = "stable_area_western.shp"
-poly_inside_filename  = "moving_area_western.shp"
+poly_outside_filename = "stable_area_drone.shp"
+poly_inside_filename  = "moving_area_drone.shp"
 poly_CRS = 32632
 
-output_folder = "/home/lisa/projects/pyimagetrack/output/timelapse_west_weekly"
-pairing_mode = "first_to_all"            # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
+output_folder = "/home/lisa/projects/pyimagetrack/output/hillshade"
+pairing_mode = "custom"            # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
 
-use_fake_georeferencing = True        # set True only when processing non-ortho JPGs
+use_fake_georeferencing = False        # set True only when processing non-ortho JPGs
 fake_pixel_size = 1.0                  # 1 px = 1 unit
 fake_crs_epsg = poly_CRS               # use your polygon CRS for fake georef
 
 do_alignment = True
-do_tracking = False                    
-do_filtering = False                   
+do_tracking = True                    
+do_filtering = True                   
 do_plotting = True
 do_image_enhancement = False           # optional image enhancement via CLAHE
 
@@ -60,7 +58,7 @@ use_tracking_cache  = True
 force_recompute_alignment = False
 force_recompute_tracking  = False
 
-write_truecolor_aligned = True  # if True: additionally write a true-color aligned image
+write_truecolor_aligned = False  # if True: additionally write a true-color aligned image
 
 # adaptive tracking window options
 use_adaptive_tracking_window = True    # If True, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
@@ -71,10 +69,10 @@ use_adaptive_tracking_window = True    # If True, the "search_extent_px" in the 
 # PARAMETERS (alignment, tracking, filter)
 # ==============================
 alignment_params = AlignmentParameters({
-    "number_of_control_points": 300,       
+    "number_of_control_points": 2000,       
     # search extent tuple: (right, left, down, up) in pixels around the control cell
-    "control_search_extent_px": (100, 100, 100, 100), # px
-    "control_cell_size": 75, # px
+    "control_search_extent_px": (5, 5, 5, 5), # px
+    "control_cell_size": 5, # px
     "cross_correlation_threshold_alignment": 0.8,                   
     "maximal_alignment_movement": None, # px, can be set to = None
 })
@@ -386,7 +384,9 @@ def main():
                 # - aligned_image_<year2>.tif
                 # - alignment_control_points_<year1>_<year2>.geojson
                 # - alignment_meta_<year1>_<year2>.json
-
+                        # Mark this pair as successfully processed
+            
+            successes.append((year1, year2))
 
         except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
