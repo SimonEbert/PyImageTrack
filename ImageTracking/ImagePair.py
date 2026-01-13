@@ -7,15 +7,8 @@ import pandas as pd
 import rasterio
 import rasterio.plot
 from rasterio.crs import CRS
-from datetime import datetime, timedelta
-import logging
 from geocube.api.core import make_geocube
-import os
-from rasterio.coords import BoundingBox
-from geocube.rasterize import rasterize_points_griddata
 from shapely.geometry import box
-import numpy as np
-import pandas as pd
 import scipy
 import sklearn
 
@@ -39,11 +32,6 @@ from ..DataProcessing.DataPostprocessing import filter_outliers_full
 from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images
 from .AlignImages import align_images_lsm_scarce
 # Alignment and Tracking functions
-from .TrackMovement import track_movement_lsm
-from ..Parameters.AlignmentParameters import AlignmentParameters
-from ..Parameters.FilterParameters import FilterParameters
-# Parameter classes
-from ..Parameters.TrackingParameters import TrackingParameters
 # Plotting
 from ..Plots.MakePlots import plot_movement_of_points
 from ..Plots.MakePlots import plot_movement_of_points_with_valid_mask

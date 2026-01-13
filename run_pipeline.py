@@ -6,7 +6,6 @@ Orchestrator: align, track, filter, plot, save with caching.
 
 import os
 import csv
-from datetime import datetime
 import geopandas as gpd
 
 from .ImageTracking.ImagePair import ImagePair
@@ -22,9 +21,7 @@ from .Utils import (
 from .Cache import (
     load_alignment_cache, save_alignment_cache,
     load_tracking_cache, save_tracking_cache,
-    tracking_cache_paths,
 )
-import json
 
 
 # ==============================
