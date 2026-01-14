@@ -66,5 +66,6 @@ The code in this respository is written by Lisa Rehn and Simon Ebert and maintai
 based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example
 of the Kaiserberg Rock Glacier" by Simon Ebert.
 
+
 ## License
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) License.

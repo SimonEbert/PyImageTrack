@@ -80,7 +80,7 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
             # If corr was not computed (e.g., all-zero window), skip this candidate
             if corr is None:
                 continue
-
+            # ToDO: There is still a bug here, that we need to take corr[0] --> Normally corr should suffice
             # corr is an ndarray here; take the scalar value safely
             corr_val = float(corr[0])
             if corr_val > best_correlation:

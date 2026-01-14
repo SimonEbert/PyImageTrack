@@ -68,7 +68,7 @@ class ImagePair:
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
         self.filter_parameters = None
         self.alignment_parameters = AlignmentParameters(parameter_dict=parameter_dict)
-
+        # ToDo: Remove fake georeferencing with crs = None approach
         # Fake georef switches (fed via run_pipeline param_dict)
         self.use_fake_georeferencing = bool(
             parameter_dict.get("use_fake_georeferencing", False)) if parameter_dict else False
@@ -230,7 +230,6 @@ class ImagePair:
             image_bounds = image_bounds.rename(columns={0: "geometry"})
             image_bounds.set_geometry("geometry", inplace=True)
             self.image_bounds = image_bounds
-
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
@@ -625,7 +624,6 @@ class ImagePair:
         movement bearing to NaN. Note that this directly affects the dataframe self.tracking_results.
         Returns
         -------
-
         """
 
         if not self.valid_alignment_possible:
