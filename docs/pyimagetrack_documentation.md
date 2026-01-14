@@ -750,8 +750,7 @@ Encapsulates a pair of images and the full alignment/tracking/filtering workflow
 
 #### __init__(parameter_dict: dict = None)
 Parameters are read from `parameter_dict`. Common keys:
-- use_fake_georeferencing
-- fake_crs_epsg
+- use_no_georeferencing
 - fake_pixel_size
 - downsample_factor
 
