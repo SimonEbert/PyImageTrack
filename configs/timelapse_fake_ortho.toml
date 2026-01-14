@@ -17,7 +17,7 @@ mode = "first_to_all"
 
 [fake_georef]
 # set true only when processing non-ortho JPGs
-use_fake_georeferencing = true
+use_no_georeferencing = true
 # 1 px = 1 unit
 fake_pixel_size = 1.0
 # use your polygon CRS for fake georef

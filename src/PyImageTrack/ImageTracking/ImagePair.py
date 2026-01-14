@@ -68,18 +68,16 @@ class ImagePair:
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
         self.filter_parameters = None
         self.alignment_parameters = AlignmentParameters(parameter_dict=parameter_dict)
-        # ToDo: Remove fake georeferencing with crs = None approach
         # Fake georef switches (fed via run_pipeline param_dict)
-        self.use_fake_georeferencing = bool(
-            parameter_dict.get("use_fake_georeferencing", False)) if parameter_dict else False
-        self.fake_crs_epsg = parameter_dict.get("fake_crs_epsg", None) if parameter_dict else None
+        self.use_no_georeferencing = bool(
+            parameter_dict.get("use_no_georeferencing", False)) if parameter_dict else False
         self.fake_pixel_size = float(parameter_dict.get("fake_pixel_size", 1.0)) if parameter_dict else 1.0
         self.downsample_factor = int(parameter_dict.get("downsample_factor", 1)) if parameter_dict else 1
         if self.downsample_factor < 1:
             self.downsample_factor = 1
 
         # Meta-Data and results
-        self.crs = None
+        self.crs = parameter_dict.get("crs", None)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -141,7 +139,7 @@ class ImagePair:
 
         # Choose path: true georef vs fake georef
         no_crs_either = (file1.crs is None) or (file2.crs is None)
-        force_fake = self.use_fake_georeferencing or no_crs_either
+        force_fake = self.use_no_georeferencing or no_crs_either
 
         factor = getattr(self, "downsample_factor", 1)
         if factor is None or factor < 1:
@@ -151,7 +149,9 @@ class ImagePair:
             if file1.crs != file2.crs:
                 raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
                                  " but the two images must have the same crs.")
-            self.crs = file1.crs
+            if self.crs != file1.crs:
+                raise ValueError("Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
+                                 str(file1.crs))
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -212,11 +212,6 @@ class ImagePair:
             self.image1_transform = tform
             self.image2_transform = tform
 
-            # CRS from user config (poly_CRS passed via fake_crs_epsg)
-            if self.fake_crs_epsg is None:
-                self.crs = None
-            else:
-                self.crs = CRS.from_epsg(int(self.fake_crs_epsg))
 
             # Bounds in that CRS (pixel grid space), then shrink by search radius
             from rasterio.transform import array_bounds

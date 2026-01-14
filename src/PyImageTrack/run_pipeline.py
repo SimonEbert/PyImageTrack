@@ -84,10 +84,11 @@ pairs_csv_path = _as_optional_value(_get(cfg, "paths", "pairs_csv_path"))
 poly_outside_filename = _require(cfg, "polygons", "outside_filename")
 poly_inside_filename = _require(cfg, "polygons", "inside_filename")
 poly_CRS = _require(cfg, "polygons", "crs_epsg")
+poly_CRS = None if poly_CRS == "none" else poly_CRS
 
 pairing_mode = _require(cfg, "pairing", "mode")
 
-use_fake_georeferencing = bool(_get(cfg, "fake_georef", "use_fake_georeferencing", False))
+use_no_georeferencing = bool(_get(cfg, "fake_georef", "use_no_georeferencing", False))
 fake_pixel_size = float(_get(cfg, "fake_georef", "fake_pixel_size", 1.0))
 fake_crs_epsg = _as_optional_value(_get(cfg, "fake_georef", "fake_crs_epsg", poly_CRS))
 
@@ -178,7 +179,7 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
 # ==============================
 def main():
     # Allow JPG/JPEG only if explicitly opted into fake georeferencing
-    extensions = (".tif", ".tiff") if not use_fake_georeferencing else (".tif", ".tiff", ".jpg", ".jpeg")
+    extensions = (".tif", ".tiff") if not use_no_georeferencing else (".tif", ".tiff", ".jpg", ".jpeg")
 
     year_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
         input_folder=input_folder,
@@ -190,8 +191,13 @@ def main():
 
     print(f"Image pairs to process ({pairing_mode}): {len(year_pairs)}")
 
-    polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename)).to_crs(epsg=poly_CRS)
-    polygon_inside  = gpd.read_file(os.path.join(input_folder, poly_inside_filename)).to_crs(epsg=poly_CRS)
+    polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename))
+    polygon_inside  = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
+
+    if poly_CRS is not None:
+        polygon_outside = polygon_outside.to_crs(epsg=poly_CRS)
+        polygon_inside = polygon_inside.to_crs(epsg=poly_CRS)
+
 
     align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
@@ -297,11 +303,11 @@ def main():
             param_dict["control_search_extent_deltas"]      = base_align_deltas         # user input (for logs)
             param_dict["search_extent_px"]                  = adaptive_extents          # used by code
             param_dict["search_extent_deltas"]              = base_track_deltas         # user input (for logs)
-            param_dict["use_fake_georeferencing"]           = bool(use_fake_georeferencing)
-            param_dict["fake_crs_epsg"]                     = int(fake_crs_epsg) if fake_crs_epsg is not None else None
+            param_dict["use_no_georeferencing"]           = bool(use_no_georeferencing)
+            # param_dict["fake_crs_epsg"]                     = int(fake_crs_epsg) if fake_crs_epsg is not None else None
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
             param_dict["downsample_factor"]                 = int(downsample_factor)
-
+            param_dict["crs"]                               = poly_CRS
  
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
@@ -354,8 +360,7 @@ def main():
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
                     if used_cache_tracking:
                         print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
-                        # ... Meta-Check wie bisher ...
-                        # (lass deinen bestehenden Meta-Check hier einfach drin)
+
 
                 if not used_cache_tracking:
                     if used_cache_alignment or getattr(image_pair, "images_aligned", False):
@@ -385,8 +390,9 @@ def main():
             # ==============================
             # FILTERING + PLOTS + SAVING (optional)
             # ==============================
-            if do_tracking and do_filtering:
-                image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
+            if do_tracking:
+                if do_filtering:
+                    image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
 
                 if do_plotting:
                     image_pair.plot_tracking_results_with_valid_mask()

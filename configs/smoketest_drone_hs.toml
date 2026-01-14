@@ -17,11 +17,11 @@ mode = "custom"
 
 [fake_georef]
 # set true only when processing non-ortho JPGs
-use_fake_georeferencing = false
+use_no_georeferencing = false
 # 1 px = 1 unit
 fake_pixel_size = 1.0
 # use your polygon CRS for fake georef
-fake_crs_epsg = 32632
+fake_crs_epsg = "none"
 
 [downsampling]
 # downsample input images by this integer factor to speed up runs
