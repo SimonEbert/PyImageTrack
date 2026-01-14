@@ -6,31 +6,42 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.plot
-from PyImageTrack.CreateGeometries.HandleGeometries import crop_images_to_intersection
-from PyImageTrack.CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
-# Geometry Handling
-from PyImageTrack.CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
-# DataPre- and PostProcessing
-from PyImageTrack.DataProcessing.DataPostprocessing import calculate_lod_points
-from PyImageTrack.DataProcessing.DataPostprocessing import filter_lod_points
-from PyImageTrack.DataProcessing.DataPostprocessing import filter_outliers_full
-from PyImageTrack.DataProcessing.DataPostprocessing import georeference_tracked_points
-from PyImageTrack.DataProcessing.ImagePreprocessing import equalize_adapthist_images
-# Alignment and Tracking functions
-from PyImageTrack.ImageTracking.AlignImages import align_images_lsm_scarce
-from PyImageTrack.ImageTracking.TrackMovement import track_movement_lsm
-# Parameter classes
-from PyImageTrack.Parameters import AlignmentParameters
-from PyImageTrack.Parameters import FilterParameters
-from PyImageTrack.Parameters import TrackingParameters
-# Plotting
-from PyImageTrack.Plots.MakePlots import plot_movement_of_points
-from PyImageTrack.Plots.MakePlots import plot_movement_of_points_with_valid_mask
-# Date Handling
-from PyImageTrack.Utils import parse_date
-from geocube.api.core import make_geocube
 from rasterio.crs import CRS
+from geocube.api.core import make_geocube
 from shapely.geometry import box
+import scipy
+import sklearn
+
+# Parameter classes
+from ..Parameters.TrackingParameters import TrackingParameters
+from ..Parameters.FilterParameters import FilterParameters
+from ..Parameters.AlignmentParameters import AlignmentParameters
+
+# Alignment and Tracking functions
+from .TrackMovement import track_movement_lsm, move_indices_from_transformation_matrix
+from ..CreateGeometries.HandleGeometries import (
+    crop_images_to_intersection,
+    georeference_tracked_points,
+    grid_points_on_polygon_by_distance,
+    random_points_on_polygon_by_number,
+)
+# filter functions
+from ..DataProcessing.DataPostprocessing import (
+    calculate_lod_points,
+    filter_lod_points,
+    filter_outliers_full,
+)
+# DataPreProcessing
+from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images
+from .AlignImages import align_images_lsm_scarce
+# Alignment and Tracking functions
+# Plotting
+from ..Plots.MakePlots import (
+    plot_movement_of_points,
+    plot_movement_of_points_with_valid_mask,
+)
+# Date Handling
+from ..Utils import parse_date
 
 
 class ImagePair:
@@ -48,16 +59,24 @@ class ImagePair:
         self.image2_observation_date = None
         self.image_bounds = None
 
+        # Optional: store original (true-color) matrices for writing aligned products
+        self.image1_matrix_original = None
+        self.image2_matrix_original = None
+        self.image2_matrix_truecolor = None
+
         # Parameters
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
         self.filter_parameters = None
         self.alignment_parameters = AlignmentParameters(parameter_dict=parameter_dict)
-
+        # ToDo: Remove fake georeferencing with crs = None approach
         # Fake georef switches (fed via run_pipeline param_dict)
         self.use_fake_georeferencing = bool(
             parameter_dict.get("use_fake_georeferencing", False)) if parameter_dict else False
         self.fake_crs_epsg = parameter_dict.get("fake_crs_epsg", None) if parameter_dict else None
         self.fake_pixel_size = float(parameter_dict.get("fake_pixel_size", 1.0)) if parameter_dict else 1.0
+        self.downsample_factor = int(parameter_dict.get("downsample_factor", 1)) if parameter_dict else 1
+        if self.downsample_factor < 1:
+            self.downsample_factor = 1
 
         # Meta-Data and results
         self.crs = None
@@ -73,6 +92,19 @@ class ImagePair:
         a = float(self.image1_transform.a)
         e = float(self.image1_transform.e)
         return max(abs(a), abs(e))
+
+    def _downsample_array(self, arr: np.ndarray, factor: int) -> np.ndarray:
+        if factor <= 1:
+            return arr
+        if arr.ndim == 3:
+            return arr[:, ::factor, ::factor]
+        return arr[::factor, ::factor]
+
+    def _downsample_transform(self, transform, factor: int):
+        if factor <= 1:
+            return transform
+        from affine import Affine
+        return transform * Affine.scale(factor, factor)
 
     def select_image_channels(self, selected_channels: int = None):
         if selected_channels is None:
@@ -111,6 +143,10 @@ class ImagePair:
         no_crs_either = (file1.crs is None) or (file2.crs is None)
         force_fake = self.use_fake_georeferencing or no_crs_either
 
+        factor = getattr(self, "downsample_factor", 1)
+        if factor is None or factor < 1:
+            factor = 1
+
         if not force_fake:
             if file1.crs != file2.crs:
                 raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
@@ -122,8 +158,17 @@ class ImagePair:
             poly2 = box(*file2.bounds)
             intersection = poly1.intersection(poly2)
 
+            ([self.image1_matrix, self.image1_transform],
+             [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
+
+            if factor > 1:
+                self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
+                self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
+                self.image1_transform = self._downsample_transform(self.image1_transform, factor)
+                self.image2_transform = self._downsample_transform(self.image2_transform, factor)
+
             # Keep search windows inside valid area
-            px_size = max(-file1.transform[4], file1.transform[0])  # pixel size (>0)
+            px_size = max(-file1.transform[4], file1.transform[0]) * factor  # pixel size (>0)
             ext = getattr(self.tracking_parameters, "search_extent_px", None)
             if not ext:
                 raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
@@ -135,9 +180,6 @@ class ImagePair:
             image_bounds = image_bounds.rename(columns={0: "geometry"})
             image_bounds.set_geometry("geometry", inplace=True)
             self.image_bounds = image_bounds
-
-            ([self.image1_matrix, self.image1_transform],
-             [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
         else:
             # FAKE georeferencing path (e.g., JPGs)
@@ -158,9 +200,13 @@ class ImagePair:
             self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
                 self.image2_matrix[:h, :w]
 
+            if factor > 1:
+                self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
+                self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
+
             # Synthetic transform: origin (0,0) upper-left, pixel size = fake_pixel_size
             from affine import Affine
-            px = float(self.fake_pixel_size)
+            px = float(self.fake_pixel_size) * factor
             tform = Affine(px, 0, 0, 0, -px, 0)  # x = px*col ; y = -px*row
 
             self.image1_transform = tform
@@ -168,7 +214,6 @@ class ImagePair:
 
             # CRS from user config (poly_CRS passed via fake_crs_epsg)
             if self.fake_crs_epsg is None:
-                # raise ValueError("use_fake_georeferencing=True but no fake_crs_epsg was provided.")
                 self.crs = None
             else:
                 self.crs = CRS.from_epsg(int(self.fake_crs_epsg))
@@ -193,6 +238,10 @@ class ImagePair:
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
             self.image2_matrix[self.image2_matrix == NA_value] = 0
+
+        # Store original matrices before any further preprocessing (e.g. channel selection, CLAHE)
+        self.image1_matrix_original = self.image1_matrix.copy()
+        self.image2_matrix_original = self.image2_matrix.copy()
 
         self.select_image_channels(selected_channels=selected_channels)
 
@@ -221,6 +270,11 @@ class ImagePair:
         self.image1_transform = image_transform
         self.image2_matrix = image2_matrix
         self.image2_transform = image_transform
+
+        # Also store original matrices for potential true-color alignment output
+        self.image1_matrix_original = image1_matrix.copy()
+        self.image2_matrix_original = image2_matrix.copy()
+
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
         self.crs = crs
@@ -265,8 +319,10 @@ class ImagePair:
         reference_area.set_geometry('geometry', inplace=True)
 
         [_, new_image2_matrix, tracked_control_points] = (
-            align_images_lsm_scarce(image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix,
-                                    image_transform=self.image1_transform, reference_area=reference_area,
+            align_images_lsm_scarce(image1_matrix=self.image1_matrix,
+                                    image2_matrix=self.image2_matrix,
+                                    image_transform=self.image1_transform,
+                                    reference_area=reference_area,
                                     alignment_parameters=self.alignment_parameters))
 
         self.valid_alignment_possible = True
@@ -274,13 +330,106 @@ class ImagePair:
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
 
-        self.tracked_control_points = georeference_tracked_points(tracked_control_points, self.image1_transform,
-                                                                  self.crs, years_between_observations)
+        self.tracked_control_points = georeference_tracked_points(tracked_control_points,
+                                                                  self.image1_transform,
+                                                                  self.crs,
+                                                                  years_between_observations)
 
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
 
         self.images_aligned = True
+
+        # Optionally derive a true-color aligned image (if original data are available)
+        try:
+            self.compute_truecolor_aligned_from_control_points()
+        except Exception as e:
+            logging.warning(f"Could not compute true-color aligned image: {e}")
+
+    def compute_truecolor_aligned_from_control_points(self):
+        """rebuild a true-color aligned version of image2 using the alignment control points.
+
+        this uses the same least-squares affine model + spline resampling approach
+        as in alignimages.align_images_lsm_scarce, but applies it to the original
+        (potentially multi-band) second image.
+        """
+        if self.tracked_control_points is None or len(self.tracked_control_points) == 0:
+            raise ValueError("no tracked control points available – cannot compute true-color alignment.")
+
+        if self.image2_matrix_original is None:
+            raise ValueError("no original second image stored – cannot compute true-color alignment.")
+
+        df = self.tracked_control_points
+
+        required_cols = ["row", "column", "movement_row_direction", "movement_column_direction"]
+        if not all(col in df.columns for col in required_cols):
+            raise ValueError("tracked control points are missing required pixel columns for reconstruction.")
+
+        # input: original pixel positions (row, column)
+        linear_model_input = np.column_stack([df["row"].values, df["column"].values])
+
+        # output: new positions after shift (row + drow, col + dcol)
+        linear_model_output = np.column_stack([
+            df["row"].values + df["movement_row_direction"].values,
+            df["column"].values + df["movement_column_direction"].values,
+        ])
+
+        # fit affine transform (same approach as in alignimages.align_images_lsm_scarce)
+        transformation_linear_model = sklearn.linear_model.LinearRegression()
+        transformation_linear_model.fit(linear_model_input, linear_model_output)
+
+        sampling_transformation_matrix = np.array([
+            [transformation_linear_model.coef_[0, 0],
+             transformation_linear_model.coef_[0, 1],
+             transformation_linear_model.intercept_[0]],
+            [transformation_linear_model.coef_[1, 0],
+             transformation_linear_model.coef_[1, 1],
+             transformation_linear_model.intercept_[1]],
+        ])
+
+        # build output index grid (rows, cols) in the aligned image grid
+        # use the shape of self.image1_matrix (reference image)
+        if self.image1_matrix is None:
+            raise ValueError("image1_matrix is not set – cannot infer output grid size.")
+
+        if self.image1_matrix.ndim == 2:
+            out_rows, out_cols = self.image1_matrix.shape
+        else:
+            # assume (bands, rows, cols)
+            out_rows = self.image1_matrix.shape[-2]
+            out_cols = self.image1_matrix.shape[-1]
+
+        indices = np.array(
+            np.meshgrid(np.arange(0, out_rows), np.arange(0, out_cols))
+        ).T.reshape(-1, 2).T
+
+        # move indices according to the affine transform
+        moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
+
+        # warp the original second image (can be single- or multi-band)
+        src = self.image2_matrix_original
+
+        if src.ndim == 2:
+            src_rows = np.arange(0, src.shape[0])
+            src_cols = np.arange(0, src.shape[1])
+            spline = scipy.interpolate.RectBivariateSpline(src_rows, src_cols, src.astype(float))
+            moved = spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(out_rows, out_cols)
+        else:
+            bands, src_rows_n, src_cols_n = src.shape
+            src_rows = np.arange(0, src_rows_n)
+            src_cols = np.arange(0, src_cols_n)
+            moved = np.zeros((bands, out_rows, out_cols), dtype=float)
+            for b in range(bands):
+                spline = scipy.interpolate.RectBivariateSpline(
+                    src_rows,
+                    src_cols,
+                    src[b, :, :].astype(float),
+                )
+                moved[b, :, :] = spline.ev(
+                    moved_indices[0, :], moved_indices[1, :]
+                ).reshape(out_rows, out_cols)
+
+        self.image2_matrix_truecolor = moved
 
     def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
@@ -394,16 +543,16 @@ class ImagePair:
 
     def filter_outliers(self, filter_parameters: FilterParameters):
         """
-            Filters outliers based on the filter_parameters
-            Parameters
-            ----------
-            filter_parameters: FilterParameters
-                The Parameters used for Filtering. If some of the parameters are set to None, the respective filtering
-                will not be performed
-            Returns
-            -------
+        Filters outliers based on the filter_parameters
+        Parameters
+        ----------
+        filter_parameters: FilterParameters
+            The Parameters used for Filtering. If some of the parameters are set to None, the respective filtering
+            will not be performed
+        Returns
+        -------
 
-               """
+        """
         if not self.valid_alignment_possible:
             return
         print("Filtering outliers. This may take a moment.")

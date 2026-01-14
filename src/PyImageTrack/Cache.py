@@ -1,11 +1,9 @@
 # PyImageTrack/Cache.py
-import hashlib
-import json
 import os
-
+import json
+import hashlib
 import geopandas as gpd
 import rasterio
-
 
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
@@ -21,10 +19,12 @@ def alignment_cache_paths(align_dir: str, year1: str, year2: str):
     return aligned_tif, control_pts, meta_json
 
 def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
-                         align_params: dict, filenames: dict, dates: dict, version: str = "v1"):
+                         align_params: dict, filenames: dict, dates: dict,
+                         version: str = "v1", save_truecolor_aligned: bool = False):
     os.makedirs(align_dir, exist_ok=True)
     aligned_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
 
+    # write main aligned image (working image used for tracking)
     profile = {
         "driver": "GTiff",
         "count": 1 if image_pair.image2_matrix.ndim == 2 else image_pair.image2_matrix.shape[0],
@@ -40,9 +40,32 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         else:
             dst.write(image_pair.image2_matrix)
 
+    # optionally write an additional true-color aligned image
+    # this expects image_pair.image2_matrix_truecolor to be set (multi-band or single-band)
+    if save_truecolor_aligned and getattr(image_pair, "image2_matrix_truecolor", None) is not None:
+        truecolor_tif = os.path.join(align_dir, f"aligned_image_truecolor_{year2}.tif")
+        true = image_pair.image2_matrix_truecolor
+
+        tc_profile = profile.copy()
+        # update band count and dtype based on the true-color array
+        if true.ndim == 2:
+            tc_profile["count"] = 1
+            tc_profile["dtype"] = str(true.dtype)
+        else:
+            tc_profile["count"] = true.shape[0]
+            tc_profile["dtype"] = str(true.dtype)
+
+        with rasterio.open(truecolor_tif, "w", **tc_profile) as dst_tc:
+            if tc_profile["count"] == 1:
+                dst_tc.write(true, 1)
+            else:
+                dst_tc.write(true)
+
+    # write control points if available
     if getattr(image_pair, "tracked_control_points", None) is not None and len(image_pair.tracked_control_points) > 0:
         image_pair.tracked_control_points.to_file(control_pts, driver="GeoJSON")
 
+    # write metadata json
     meta = {
         "pair": {"year1": year1, "year2": year2, "date1": dates[year1], "date2": dates[year2]},
         "files": {"file1": filenames[year1], "file2": filenames[year2]},
@@ -53,6 +76,7 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
+
 
 def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> bool:
     aligned_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
