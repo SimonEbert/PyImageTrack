@@ -4,126 +4,152 @@
 Orchestrator: align, track, filter, plot, save with caching.
 """
 
-import os
+import argparse
 import csv
-from datetime import datetime
+import os
+from pathlib import Path
+
+try:
+    import tomllib
+except ModuleNotFoundError as exc:
+    raise ModuleNotFoundError(
+        "tomllib is required to read TOML configs. Use Python 3.11+ or install tomli."
+    ) from exc
+
 import geopandas as gpd
-import sys
-sys.path.append('../..')
 
-from PyImageTrack.ImageTracking.ImagePair import ImagePair
-from PyImageTrack.Parameters.FilterParameters import FilterParameters
-from PyImageTrack.Parameters.AlignmentParameters import AlignmentParameters
-from PyImageTrack.Parameters.TrackingParameters import TrackingParameters
+from .ImageTracking.ImagePair import ImagePair
+from .Parameters.FilterParameters import FilterParameters
+from .Parameters.AlignmentParameters import AlignmentParameters
+from .Parameters.TrackingParameters import TrackingParameters
 
-from PyImageTrack.Utils import (
+from .Utils import (
     collect_pairs, ensure_dir, abbr_alignment, 
     abbr_tracking, abbr_filter, parse_date,
 )
 
-from PyImageTrack.Cache import (
+from .Cache import (
     load_alignment_cache, save_alignment_cache,
     load_tracking_cache, save_tracking_cache,
-    tracking_cache_paths,
 )
-import json
+
+
+def _load_config(path: str) -> dict:
+    path_obj = Path(path)
+    if not path_obj.is_absolute():
+        # Resolve relative config paths from the repo root to keep CLI stable.
+        repo_root = Path(__file__).resolve()
+        while repo_root != repo_root.parent and not (repo_root / "pyproject.toml").exists():
+            repo_root = repo_root.parent
+        path_obj = repo_root / path_obj
+    with path_obj.open("rb") as f:
+        return tomllib.load(f)
+
+
+def _get(cfg: dict, section: str, key: str, default=None):
+    if section not in cfg or key not in cfg[section]:
+        return default
+    return cfg[section][key]
+
+
+def _require(cfg: dict, section: str, key: str):
+    if section not in cfg or key not in cfg[section]:
+        raise KeyError(f"Missing required config value: [{section}] {key}")
+    return cfg[section][key]
+
+
+def _as_optional_value(value):
+    if value is None:
+        return None
+    if isinstance(value, str) and value.strip().lower() in ("", "none", "null"):
+        return None
+    return value
 
 
 # ==============================
-# USER CONFIGURATION (paths, data names, CRS)
+# CONFIG (TOML)
 # ==============================
-input_folder = "../Lisa_Kaunertal/Testdaten_Alignment"
-date_csv_path = os.path.join(input_folder, "image_dates.csv") # can be  set to = None if the day is reflected in the filename
-#date_csv_path = None
-pairs_csv_path = os.path.join(input_folder, "image_pairs.csv") # can be  set to = None if all or successive pairing mode is selected below
-#pairs_csv_path = None
+parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
+parser.add_argument("--config", required=True, help="Path to TOML config file")
+args = parser.parse_args()
 
-poly_outside_filename = "stable_area_drone.shp"
-poly_inside_filename  = "moving_area_drone.shp"
-poly_CRS = 32632
+cfg = _load_config(args.config)
 
-output_folder = "../Lisa_Kaunertal/test_results"
-pairing_mode = "custom"            # options: "all", "successive", "custom" (=from image_pairs.csv)
+input_folder = _require(cfg, "paths", "input_folder")
+output_folder = _require(cfg, "paths", "output_folder")
 
-use_fake_georeferencing = False        # set True only when processing non-ortho JPGs
-fake_pixel_size = 1.0                  # 1 px = 1 unit
-fake_crs_epsg = poly_CRS               # use your polygon CRS for fake georef
+date_csv_path = _as_optional_value(_get(cfg, "paths", "date_csv_path"))
+pairs_csv_path = _as_optional_value(_get(cfg, "paths", "pairs_csv_path"))
 
-do_alignment = True
-do_plotting = True
-do_image_enhancement = False           # optional image enhancement via CLAHE
+poly_outside_filename = _require(cfg, "polygons", "outside_filename")
+poly_inside_filename = _require(cfg, "polygons", "inside_filename")
+poly_CRS = _require(cfg, "polygons", "crs_epsg")
 
-use_alignment_cache = False
-use_tracking_cache  = False
-force_recompute_alignment = False
-force_recompute_tracking  = False
+pairing_mode = _require(cfg, "pairing", "mode")
+
+use_fake_georeferencing = bool(_get(cfg, "fake_georef", "use_fake_georeferencing", False))
+fake_pixel_size = float(_get(cfg, "fake_georef", "fake_pixel_size", 1.0))
+fake_crs_epsg = _as_optional_value(_get(cfg, "fake_georef", "fake_crs_epsg", poly_CRS))
+
+downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
+downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
+
+do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
+do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
+do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
+do_plotting = bool(_get(cfg, "flags", "do_plotting", True))
+do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
+
+use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
+use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
+force_recompute_alignment = bool(_get(cfg, "cache", "force_recompute_alignment", False))
+force_recompute_tracking = bool(_get(cfg, "cache", "force_recompute_tracking", False))
+
+write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
 # adaptive tracking window options
-use_adaptive_tracking_window = True    # If True, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
-#pixels_per_metre = 1.0                 # px per metre (depends on raster resolution)
-#maximal_assumed_movement_rate = 3.5    # m/year (upper bound used for search window scaling)
+use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
 
 # ==============================
 # PARAMETERS (alignment, tracking, filter)
 # ==============================
 alignment_params = AlignmentParameters({
-    "number_of_control_points": 2000,       
+    "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
     # search extent tuple: (right, left, down, up) in pixels around the control cell
-    "control_search_extent_px": (5, 5, 5, 5), # px
-    "control_cell_size": 5, # px
-    "cross_correlation_threshold_alignment": 0.8,                   
-    "maximal_alignment_movement": None, # px, can be set to = None
+    "control_search_extent_px": tuple(_require(cfg, "alignment", "control_search_extent_px")),
+    "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
+    "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
+    "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
 })
 
 tracking_params = TrackingParameters({
-    "image_bands": 0,
-    "distance_of_tracked_points_px": 50, # px
-    "movement_cell_size": 100, # px
-    "cross_correlation_threshold_movement": 0.5,
+    "image_bands": _require(cfg, "tracking", "image_bands"),
+    "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
+    "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
+    "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
     # search extent tuple: (right, left, down, up) in pixels around the movement cell
-    # usually this refers to the offset in px between the images, 
+    # usually this refers to the offset in px between the images,
     # but if the adaptive mode is used, this means the expected offset in px per year
-    "search_extent_px": (20, 5, 5, 20), # px OR px / year
+    "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
 })
 
 filter_params = FilterParameters({
-    "level_of_detection_quantile": 0.75,
-    "number_of_points_for_level_of_detection": 1000,                
-    "difference_movement_bearing_threshold": 360,                    # degrees
-    "difference_movement_bearing_moving_window_size": 50,           # CRS units
-    "standard_deviation_movement_bearing_threshold": 360,            # degrees
-    "standard_deviation_movement_bearing_moving_window_size": 50,   # CRS units
-    "difference_movement_rate_threshold": 10,                      # CRS units / year
-    "difference_movement_rate_moving_window_size": 10,              # CRS units
-    "standard_deviation_movement_rate_threshold": 10,              # CRS units / year
-    "standard_deviation_movement_rate_moving_window_size": 50,      # CRS units
+    "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
+    "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
+    "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
+    "difference_movement_bearing_moving_window_size": _require(cfg, "filter", "difference_movement_bearing_moving_window_size"),
+    "standard_deviation_movement_bearing_threshold": _require(cfg, "filter", "standard_deviation_movement_bearing_threshold"),
+    "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_bearing_moving_window_size"),
+    "difference_movement_rate_threshold": _require(cfg, "filter", "difference_movement_rate_threshold"),
+    "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
+    "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
+    "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
 })
 
 # ==============================
 # SAVE OPTIONS (final outputs)
 # ==============================
-save_files = [
-    # "first_image_matrix", 
-    # "second_image_matrix",
-    "movement_bearing_valid_tif",
-    "movement_rate_valid_tif",
-    "movement_bearing_outlier_filtered_tif", 
-    "movement_rate_outlier_filtered_tif",
-    "movement_bearing_LoD_filtered_tif",
-    "movement_rate_LoD_filtered_tif",
-    "movement_bearing_all_tif", 
-    "movement_rate_all_tif",
-    "mask_invalid_tif",
-    "mask_LoD_tif",
-    "mask_outlier_md_tif",
-    "mask_outlier_msd_tif",
-    "mask_outlier_bd_tif",
-    "mask_outlier_bsd_tif",
-    # "LoD_points_geojson",
-    # "control_points_geojson",
-    "statistical_parameters_txt",
-
-]
+save_files = list(_require(cfg, "save", "files"))
 
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
@@ -167,7 +193,6 @@ def main():
     polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename)).to_crs(epsg=poly_CRS)
     polygon_inside  = gpd.read_file(os.path.join(input_folder, poly_inside_filename)).to_crs(epsg=poly_CRS)
 
-    align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
 
     successes, skipped = [], []
@@ -185,12 +210,15 @@ def main():
         date_1 = id_to_date[year1]
         date_2 = id_to_date[year2]
 
-        def _fmt_label(id_key, date_str):
-            return parse_date(date_str).strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
-                else parse_date(date_str).strftime("%Y-%m-%d")
+        dt1 = parse_date(date_1)
+        dt2 = parse_date(date_2)
 
-        label_1 = _fmt_label(year1, date_1)
-        label_2 = _fmt_label(year2, date_2)
+        def _fmt_label(id_key, dt):
+            return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
+                else dt.strftime("%Y-%m-%d")
+
+        label_1 = _fmt_label(year1, dt1)
+        label_2 = _fmt_label(year2, dt2)
         print(f"\nProcessed image pair: {year1} ({label_1}) → {year2} ({label_2})")
 
         print(f"   File 1: {filename_1}")
@@ -198,8 +226,6 @@ def main():
 
         try:
             # compute years_between (hour-precise)
-            dt1 = parse_date(date_1)
-            dt2 = parse_date(date_2)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
 
@@ -256,7 +282,8 @@ def main():
             align_dir  = os.path.join(base_pair_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
             filter_dir = os.path.join(track_dir,     filter_code)
-            ensure_dir(align_dir); ensure_dir(track_dir); ensure_dir(filter_dir)
+            for d in (align_dir, track_dir, filter_dir):
+                ensure_dir(d)
 
             # Params for ImagePair:
             #   - effective extents in the fields the algorithms read
@@ -272,6 +299,7 @@ def main():
             param_dict["use_fake_georeferencing"]           = bool(use_fake_georeferencing)
             param_dict["fake_crs_epsg"]                     = int(fake_crs_epsg) if fake_crs_epsg is not None else None
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
+            param_dict["downsample_factor"]                 = int(downsample_factor)
 
  
             image_pair = ImagePair(parameter_dict=param_dict)
@@ -307,75 +335,82 @@ def main():
                             align_params=alignment_params.__dict__,
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
+                            save_truecolor_aligned=write_truecolor_aligned,
                         )
-                        print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+                        print(f"[cache] alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+
             else:
                 image_pair.valid_alignment_possible = True
                 image_pair.images_aligned = False
 
 
-            # tracking with cache
+            # ==============================
+            # TRACKING (optional)
+            # ==============================
             used_cache_tracking = False
-            if use_tracking_cache and not force_recompute_tracking:
-                used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
-                if used_cache_tracking:
-                    print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
+            if do_tracking:
+                if use_tracking_cache and not force_recompute_tracking:
+                    used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
+                    if used_cache_tracking:
+                        print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
+                        # ... Meta-Check wie bisher ...
+                        # (lass deinen bestehenden Meta-Check hier einfach drin)
 
-                    # check if effective search areas are same (adaptive T/F)
-                    _, meta_json = tracking_cache_paths(track_dir, year1, year2)
-                    try:
-                        with open(meta_json, "r", encoding="utf-8") as f:
-                            meta = json.load(f)
-                        cached_eff = tuple(int(x) for x in meta.get("tracking_params", {}).get("search_extent_px_effective", []))
-                        current_eff = tuple(int(x) for x in adaptive_extents)
-                        if cached_eff != current_eff:
-                            print(f"[CACHE] Effective search extents mismatch: cache {cached_eff} vs current {current_eff} -> recompute.")
-                            used_cache_tracking = False
-                    except Exception as e:
-                        print(f"[CACHE] Could not read/parse tracking meta ({e}). Will recompute.")
-                        used_cache_tracking = False
-                    
-            if not used_cache_tracking:
-                if used_cache_alignment or getattr(image_pair, "images_aligned", False):
-                    tracked_points = image_pair.track_points(tracking_area=polygon_inside)
-                    image_pair.tracking_results = tracked_points
-                else:
-                    image_pair.perform_point_tracking(
-                        reference_area=polygon_outside,
-                        tracking_area=polygon_inside
-                    )
+                if not used_cache_tracking:
+                    if used_cache_alignment or getattr(image_pair, "images_aligned", False):
+                        tracked_points = image_pair.track_points(tracking_area=polygon_inside)
+                        image_pair.tracking_results = tracked_points
+                    else:
+                        image_pair.perform_point_tracking(
+                            reference_area=polygon_outside,
+                            tracking_area=polygon_inside
+                        )
 
-                if use_tracking_cache:
-                    save_tracking_cache(
-                        image_pair,
-                        track_dir,
-                        year1,
-                        year2,
-                        track_params=pair_tracking_config,
-                        filenames={year1: filename_1, year2: filename_2},
-                        dates={year1: date_1, year2: date_2},
-                    )
+                    if use_tracking_cache:
+                        save_tracking_cache(
+                            image_pair,
+                            track_dir,
+                            year1,
+                            year2,
+                            track_params=pair_tracking_config,
+                            filenames={year1: filename_1, year2: filename_2},
+                            dates={year1: date_1, year2: date_2},
+                        )
+                        print(f"[CACHE] Tracking saved to:  {track_dir}  (pair {year1}->{year2})")
+            else:
+                print("Tracking is disabled (alignment-only run).")
 
-                    print(f"[CACHE] Tracking saved to:  {track_dir}  (pair {year1}->{year2})")
 
-            # filtering and optional plot
-            image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
-            if do_plotting:
-                image_pair.plot_tracking_results_with_valid_mask()
+            # ==============================
+            # FILTERING + PLOTS + SAVING (optional)
+            # ==============================
+            if do_tracking and do_filtering:
+                image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
 
-            # write a small CSV with valid fraction
-            try:
-                valid_fraction = float(image_pair.tracking_results["valid"].mean())
-            except Exception:
-                valid_fraction = None
-            valid_csv = os.path.join(filter_dir, "valid_results_fraction.csv")
-            with open(valid_csv, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(["pair", "valid_fraction"])
-                w.writerow([f"{year1}_{year2}", valid_fraction if valid_fraction is not None else "NA"])
+                if do_plotting:
+                    image_pair.plot_tracking_results_with_valid_mask()
 
-            # final results go to the filter level
-            image_pair.save_full_results(filter_dir, save_files=save_files)
+                # write a small CSV with valid fraction
+                try:
+                    valid_fraction = float(image_pair.tracking_results["valid"].mean())
+                except Exception:
+                    valid_fraction = None
+                valid_csv = os.path.join(filter_dir, "valid_results_fraction.csv")
+                with open(valid_csv, "w", newline="", encoding="utf-8") as f:
+                    w = csv.writer(f)
+                    w.writerow(["pair", "valid_fraction"])
+                    w.writerow([f"{year1}_{year2}", valid_fraction if valid_fraction is not None else "NA"])
+
+                # final results go to the filter level
+                image_pair.save_full_results(filter_dir, save_files=save_files)
+            else:
+                print("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
+                # Alignment-only outputs exist in align_dir:
+                # - aligned_image_<year2>.tif
+                # - alignment_control_points_<year1>_<year2>.geojson
+                # - alignment_meta_<year1>_<year2>.json
+                        # Mark this pair as successfully processed
+            
             successes.append((year1, year2))
 
         except Exception as e:

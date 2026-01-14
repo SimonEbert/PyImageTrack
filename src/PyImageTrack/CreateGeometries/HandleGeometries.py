@@ -121,8 +121,12 @@ def get_raster_indices_from_points(points: gpd.GeoDataFrame, raster_matrix_trans
     rows, cols: The row and column indices respectively for the points.
     """
 
-    xs = points["geometry"].x.to_list()
-    ys = points["geometry"].y.to_list()
+    xs = np.array(points["geometry"].x.to_list(), dtype=float)
+    ys = np.array(points["geometry"].y.to_list(), dtype=float)
+    valid_mask = np.isfinite(xs) & np.isfinite(ys)
+    if not np.all(valid_mask):
+        xs = xs[valid_mask]
+        ys = ys[valid_mask]
     rows, cols = rasterio.transform.rowcol(raster_matrix_transform, xs, ys)
     return rows, cols
 

@@ -1,11 +1,11 @@
 import geopandas as gpd
 import numpy as np
 
-from PyImageTrack.CreateGeometries.HandleGeometries import circular_std_deg
-from PyImageTrack.CreateGeometries.HandleGeometries import georeference_tracked_points
-from PyImageTrack.ImageTracking import TrackMovement
-from PyImageTrack.Parameters import FilterParameters
-from PyImageTrack.Parameters import TrackingParameters
+from ..CreateGeometries.HandleGeometries import circular_std_deg
+from ..CreateGeometries.HandleGeometries import georeference_tracked_points
+from ..ImageTracking import TrackMovement
+from ..Parameters.FilterParameters import FilterParameters
+from ..Parameters.TrackingParameters import TrackingParameters
 
 
 def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
