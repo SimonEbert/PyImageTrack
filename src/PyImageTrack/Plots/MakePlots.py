@@ -108,7 +108,9 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                              arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
                              -arrow_point["movement_row_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
                              head_width=10, head_length=10, color="black", alpha=1)
-    plt.title("Movement velocity in " + point_movement.crs.axis_info[0].unit_name + " per year")
+
+    unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
+    plt.title("Movement velocity in " + unit_name + " per year")
 
     if show_figure:
         fig.show()

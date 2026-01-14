@@ -6,10 +6,6 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.plot
-from geocube.api.core import make_geocube
-from rasterio.crs import CRS
-from shapely.geometry import box
-
 from PyImageTrack.CreateGeometries.HandleGeometries import crop_images_to_intersection
 from PyImageTrack.CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
 # Geometry Handling
@@ -32,6 +28,9 @@ from PyImageTrack.Plots.MakePlots import plot_movement_of_points
 from PyImageTrack.Plots.MakePlots import plot_movement_of_points_with_valid_mask
 # Date Handling
 from PyImageTrack.Utils import parse_date
+from geocube.api.core import make_geocube
+from rasterio.crs import CRS
+from shapely.geometry import box
 
 
 class ImagePair:
@@ -169,8 +168,10 @@ class ImagePair:
 
             # CRS from user config (poly_CRS passed via fake_crs_epsg)
             if self.fake_crs_epsg is None:
-                raise ValueError("use_fake_georeferencing=True but no fake_crs_epsg was provided.")
-            self.crs = CRS.from_epsg(int(self.fake_crs_epsg))
+                # raise ValueError("use_fake_georeferencing=True but no fake_crs_epsg was provided.")
+                self.crs = None
+            else:
+                self.crs = CRS.from_epsg(int(self.fake_crs_epsg))
 
             # Bounds in that CRS (pixel grid space), then shrink by search radius
             from rasterio.transform import array_bounds
@@ -281,7 +282,7 @@ class ImagePair:
 
         self.images_aligned = True
 
-    def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.geodataframe:
+    def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Creates a grid of points based on the polygon given in tracking_area. Tracks these points using the specified
         tracking parameters. Georeferences these points and returns the respective GeoDataFrame including a column with
@@ -464,9 +465,13 @@ class ImagePair:
         self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points["movement_distance_per_year"],
                                                  level_of_detection_quantile)
 
+        if points_for_lod_calculation.crs is not None:
+            unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+        else:
+            unit_name = "pixel"
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
               + str(np.round(self.level_of_detection, decimals=5)) + " " + str(
-            points_for_lod_calculation.crs.axis_info[0].unit_name) + "/year")
+            unit_name) + "/year")
 
     def filter_lod_points(self) -> None:
         """
@@ -554,9 +559,10 @@ class ImagePair:
                 dst.write(self.image2_matrix, 1)
 
         # --- Always save the full tracking results GeoJSON ---
+
         self.tracking_results.to_file(
-            f"{folder_path}/tracking_results_{self.image1_observation_date.year}_{self.image2_observation_date.year}.geojson",
-            driver="GeoJSON",
+            f"{folder_path}/tracking_results_{self.image1_observation_date.year}_{self.image2_observation_date.year}.fgb",
+            driver="FlatGeobuf"
         )
 
         # --- Prepare common subsets and guards ---
@@ -586,69 +592,147 @@ class ImagePair:
         tr_without_outliers = tr_all.loc[~is_outlier].copy()
 
         # --- Helper to make grids safely (avoids errors if empty) ---
-        def _make_grid(df, measurements):
+        def _make_raster(df, measurements):
             if df.empty:
-                # Create an empty grid by falling back to valid subset if available, else skip
+                # return no grid
                 return None
-            res_crs = float(self.tracking_parameters.distance_of_tracked_points_px) * self._effective_pixel_size()
-            return make_geocube(
-                vector_data=df,
-                measurements=measurements,
-                resolution=res_crs,
-            )
+
+            bounds = df.geometry.total_bounds
+            height = np.abs(bounds[3] - bounds[1])
+            width = np.abs(bounds[2] - bounds[0])
+
+            # Calculate resolution and therefore full raster dimensions from distance of tracked points for raster cells
+            # as large as possible without burning several points to the same raster pixel
+            res = float(self.tracking_parameters.distance_of_tracked_points_px) * self._effective_pixel_size()
+            height = int(np.ceil(height / res)) + 1 # + 1 needed for proper centering of points w.r.t. raster grid
+            width = int(np.ceil(width / res)) + 1 # + 1 needed for proper centering of points w.r.t. raster grid
+
+            # if df.crs is not None:
+            #     transform = rasterio.transform.from_origin(bounds[0], bounds[3], res, res)
+            #     crs = df.crs
+            # else:
+            #     # If no crs is given, assume results in image coordinates and rasterize with identity transform (raster
+            #     # will also be given in image coordinates)
+            #     transform = rasterio.transform.from_origin(bounds[0],bounds[3],res,res)
+            #     crs = None
+            transform = rasterio.transform.from_origin(bounds[0] - res / 2, bounds[3] + res / 2, res, res)
+            crs = df.crs
+
+            data = {}
+            for measurement in measurements:
+                shapes = ((geometry, value) for geometry, value in zip(df.geometry, df[measurement]))
+                data[measurement] = rasterio.features.rasterize(
+                    shapes=shapes,
+                    out_shape=(height, width),
+                    transform=transform,
+                    fill=np.nan,
+                    dtype="float32"
+                    )
+            return {
+                "raster": data,
+                "transform": transform,
+                "crs": crs
+            }
+
+        def _save_raster_as_tif(path, raster, transform, crs):
+            with rasterio.open(
+                path,
+                "w",
+                driver="GTiff",
+                height=raster.shape[0],
+                width=raster.shape[1],
+                transform=transform,
+                crs=crs,
+                count=1,
+                nodata=np.nan,
+                dtype="float32"
+                ) as dst:
+                    dst.write(raster, 1)
+
+
+
+
+
 
         # Grids for various subsets
         meas = ["movement_bearing_pixels", "movement_distance_per_year"]
-        grid_valid = _make_grid(tr_valid, meas)
-        grid_outlier_filtered = _make_grid(tr_without_outliers, meas)
-        grid_lod_filtered = _make_grid(tr_above_lod, meas)  # above LoD, keep outliers
-        grid_all = _make_grid(tr_all, meas)  # absolutely all points
+        raster_valid = _make_raster(tr_valid, meas)
+        raster_outlier_filtered = _make_raster(tr_without_outliers, meas)
+        raster_lod_filtered = _make_raster(tr_above_lod, meas)  # above LoD, keep outliers
+        raster_all = _make_raster(tr_all, meas)  # absolutely all points
 
         # --- Save requested rasters ---
 
         # Valid rasters
-        if grid_valid is not None:
+        if raster_valid is not None:
             if "movement_bearing_valid_tif" in save_files:
-                grid_valid["movement_bearing_pixels"].rio.to_raster(
-                    f"{folder_path}/movement_bearing_valid_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
-                )
-            if "movement_rate_valid_tif" in save_files:
-                grid_valid["movement_distance_per_year"].rio.to_raster(
-                    f"{folder_path}/movement_rate_valid_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_bearing_valid_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_valid["raster"]["movement_bearing_pixels"],
+                    transform=raster_valid["transform"],
+                    crs=raster_valid["crs"]
                 )
 
+            if "movement_rate_valid_tif" in save_files:
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_rate_valid_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_valid["raster"]["movement_distance_per_year"],
+                    transform=raster_valid["transform"],
+                    crs=raster_valid["crs"]
+                    )
+
         # Outlier-filtered rasters (exclude outliers, keep everything else)
-        if grid_outlier_filtered is not None:
+        if raster_outlier_filtered is not None:
             if "movement_bearing_outlier_filtered_tif" in save_files:
-                grid_outlier_filtered["movement_bearing_pixels"].rio.to_raster(
-                    f"{folder_path}/movement_bearing_outlier_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_bearing_outlier_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_outlier_filtered["raster"]["movement_bearing_pixels"],
+                    transform=raster_outlier_filtered["transform"],
+                    crs=raster_outlier_filtered["crs"]
                 )
             if "movement_rate_outlier_filtered_tif" in save_files:
-                grid_outlier_filtered["movement_distance_per_year"].rio.to_raster(
-                    f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_outlier_filtered["raster"]["movement_distance_per_year"],
+                    transform=raster_outlier_filtered["transform"],
+                    crs=raster_outlier_filtered["crs"]
                 )
 
         # LoD-filtered rasters (keep all points above LoD, including outliers)
-        if grid_lod_filtered is not None:
+        if raster_lod_filtered is not None:
             if "movement_bearing_LoD_filtered_tif" in save_files:
-                grid_lod_filtered["movement_bearing_pixels"].rio.to_raster(
-                    f"{folder_path}/movement_bearing_LoD_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_bearing_LoD_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_lod_filtered["raster"]["movement_bearing_pixels"],
+                    transform=raster_lod_filtered["transform"],
+                    crs=raster_lod_filtered["crs"]
                 )
             if "movement_rate_LoD_filtered_tif" in save_files:
-                grid_lod_filtered["movement_distance_per_year"].rio.to_raster(
-                    f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_lod_filtered["raster"]["movement_distance_per_year"],
+                    transform=raster_lod_filtered["transform"],
+                    crs=raster_lod_filtered["crs"]
                 )
 
         # ALL rasters (absolutely all tracked points, no filters)
-        if grid_all is not None:
+        if raster_all is not None:
             if "movement_bearing_all_tif" in save_files:
-                grid_all["movement_bearing_pixels"].rio.to_raster(
-                    f"{folder_path}/movement_bearing_all_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_bearing_all_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_all["raster"]["movement_bearing_pixels"],
+                    transform=raster_all["transform"],
+                    crs=raster_all["crs"]
                 )
+
             if "movement_rate_all_tif" in save_files:
-                grid_all["movement_distance_per_year"].rio.to_raster(
-                    f"{folder_path}/movement_rate_all_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                _save_raster_as_tif(
+                    path=f"{folder_path}/movement_rate_all_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=raster_all["raster"]["movement_distance_per_year"],
+                    transform=raster_all["transform"],
+                    crs=raster_all["crs"]
                 )
+
 
         # --- Masks ---
 
@@ -656,22 +740,28 @@ class ImagePair:
         if "mask_invalid_tif" in save_files:
             invalid_mask = tr_all.loc[~tr_all["valid"]].copy()
             invalid_mask["invalid_int"] = 1  # write 1 where invalid (more intuitive and consistent for masks)
-            invalid_grid = _make_grid(invalid_mask, ["invalid_int"])
-            if invalid_grid is not None:
-                invalid_grid["invalid_int"].rio.to_raster(
-                    f"{folder_path}/mask_invalid_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+            invalid_raster = _make_raster(invalid_mask, ["invalid_int"])
+            if invalid_raster is not None:
+                _save_raster_as_tif(
+                    path=f"{folder_path}/mask_invalid_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                    raster=invalid_raster["raster"]["invalid_int"],
+                    transform=invalid_raster["transform"],
+                    crs=invalid_raster["crs"]
                 )
 
-        # reason-specific outlier masks 
+        # reason-specific outlier masks
         def _write_reason_mask(flag_col: str, token: str, filename_root: str):
             if token in save_files and flag_col in tr_all.columns:
                 mask_df = tr_all.loc[tr_all[flag_col]].copy()
                 if not mask_df.empty:
                     mask_df["mask_int"] = 1
-                    mask_grid = _make_grid(mask_df, ["mask_int"])
+                    mask_grid = _make_raster(mask_df, ["mask_int"])
                     if mask_grid is not None:
-                        mask_grid["mask_int"].rio.to_raster(
-                            f"{folder_path}/{filename_root}_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                        _save_raster_as_tif(
+                            path=f"{folder_path}/{filename_root}_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                            raster=mask_grid["raster"]["mask_int"],
+                            transform=mask_grid["transform"],
+                            crs=mask_grid["crs"]
                         )
 
         _write_reason_mask("is_movement_rate_difference_outlier", "mask_outlier_md_tif", "mask_outlier_md")
@@ -821,10 +911,13 @@ class ImagePair:
             if "mask_LoD_tif" in save_files and has_lod_col:
                 lod_mask = tr_all.loc[tr_all["is_below_LoD"]].copy()
                 lod_mask["is_below_LoD_int"] = 1  # write 1 where below LoD
-                lod_grid = _make_grid(lod_mask, ["is_below_LoD_int"])
-                if lod_grid is not None:
-                    lod_grid["is_below_LoD_int"].rio.to_raster(
-                        f"{folder_path}/mask_LoD_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif"
+                lod_raster = _make_raster(lod_mask, ["is_below_LoD_int"])
+                if lod_raster is not None:
+                    _save_raster_as_tif(
+                        path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.year}_{self.image2_observation_date.year}.tif",
+                        raster=lod_raster["raster"]["is_below_LoD_int"],
+                        transform=lod_raster["transform"],
+                        crs=lod_raster["crs"]
                     )
 
             plot_movement_of_points_with_valid_mask(

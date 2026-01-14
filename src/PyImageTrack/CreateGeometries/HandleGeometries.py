@@ -72,7 +72,10 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
     points = points[points.intersects(polygon.loc[0, "geometry"])]
 
-    unit_name = points.crs.axis_info[0].unit_name
+    if polygon.crs is not None:
+        unit_name = points.crs.axis_info[0].unit_name
+    else:
+        unit_name = "pixel"
     if distance_px is None:
         print(
             f"Created {len(points)} points on the polygon "
@@ -160,7 +163,8 @@ def crop_images_to_intersection(file1, file2):
     return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
 
 
-def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs, years_between_observations=1):
+def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs,
+                                years_between_observations: float=1) -> gpd.GeoDataFrame:
     """
     Georeferences a DataFrame with tracked points and calculates their movement (absolute and per year) in the unit
     specified by the coordinate reference system.
@@ -175,7 +179,7 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         indices to the coordinate reference system of the points.
     crs:
         An identifier for a coordinate reference system to which the resulting GeoDataFrame will be projected.
-    years_between_observations = 1
+    years_between_observations: float = 1
         A float representing the number of years between the two images for calculating average yearly movement rates.
     Returns
     ----------

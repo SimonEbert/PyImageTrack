@@ -71,7 +71,7 @@ alignment_params = AlignmentParameters({
     # search extent tuple: (right, left, down, up) in pixels around the control cell
     "control_search_extent_px": (5, 5, 5, 5), # px
     "control_cell_size": 5, # px
-    "cross_correlation_threshold_alignment": 0.8,                   
+    "cross_correlation_threshold_alignment": 0.8,
     "maximal_alignment_movement": None, # px, can be set to = None
 })
 
@@ -88,7 +88,7 @@ tracking_params = TrackingParameters({
 
 filter_params = FilterParameters({
     "level_of_detection_quantile": 0.75,
-    "number_of_points_for_level_of_detection": 1000,                
+    "number_of_points_for_level_of_detection": 1000,
     "difference_movement_bearing_threshold": 360,                    # degrees
     "difference_movement_bearing_moving_window_size": 50,           # CRS units
     "standard_deviation_movement_bearing_threshold": 360,            # degrees

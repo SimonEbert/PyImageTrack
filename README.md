@@ -7,10 +7,12 @@ PyImageTrack is a Python library implementing feature tracking approaches based 
 - Visualization of movement data
 - Calculation of the Level of Detection of a performed tracking
 - Removing outliers based on movement bearing and movement rate in the surrounding area
+- Tracking on non-georeferenced images and giving the results in pixels
+	--> For this the respective shapefiles must be in image coordinates and have no valid CRS. This can be achieved by deleting the "filename.prj" file from the folder where the "filename.shp" file is stored
 
 
 ## Acknowledgment
-The code in this respository is written by Lisa Rehn and Simon Ebert and maintained by Lisa Rehn. Its first version is based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert.
+The code in this respository is written and maintained by Lisa Rehn and Simon Ebert. Its first version is based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert.
 ## Installation
 To install PyImageTrack, follow these steps:
 1. Clone the repository: `git clone https://github.com/SimonEbert/PyImageTrack.git`

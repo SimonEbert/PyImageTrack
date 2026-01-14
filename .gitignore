@@ -1,0 +1,16 @@
+# Byte-compiled / cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment / virtualenv
+.venv*
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+*.egg
+
+# IDE 
+.idea
