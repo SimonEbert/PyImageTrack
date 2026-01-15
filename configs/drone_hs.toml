@@ -1,15 +1,14 @@
 [paths]
-input_folder = "/home/lisa/projects/pyimagetrack/input/hillshades"
-output_folder = "/home/lisa/projects/pyimagetrack/output/hillshades"
+input_folder = "../input/hillshades"
+output_folder = "../output/hillshades"
 # can be set to "none" if the day is reflected in the filename
-date_csv_path = "/home/lisa/projects/pyimagetrack/input/hillshades/image_dates.csv"
+date_csv_path = "../input/hillshades/image_dates.csv"
 # can be set to "none" if all or successive pairing mode is selected below
-pairs_csv_path = "/home/lisa/projects/pyimagetrack/input/hillshades/image_pairs.csv"
+pairs_csv_path = "../input/hillshades/image_pairs.csv"
 
 [polygons]
 outside_filename = "stable_area_drone.shp"
 inside_filename = "moving_area_drone.shp"
-crs_epsg = 32632
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
@@ -20,8 +19,6 @@ mode = "custom"
 use_no_georeferencing = false
 # 1 px = 1 unit
 fake_pixel_size = 1.0
-# use your polygon CRS for fake georef
-fake_crs_epsg = "none"
 
 [downsampling]
 # downsample input images by this integer factor to speed up runs
@@ -36,10 +33,12 @@ do_plotting = true
 do_image_enhancement = false
 
 [cache]
-use_alignment_cache = true
-use_tracking_cache = true
+use_alignment_cache = false
+use_tracking_cache = false
+use_lod_cache = false
 force_recompute_alignment = false
 force_recompute_tracking = false
+force_recompute_lod = false
 
 [output]
 # if true: additionally write a true-color aligned image
@@ -74,7 +73,7 @@ cross_correlation_threshold_movement = 0.5
 search_extent_px = [20, 5, 5, 20]
 
 [filter]
-level_of_detection_quantile = 0.5
+level_of_detection_quantile = 0.75
 number_of_points_for_level_of_detection = 1000
 difference_movement_bearing_threshold = 360 # degrees
 difference_movement_bearing_moving_window_size = 50 # CRS units
