@@ -9,7 +9,6 @@ pairs_csv_path = "../input/hillshades/image_pairs.csv"
 [polygons]
 outside_filename = "stable_area_drone.shp"
 inside_filename = "moving_area_drone.shp"
-crs_epsg = 32632
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
@@ -20,8 +19,6 @@ mode = "custom"
 use_no_georeferencing = false
 # 1 px = 1 unit
 fake_pixel_size = 1.0
-# use your polygon CRS for fake georef
-fake_crs_epsg = "none"
 
 [downsampling]
 # downsample input images by this integer factor to speed up runs

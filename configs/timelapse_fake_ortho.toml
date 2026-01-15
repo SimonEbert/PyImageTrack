@@ -7,21 +7,18 @@ date_csv_path = "../input/timelapse_west_weekly/image_dates.csv"
 pairs_csv_path = "../input/timelapse_west_weekly/image_pairs.csv"
 
 [polygons]
-outside_filename = "stable_area_western.shp"
-inside_filename = "moving_area_western.shp"
-crs_epsg = 32632
+outside_filename = "stable_area_western2.shp"
+inside_filename = "moving_area_western2.shp"
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
-mode = "first_to_all"
+mode = "custom"
 
 [fake_georef]
 # set true only when processing non-ortho JPGs
 use_no_georeferencing = true
 # 1 px = 1 unit
 fake_pixel_size = 1.0
-# use your polygon CRS for fake georef
-fake_crs_epsg = 32632
 
 [downsampling]
 # downsample input images by this integer factor to speed up test runs
@@ -29,8 +26,8 @@ downsample_factor = 1
 
 [flags]
 do_alignment = true
-do_tracking = false
-do_filtering = false
+do_tracking = true
+do_filtering = true
 do_plotting = true
 # optional image enhancement via CLAHE
 do_image_enhancement = false
@@ -45,7 +42,7 @@ force_recompute_lod = false
 
 [output]
 # if true: additionally write a true-color aligned image
-write_truecolor_aligned = true
+write_truecolor_aligned = false
 
 [adaptive_tracking_window]
 # If true, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR

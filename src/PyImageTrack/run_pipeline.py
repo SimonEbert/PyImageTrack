@@ -18,6 +18,7 @@ except ModuleNotFoundError as exc:
 
 import geopandas as gpd
 import numpy as np
+import rasterio
 
 from .ImageTracking.ImagePair import ImagePair
 from .Parameters.FilterParameters import FilterParameters
@@ -83,6 +84,15 @@ def _resolve_path(value, base_dir: Path):
     return str(path_obj)
 
 
+def _crs_label(crs) -> str:
+    return "none" if crs is None else str(crs)
+
+
+def _read_image_crs(path: str):
+    with rasterio.open(path, "r") as src:
+        return src.crs
+
+
 # ==============================
 # CONFIG (TOML)
 # ==============================
@@ -102,14 +112,11 @@ pairs_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_
 
 poly_outside_filename = _require(cfg, "polygons", "outside_filename")
 poly_inside_filename = _require(cfg, "polygons", "inside_filename")
-poly_CRS = _require(cfg, "polygons", "crs_epsg")
-poly_CRS = None if poly_CRS == "none" else poly_CRS
 
 pairing_mode = _require(cfg, "pairing", "mode")
 
 use_no_georeferencing = bool(_get(cfg, "fake_georef", "use_no_georeferencing", False))
 fake_pixel_size = float(_get(cfg, "fake_georef", "fake_pixel_size", 1.0))
-fake_crs_epsg = _as_optional_value(_get(cfg, "fake_georef", "fake_crs_epsg", poly_CRS))
 
 downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
 downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
@@ -229,9 +236,23 @@ def main():
     polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename))
     polygon_inside  = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
 
-    if poly_CRS is not None:
-        polygon_outside = polygon_outside.to_crs(epsg=poly_CRS)
-        polygon_inside = polygon_inside.to_crs(epsg=poly_CRS)
+    polygon_crs_outside = polygon_outside.crs
+    polygon_crs_inside = polygon_inside.crs
+    if (polygon_crs_outside is None) != (polygon_crs_inside is None):
+        raise ValueError(
+            "Polygon CRS mismatch: outside has "
+            + _crs_label(polygon_crs_outside)
+            + ", inside has "
+            + _crs_label(polygon_crs_inside)
+        )
+    if polygon_crs_outside is not None and polygon_crs_outside != polygon_crs_inside:
+        raise ValueError(
+            "Polygon CRS mismatch: outside has "
+            + _crs_label(polygon_crs_outside)
+            + ", inside has "
+            + _crs_label(polygon_crs_inside)
+        )
+    polygon_crs = polygon_crs_outside
 
 
     align_code  = abbr_alignment(alignment_params)
@@ -267,6 +288,37 @@ def main():
         print(f"   File 2: {filename_2}")
 
         try:
+            image_crs_1 = _read_image_crs(filename_1)
+            image_crs_2 = _read_image_crs(filename_2)
+            if (image_crs_1 is None) != (image_crs_2 is None):
+                raise ValueError(
+                    "Image CRS mismatch: file 1 has "
+                    + _crs_label(image_crs_1)
+                    + ", file 2 has "
+                    + _crs_label(image_crs_2)
+                )
+            if image_crs_1 is not None and image_crs_1 != image_crs_2:
+                raise ValueError(
+                    "Image CRS mismatch: file 1 has "
+                    + _crs_label(image_crs_1)
+                    + ", file 2 has "
+                    + _crs_label(image_crs_2)
+                )
+            image_crs = image_crs_1
+            if (image_crs is None) != (polygon_crs is None):
+                raise ValueError(
+                    "CRS mismatch between images and polygons: images have "
+                    + _crs_label(image_crs)
+                    + ", polygons have "
+                    + _crs_label(polygon_crs)
+                )
+            if image_crs is not None and image_crs != polygon_crs:
+                raise ValueError(
+                    "CRS mismatch between images and polygons: images have "
+                    + _crs_label(image_crs)
+                    + ", polygons have "
+                    + _crs_label(polygon_crs)
+                )
             # compute years_between (hour-precise)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
@@ -339,10 +391,9 @@ def main():
             param_dict["search_extent_px"]                  = adaptive_extents          # used by code
             param_dict["search_extent_deltas"]              = base_track_deltas         # user input (for logs)
             param_dict["use_no_georeferencing"]           = bool(use_no_georeferencing)
-            # param_dict["fake_crs_epsg"]                     = int(fake_crs_epsg) if fake_crs_epsg is not None else None
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
             param_dict["downsample_factor"]                 = int(downsample_factor)
-            param_dict["crs"]                               = poly_CRS
+            param_dict["crs"]                               = image_crs
  
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
