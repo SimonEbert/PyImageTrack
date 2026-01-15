@@ -36,10 +36,10 @@ do_plotting = true
 do_image_enhancement = false
 
 [cache]
-use_alignment_cache = true
-use_tracking_cache = true
-force_recompute_alignment = false
-force_recompute_tracking = false
+use_alignment_cache = false
+use_tracking_cache = false
+force_recompute_alignment = true
+force_recompute_tracking = true
 
 [output]
 # if true: additionally write a true-color aligned image

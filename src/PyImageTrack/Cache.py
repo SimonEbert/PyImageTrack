@@ -4,6 +4,7 @@ import json
 import hashlib
 import geopandas as gpd
 import rasterio
+from rasterio.crs import CRS as RioCRS
 
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
@@ -24,12 +25,18 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
     os.makedirs(align_dir, exist_ok=True)
     aligned_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
 
+    crs = image_pair.crs
+    if crs is not None and not isinstance(crs, RioCRS):
+        if isinstance(crs, str) and crs.strip().isdigit():
+            crs = int(crs.strip())
+        crs = RioCRS.from_user_input(crs)
+
     # write main aligned image (working image used for tracking)
     profile = {
         "driver": "GTiff",
         "count": 1 if image_pair.image2_matrix.ndim == 2 else image_pair.image2_matrix.shape[0],
         "dtype": str(image_pair.image2_matrix.dtype),
-        "crs": str(image_pair.crs),
+        "crs": crs,
         "width": image_pair.image2_matrix.shape[-1],
         "height": image_pair.image2_matrix.shape[-2],
         "transform": image_pair.image2_transform,
