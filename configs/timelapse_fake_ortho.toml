@@ -1,10 +1,10 @@
 [paths]
-input_folder = "/home/lisa/projects/pyimagetrack/input/timelapse_west_weekly"
-output_folder = "/home/lisa/projects/pyimagetrack/output/timelapse_west_weekly"
+input_folder = "../input/timelapse_west_weekly"
+output_folder = "../output/timelapse_west_weekly"
 # can be set to "none" if the day is reflected in the filename
-date_csv_path = "/home/lisa/projects/pyimagetrack/input/timelapse_west_weekly/image_dates.csv"
+date_csv_path = "../input/timelapse_west_weekly/image_dates.csv"
 # can be set to "none" if all or successive pairing mode is selected below
-pairs_csv_path = "/home/lisa/projects/pyimagetrack/input/timelapse_west_weekly/image_pairs.csv"
+pairs_csv_path = "../input/timelapse_west_weekly/image_pairs.csv"
 
 [polygons]
 outside_filename = "stable_area_western.shp"

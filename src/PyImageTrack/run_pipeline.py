@@ -34,7 +34,7 @@ from .Cache import (
 )
 
 
-def _load_config(path: str) -> dict:
+def _resolve_config_path(path: str) -> Path:
     path_obj = Path(path)
     if not path_obj.is_absolute():
         # Resolve relative config paths from the repo root to keep CLI stable.
@@ -42,6 +42,11 @@ def _load_config(path: str) -> dict:
         while repo_root != repo_root.parent and not (repo_root / "pyproject.toml").exists():
             repo_root = repo_root.parent
         path_obj = repo_root / path_obj
+    return path_obj
+
+
+def _load_config(path: str | Path) -> dict:
+    path_obj = Path(path)
     with path_obj.open("rb") as f:
         return tomllib.load(f)
 
@@ -66,6 +71,15 @@ def _as_optional_value(value):
     return value
 
 
+def _resolve_path(value, base_dir: Path):
+    if value is None:
+        return None
+    path_obj = Path(value)
+    if not path_obj.is_absolute():
+        path_obj = (base_dir / path_obj).resolve()
+    return str(path_obj)
+
+
 # ==============================
 # CONFIG (TOML)
 # ==============================
@@ -73,13 +87,15 @@ parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
 parser.add_argument("--config", required=True, help="Path to TOML config file")
 args = parser.parse_args()
 
-cfg = _load_config(args.config)
+config_path = _resolve_config_path(args.config)
+cfg = _load_config(config_path)
+config_dir = config_path.parent
 
-input_folder = _require(cfg, "paths", "input_folder")
-output_folder = _require(cfg, "paths", "output_folder")
+input_folder = _resolve_path(_require(cfg, "paths", "input_folder"), config_dir)
+output_folder = _resolve_path(_require(cfg, "paths", "output_folder"), config_dir)
 
-date_csv_path = _as_optional_value(_get(cfg, "paths", "date_csv_path"))
-pairs_csv_path = _as_optional_value(_get(cfg, "paths", "pairs_csv_path"))
+date_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "date_csv_path")), config_dir)
+pairs_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_path")), config_dir)
 
 poly_outside_filename = _require(cfg, "polygons", "outside_filename")
 poly_inside_filename = _require(cfg, "polygons", "inside_filename")

@@ -1,10 +1,10 @@
 [paths]
-input_folder = "/home/lisa/projects/pyimagetrack/input/hillshades"
-output_folder = "/home/lisa/projects/pyimagetrack/output/hillshades"
+input_folder = "../input/hillshades"
+output_folder = "../output/hillshades"
 # can be set to "none" if the day is reflected in the filename
-date_csv_path = "/home/lisa/projects/pyimagetrack/input/hillshades/image_dates.csv"
+date_csv_path = "../input/hillshades/image_dates.csv"
 # can be set to "none" if all or successive pairing mode is selected below
-pairs_csv_path = "/home/lisa/projects/pyimagetrack/input/hillshades/image_pairs.csv"
+pairs_csv_path = "../input/hillshades/image_pairs.csv"
 
 [polygons]
 outside_filename = "stable_area_drone.shp"
@@ -36,10 +36,10 @@ do_plotting = true
 do_image_enhancement = false
 
 [cache]
-use_alignment_cache = false
-use_tracking_cache = false
-force_recompute_alignment = true
-force_recompute_tracking = true
+use_alignment_cache = true
+use_tracking_cache = true
+force_recompute_alignment = false
+force_recompute_tracking = false
 
 [output]
 # if true: additionally write a true-color aligned image
