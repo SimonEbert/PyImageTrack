@@ -17,6 +17,7 @@ except ModuleNotFoundError as exc:
     ) from exc
 
 import geopandas as gpd
+import numpy as np
 
 from .ImageTracking.ImagePair import ImagePair
 from .Parameters.FilterParameters import FilterParameters
@@ -31,7 +32,9 @@ from .Utils import (
 from .Cache import (
     load_alignment_cache, save_alignment_cache,
     load_tracking_cache, save_tracking_cache,
+    load_lod_cache, save_lod_cache,
 )
+from .CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
 
 
 def _resolve_config_path(path: str) -> Path:
@@ -121,6 +124,8 @@ use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
 use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
 force_recompute_alignment = bool(_get(cfg, "cache", "force_recompute_alignment", False))
 force_recompute_tracking = bool(_get(cfg, "cache", "force_recompute_tracking", False))
+use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
+force_recompute_lod = bool(_get(cfg, "cache", "force_recompute_lod", False))
 
 write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
@@ -188,6 +193,20 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
         return max(half, eff)
     px, nx, py, ny = deltas
     return (one(px), one(nx), one(py), one(ny))
+
+
+def _recompute_lod_from_points(image_pair, filter_params) -> bool:
+    points = getattr(image_pair, "level_of_detection_points", None)
+    if points is None or len(points) == 0:
+        return False
+    quantile = filter_params.level_of_detection_quantile
+    if quantile is None or "movement_distance_per_year" not in points.columns:
+        return False
+    image_pair.level_of_detection = np.nanquantile(points["movement_distance_per_year"], quantile)
+    unit_name = points.crs.axis_info[0].unit_name if points.crs is not None else "pixel"
+    print("Found level of detection with quantile " + str(quantile) + " as "
+          + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + "/year")
+    return True
 
 
 # ==============================
@@ -360,7 +379,7 @@ def main():
                             dates={year1: date_1, year2: date_2},
                             save_truecolor_aligned=write_truecolor_aligned,
                         )
-                        print(f"[output] alignment written to: {align_dir}  (pair {year1}->{year2})")
+                        print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
 
             else:
                 image_pair.valid_alignment_possible = True
@@ -398,7 +417,7 @@ def main():
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
                         )
-                        print(f"[CACHE] Tracking saved to:  {track_dir}  (pair {year1}->{year2})")
+                        print(f"[CACHE] Tracking saved to:   {track_dir}  (pair {year1}->{year2})")
             else:
                 print("Tracking is disabled (alignment-only run).")
 
@@ -408,7 +427,49 @@ def main():
             # ==============================
             if do_tracking:
                 if do_filtering:
-                    image_pair.full_filter(reference_area=polygon_outside, filter_parameters=filter_params)
+                    image_pair.filter_outliers(filter_parameters=filter_params)
+
+                    used_cache_lod = False
+                    if use_lod_cache and not force_recompute_lod:
+                        used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
+                        if used_cache_lod:
+                            print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
+
+                    if not used_cache_lod:
+                        lod_points = random_points_on_polygon_by_number(
+                            polygon_outside,
+                            filter_params.number_of_points_for_level_of_detection
+                        )
+                        image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
+                        if use_lod_cache:
+                            save_lod_cache(
+                                image_pair,
+                                track_dir,
+                                year1,
+                                year2,
+                                filenames={year1: filename_1, year2: filename_2},
+                                dates={year1: date_1, year2: date_2},
+                            )
+                            print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
+                    else:
+                        if not _recompute_lod_from_points(image_pair, filter_params):
+                            lod_points = random_points_on_polygon_by_number(
+                                polygon_outside,
+                                filter_params.number_of_points_for_level_of_detection
+                            )
+                            image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
+                            if use_lod_cache:
+                                save_lod_cache(
+                                    image_pair,
+                                    track_dir,
+                                    year1,
+                                    year2,
+                                    filenames={year1: filename_1, year2: filename_2},
+                                    dates={year1: date_1, year2: date_2},
+                                )
+                                print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
+
+                    image_pair.filter_lod_points()
 
                 if do_plotting:
                     image_pair.plot_tracking_results_with_valid_mask()

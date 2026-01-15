@@ -38,8 +38,10 @@ do_image_enhancement = false
 [cache]
 use_alignment_cache = true
 use_tracking_cache = true
+use_lod_cache = true
 force_recompute_alignment = false
 force_recompute_tracking = false
+force_recompute_lod = false
 
 [output]
 # if true: additionally write a true-color aligned image
@@ -74,7 +76,7 @@ cross_correlation_threshold_movement = 0.5
 search_extent_px = [20, 5, 5, 20]
 
 [filter]
-level_of_detection_quantile = 0.5
+level_of_detection_quantile = 0.75
 number_of_points_for_level_of_detection = 1000
 difference_movement_bearing_threshold = 360 # degrees
 difference_movement_bearing_moving_window_size = 50 # CRS units
