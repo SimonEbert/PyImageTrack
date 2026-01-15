@@ -8,6 +8,7 @@ import argparse
 import csv
 import os
 from pathlib import Path
+import multiprocessing as mp
 
 try:
     import tomllib
@@ -34,14 +35,15 @@ from .Cache import (
 )
 
 
-def _load_config(path: str) -> dict:
-    path_obj = Path(path)
+def _load_config(path: str | Path) -> dict:
+    path_obj = Path(path).expanduser()
+
     if not path_obj.is_absolute():
-        # Resolve relative config paths from the repo root to keep CLI stable.
-        repo_root = Path(__file__).resolve()
-        while repo_root != repo_root.parent and not (repo_root / "pyproject.toml").exists():
-            repo_root = repo_root.parent
-        path_obj = repo_root / path_obj
+        path_obj = path_obj.resolve()  # relative to CWD
+
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Config file not found: {path_obj}")
+
     with path_obj.open("rb") as f:
         return tomllib.load(f)
 
@@ -66,92 +68,6 @@ def _as_optional_value(value):
     return value
 
 
-# ==============================
-# CONFIG (TOML)
-# ==============================
-parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
-parser.add_argument("--config", required=True, help="Path to TOML config file")
-args = parser.parse_args()
-
-cfg = _load_config(args.config)
-
-input_folder = _require(cfg, "paths", "input_folder")
-output_folder = _require(cfg, "paths", "output_folder")
-
-date_csv_path = _as_optional_value(_get(cfg, "paths", "date_csv_path"))
-pairs_csv_path = _as_optional_value(_get(cfg, "paths", "pairs_csv_path"))
-
-poly_outside_filename = _require(cfg, "polygons", "outside_filename")
-poly_inside_filename = _require(cfg, "polygons", "inside_filename")
-poly_CRS = _require(cfg, "polygons", "crs_epsg")
-poly_CRS = None if poly_CRS == "none" else poly_CRS
-
-pairing_mode = _require(cfg, "pairing", "mode")
-
-use_no_georeferencing = bool(_get(cfg, "fake_georef", "use_no_georeferencing", False))
-fake_pixel_size = float(_get(cfg, "fake_georef", "fake_pixel_size", 1.0))
-fake_crs_epsg = _as_optional_value(_get(cfg, "fake_georef", "fake_crs_epsg", poly_CRS))
-
-downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
-downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
-
-do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
-do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
-do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
-do_plotting = bool(_get(cfg, "flags", "do_plotting", True))
-do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
-
-use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
-use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
-force_recompute_alignment = bool(_get(cfg, "cache", "force_recompute_alignment", False))
-force_recompute_tracking = bool(_get(cfg, "cache", "force_recompute_tracking", False))
-
-write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
-
-# adaptive tracking window options
-use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
-
-# ==============================
-# PARAMETERS (alignment, tracking, filter)
-# ==============================
-alignment_params = AlignmentParameters({
-    "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
-    # search extent tuple: (right, left, down, up) in pixels around the control cell
-    "control_search_extent_px": tuple(_require(cfg, "alignment", "control_search_extent_px")),
-    "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
-    "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
-    "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
-})
-
-tracking_params = TrackingParameters({
-    "image_bands": _require(cfg, "tracking", "image_bands"),
-    "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
-    "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
-    "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
-    # search extent tuple: (right, left, down, up) in pixels around the movement cell
-    # usually this refers to the offset in px between the images,
-    # but if the adaptive mode is used, this means the expected offset in px per year
-    "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
-})
-
-filter_params = FilterParameters({
-    "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
-    "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
-    "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
-    "difference_movement_bearing_moving_window_size": _require(cfg, "filter", "difference_movement_bearing_moving_window_size"),
-    "standard_deviation_movement_bearing_threshold": _require(cfg, "filter", "standard_deviation_movement_bearing_threshold"),
-    "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_bearing_moving_window_size"),
-    "difference_movement_rate_threshold": _require(cfg, "filter", "difference_movement_rate_threshold"),
-    "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
-    "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
-    "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
-})
-
-# ==============================
-# SAVE OPTIONS (final outputs)
-# ==============================
-save_files = list(_require(cfg, "save", "files"))
-
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
     Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
@@ -174,10 +90,103 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
     return (one(px), one(nx), one(py), one(ny))
 
 
-# ==============================
-# MAIN
-# ==============================
-def main():
+# Entry point for running from Python script (is also accessed from command line entry point)
+def run_from_config(config_path: str):
+    """
+    IMPORTANT: When calling from Python code, wrap your entry point in
+    if __name__ == "__main__": ...
+
+    """
+    # ==============================
+    # CONFIG (TOML)
+    # ==============================
+    cfg = _load_config(config_path)
+    input_folder = _require(cfg, "paths", "input_folder")
+    output_folder = _require(cfg, "paths", "output_folder")
+
+    date_csv_path = _as_optional_value(_get(cfg, "paths", "date_csv_path"))
+    pairs_csv_path = _as_optional_value(_get(cfg, "paths", "pairs_csv_path"))
+
+    poly_outside_filename = _require(cfg, "polygons", "outside_filename")
+    poly_inside_filename = _require(cfg, "polygons", "inside_filename")
+    poly_CRS = _require(cfg, "polygons", "crs_epsg")
+    poly_CRS = None if poly_CRS == "none" else poly_CRS
+
+    pairing_mode = _require(cfg, "pairing", "mode")
+
+    use_no_georeferencing = bool(_get(cfg, "no_georef", "use_no_georeferencing", False))
+    fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
+    fake_crs_epsg = _as_optional_value(_get(cfg, "no_georef", "fake_crs_epsg", poly_CRS))
+
+    downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
+    downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
+
+    do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
+    do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
+    do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
+    do_plotting = bool(_get(cfg, "flags", "do_plotting", True))
+    do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
+
+    use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
+    use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
+    force_recompute_alignment = bool(_get(cfg, "cache", "force_recompute_alignment", False))
+    force_recompute_tracking = bool(_get(cfg, "cache", "force_recompute_tracking", False))
+
+    write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
+
+    # adaptive tracking window options
+    use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
+
+    # ==============================
+    # PARAMETERS (alignment, tracking, filter)
+    # ==============================
+    alignment_params = AlignmentParameters({
+        "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
+        # search extent tuple: (right, left, down, up) in pixels around the control cell
+        "control_search_extent_px": tuple(_require(cfg, "alignment", "control_search_extent_px")),
+        "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
+        "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
+        "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
+    })
+
+    tracking_params = TrackingParameters({
+        "image_bands": _require(cfg, "tracking", "image_bands"),
+        "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
+        "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
+        "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
+        # search extent tuple: (right, left, down, up) in pixels around the movement cell
+        # usually this refers to the offset in px between the images,
+        # but if the adaptive mode is used, this means the expected offset in px per year
+        "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
+    })
+
+    filter_params = FilterParameters({
+        "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
+        "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
+        "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
+        "difference_movement_bearing_moving_window_size": _require(cfg, "filter",
+                                                                   "difference_movement_bearing_moving_window_size"),
+        "standard_deviation_movement_bearing_threshold": _require(cfg, "filter",
+                                                                  "standard_deviation_movement_bearing_threshold"),
+        "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter",
+                                                                           "standard_deviation_movement_bearing_moving_window_size"),
+        "difference_movement_rate_threshold": _require(cfg, "filter", "difference_movement_rate_threshold"),
+        "difference_movement_rate_moving_window_size": _require(cfg, "filter",
+                                                                "difference_movement_rate_moving_window_size"),
+        "standard_deviation_movement_rate_threshold": _require(cfg, "filter",
+                                                               "standard_deviation_movement_rate_threshold"),
+        "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter",
+                                                                        "standard_deviation_movement_rate_moving_window_size"),
+    })
+
+    # ==============================
+    # SAVE OPTIONS (final outputs)
+    # ==============================
+    save_files = list(_require(cfg, "save", "files"))
+
+
+
+
     # Allow JPG/JPEG only if explicitly opted into fake georeferencing
     extensions = (".tif", ".tiff") if not use_no_georeferencing else (".tif", ".tiff", ".jpg", ".jpeg")
 
@@ -231,7 +240,7 @@ def main():
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
 
-        try:
+        if True:# try
             # compute years_between (hour-precise)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
@@ -420,7 +429,7 @@ def main():
 
             successes.append((year1, year2))
 
-        except Exception as e:
+        else:# except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")
@@ -430,6 +439,19 @@ def main():
     print(f"\nSkipped: {len(skipped)} pairs")
     for s in skipped:
         print(f"   - {s[0]} → {s[1]} | Reason: {s[2]}")
+
+
+# CLI entry point
+# ==============================
+# MAIN
+# ==============================
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
+    parser.add_argument("--config", required=True, help="Path to TOML config file")
+    args = parser.parse_args()
+
+    run_from_config(args.config)
+
 
 if __name__ == "__main__":
     main()

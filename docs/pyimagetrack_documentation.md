@@ -12,6 +12,21 @@ pyimagetrack-run --config configs/drone_hs.toml
 Config paths are resolved relative to the repo root.
 The CLI invokes `PyImageTrack.run_pipeline:main` under the hood.
 
+## Entry point for Python Scripts
+The package provides the possibility of accessing the tracking routine from another Python script. This is done using 
+the `run_from_config` function that can be imported by
+```
+from PyImageTrack import run_from_config
+```
+IMPORTANT: When calling the tracking routine from within another Python Script or Project, the process must always be 
+guarded in the following way
+```
+if __name__ == "__main__":
+    run_from_config(path_to_config)
+```
+This is due to the tracking routine making use of the multiprocessing package for parallelization and without this
+safety measure, the tracking routine will be called several times with identical parameters.
+
 ## Configuration Files (TOML)
 Configs are TOML files and share the same structure. Use these as templates:
 - `configs/drone_hs.toml`
@@ -22,7 +37,7 @@ Configs are TOML files and share the same structure. Use these as templates:
 - `[paths]`: input/output folders, optional CSVs for dates/pairs.
 - `[polygons]`: stable/moving area shapefiles and CRS.
 - `[pairing]`: pairing mode (`all`, `first_to_all`, `successive`, `custom`).
-- `[fake_georef]`: enable for non-ortho images (e.g., JPGs).
+- `[no_georef]`: enable for non-ortho images (e.g., JPGs).
 - `[downsampling]`: optional downsampling for fast smoke tests.
 - `[flags]`: alignment/tracking/filtering/plotting toggles.
 - `[cache]`: caching and recompute flags.

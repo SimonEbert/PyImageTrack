@@ -15,7 +15,7 @@ crs_epsg = 32632
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
 mode = "custom"
 
-[fake_georef]
+[no_georef]
 # set true only when processing non-ortho JPGs
 use_no_georeferencing = false
 # 1 px = 1 unit
