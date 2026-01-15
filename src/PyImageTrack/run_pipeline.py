@@ -336,7 +336,7 @@ def main():
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue
-                    if use_alignment_cache:
+                    if not use_alignment_cache:
                         save_alignment_cache(
                             image_pair, align_dir, year1, year2,
                             align_params=alignment_params.__dict__,
@@ -344,7 +344,7 @@ def main():
                             dates={year1: date_1, year2: date_2},
                             save_truecolor_aligned=write_truecolor_aligned,
                         )
-                        print(f"[cache] alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+                        print(f"[output] alignment written to: {align_dir}  (pair {year1}->{year2})")
 
             else:
                 image_pair.valid_alignment_possible = True
