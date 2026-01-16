@@ -1030,6 +1030,16 @@ class ImagePair:
                         + f"\tUsed points: {valid_lod_points} points\n"
                     )
 
+                distance_series = ref_df2.get("movement_distance")
+                statistics_file.write(
+                    "Total movement between images:\n"
+                    + f"\tMean: {_fmt(_nan_stat(distance_series, np.nanmean))}\n"
+                    + f"\tMedian: {_fmt(_nan_stat(distance_series, np.nanmedian))}\n"
+                    + f"\tStandard deviation: {_fmt(_nan_stat(distance_series, np.nanstd))}\n"
+                    + f"\tQ90: {_fmt(_nan_stat(distance_series, lambda s: np.nanquantile(s, 0.9)))}\n"
+                    + f"\tQ99: {_fmt(_nan_stat(distance_series, lambda s: np.nanquantile(s, 0.99)))}\n"
+                )
+
         # --- Parameter logs ---
         with open(
                 f"{folder_path}/parameters_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.txt",
