@@ -21,8 +21,6 @@ use_no_georeferencing = false
 fake_pixel_size = 1.0
 # set true for applying an undistortion step to camera images before tracking
 undistort_image = false
-# use your polygon CRS for fake georef
-fake_crs_epsg = "none"
 
 [downsampling]
 # downsample input images by this integer factor to speed up runs
