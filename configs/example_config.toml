@@ -7,8 +7,8 @@ date_csv_path = "/path/to/input/hillshades/image_dates.csv"
 pairs_csv_path = "/path/to/input/hillshades/image_pairs.csv"
 
 [polygons]
-outside_filename = "stable_area_drone.shp"
-inside_filename = "moving_area_drone.shp"
+outside_filename = "stable_area.shp"
+inside_filename = "moving_area.shp"
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
@@ -38,3 +38,71 @@ use_tracking_cache = true
 use_lod_cache = false
 force_recompute_alignment = false
 force_recompute_tracking = false
+
+[output]
+# if true: additionally write a true-color aligned image
+write_truecolor_aligned = false
+
+[adaptive_tracking_window]
+# If true, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
+use_adaptive_tracking_window = false
+# pixels_per_metre = 1.0
+# maximal_assumed_movement_rate = 3.5
+
+[alignment]
+number_of_control_points = 50
+# search extent tuple: (right, left, down, up) in pixels around the control cell
+control_search_extent_px = [2, 2, 2, 2]
+# px
+control_cell_size = 50
+cross_correlation_threshold_alignment = 0.3
+# px, can be set to "none"
+maximal_alignment_movement = "none"
+
+[tracking]
+image_bands = 0
+# px
+distance_of_tracked_points_px = 100
+# px
+movement_cell_size = 100
+cross_correlation_threshold_movement = 0.1
+# search extent tuple: (right, left, down, up) in pixels around the movement cell
+# usually this refers to the offset in px between the images,
+# but if the adaptive mode is used, this means the expected offset in px per year
+search_extent_px = [5, 5, 5, 5]
+
+[filter]
+level_of_detection_quantile = 0.5
+number_of_points_for_level_of_detection = 50
+difference_movement_bearing_threshold = 360 # degrees
+difference_movement_bearing_moving_window_size = 500 # CRS units
+standard_deviation_movement_bearing_threshold = 360 # degrees
+standard_deviation_movement_bearing_moving_window_size = 500 # CRS units
+difference_movement_rate_threshold = 10 # CRS units / year
+difference_movement_rate_moving_window_size = 10 # CRS units
+standard_deviation_movement_rate_threshold = 10 # CRS units / year
+standard_deviation_movement_rate_moving_window_size = 50 # CRS units
+
+[save]
+# optional outputs:
+# "first_image_matrix"
+# "second_image_matrix"
+# "LoD_points_geojson"
+# "control_points_geojson"
+files = [
+  "movement_bearing_valid_tif",
+  "movement_rate_valid_tif",
+  "movement_bearing_outlier_filtered_tif",
+  "movement_rate_outlier_filtered_tif",
+  "movement_bearing_LoD_filtered_tif",
+  "movement_rate_LoD_filtered_tif",
+  "movement_bearing_all_tif",
+  "movement_rate_all_tif",
+  "mask_invalid_tif",
+  "mask_LoD_tif",
+  "mask_outlier_md_tif",
+  "mask_outlier_msd_tif",
+  "mask_outlier_bd_tif",
+  "mask_outlier_bsd_tif",
+  "statistical_parameters_txt",
+]
