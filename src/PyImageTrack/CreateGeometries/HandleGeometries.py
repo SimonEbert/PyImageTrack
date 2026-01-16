@@ -259,6 +259,3 @@ def get_submatrix_rect_from_extents(central_index, extents, matrix):
 
     center_in_sub = (row_c - r0, col_c - c0)
     return sub, center_in_sub
-
-
-

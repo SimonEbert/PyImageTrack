@@ -24,12 +24,18 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
     os.makedirs(align_dir, exist_ok=True)
     aligned_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
 
+    crs = image_pair.crs
+    if crs is not None and not isinstance(crs, RioCRS):
+        if isinstance(crs, str) and crs.strip().isdigit():
+            crs = int(crs.strip())
+        crs = RioCRS.from_user_input(crs)
+
     # write main aligned image (working image used for tracking)
     profile = {
         "driver": "GTiff",
         "count": 1 if image_pair.image2_matrix.ndim == 2 else image_pair.image2_matrix.shape[0],
         "dtype": str(image_pair.image2_matrix.dtype),
-        "crs": str(image_pair.crs),
+        "crs": crs,
         "width": image_pair.image2_matrix.shape[-1],
         "height": image_pair.image2_matrix.shape[-2],
         "transform": image_pair.image2_transform,
@@ -100,6 +106,12 @@ def tracking_cache_paths(track_dir: str, year1: str, year2: str):
     meta_json   = os.path.join(track_dir, f"tracking_meta_{year1}_{year2}.json")
     return raw_geojson, meta_json
 
+
+def lod_cache_paths(track_dir: str, year1: str, year2: str):
+    lod_geojson = os.path.join(track_dir, f"lod_points_{year1}_{year2}.geojson")
+    meta_json   = os.path.join(track_dir, f"lod_meta_{year1}_{year2}.json")
+    return lod_geojson, meta_json
+
 def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
                         track_params: dict, filenames: dict, dates: dict, version: str = "v1"):
     os.makedirs(track_dir, exist_ok=True)
@@ -124,6 +136,35 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
         return False
     try:
         image_pair.tracking_results = gpd.read_file(raw_geojson)
+        return True
+    except Exception:
+        return False
+
+
+def save_lod_cache(image_pair, track_dir: str, year1: str, year2: str,
+                   filenames: dict, dates: dict, version: str = "v1"):
+    os.makedirs(track_dir, exist_ok=True)
+    lod_geojson, meta_json = lod_cache_paths(track_dir, year1, year2)
+    if image_pair.level_of_detection_points is None or len(image_pair.level_of_detection_points) == 0:
+        return
+    image_pair.level_of_detection_points.to_file(lod_geojson, driver="GeoJSON")
+    meta = {
+        "pair": {"year1": year1, "year2": year2, "date1": dates[year1], "date2": dates[year2]},
+        "files": {"file1": filenames[year1], "file2": filenames[year2]},
+        "files_hash": {k: _sha256(v) for k, v in filenames.items()},
+        "crs": str(image_pair.crs),
+        "script_version": version,
+    }
+    with open(meta_json, "w", encoding="utf-8") as f:
+        json.dump(meta, f, indent=2)
+
+
+def load_lod_cache(image_pair, track_dir: str, year1: str, year2: str) -> bool:
+    lod_geojson, _meta_json = lod_cache_paths(track_dir, year1, year2)
+    if not os.path.exists(lod_geojson):
+        return False
+    try:
+        image_pair.level_of_detection_points = gpd.read_file(lod_geojson)
         return True
     except Exception:
         return False
