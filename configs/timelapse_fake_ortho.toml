@@ -7,8 +7,8 @@ date_csv_path = "../input/timelapse_west_weekly/image_dates.csv"
 pairs_csv_path = "../input/timelapse_west_weekly/image_pairs.csv"
 
 [polygons]
-outside_filename = "stable_area_western2.shp"
-inside_filename = "moving_area_western2.shp"
+outside_filename = "stable_area_western.shp"
+inside_filename = "moving_area_western.shp"
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)

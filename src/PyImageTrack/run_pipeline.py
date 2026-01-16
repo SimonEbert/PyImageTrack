@@ -19,6 +19,7 @@ except ModuleNotFoundError as exc:
 import geopandas as gpd
 import numpy as np
 import rasterio
+from pyproj import CRS as PyprojCRS
 
 from .ImageTracking.ImagePair import ImagePair
 from .Parameters.FilterParameters import FilterParameters
@@ -50,7 +51,11 @@ def _resolve_config_path(path: str) -> Path:
 
 
 def _load_config(path: str | Path) -> dict:
-    path_obj = Path(path)
+    path_obj = Path(path).expanduser()
+    if not path_obj.is_absolute():
+        path_obj = path_obj.resolve()
+    if not path_obj.exists():
+        raise FileNotFoundError(f"Config file not found: {path_obj}")
     with path_obj.open("rb") as f:
         return tomllib.load(f)
 
@@ -88,9 +93,43 @@ def _crs_label(crs) -> str:
     return "none" if crs is None else str(crs)
 
 
-def _read_image_crs(path: str):
-    with rasterio.open(path, "r") as src:
-        return src.crs
+def _normalize_crs(crs):
+    if crs is None:
+        return None
+    return PyprojCRS.from_user_input(crs)
+
+
+def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
+    with rasterio.open(image_path_1, "r") as file1, rasterio.open(image_path_2, "r") as file2:
+        image_crs_1 = file1.crs
+        image_crs_2 = file2.crs
+
+    if image_crs_1 is None and image_crs_2 is None:
+        image_crs = None
+    elif image_crs_1 is None or image_crs_2 is None:
+        raise ValueError(
+            f"CRS missing in one image: {image_path_1} crs={image_crs_1}, "
+            f"{image_path_2} crs={image_crs_2}."
+        )
+    else:
+        if _normalize_crs(image_crs_1) != _normalize_crs(image_crs_2):
+            raise ValueError(
+                f"Image CRS mismatch: {image_path_1} crs={image_crs_1}, {image_path_2} crs={image_crs_2}."
+            )
+        image_crs = image_crs_1
+
+    if polygons_crs is None and image_crs is None:
+        return None
+    if polygons_crs is None or image_crs is None:
+        raise ValueError(
+            f"CRS missing for {'polygons' if polygons_crs is None else 'images'}; "
+            "both polygons and images must have CRS or neither."
+        )
+    if _normalize_crs(polygons_crs) != _normalize_crs(image_crs):
+        raise ValueError(
+            f"CRS mismatch between polygons ({polygons_crs}) and images ({image_crs})."
+        )
+    return image_crs
 
 
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
@@ -152,15 +191,17 @@ def run_from_config(config_path: str):
     pairing_mode = _require(cfg, "pairing", "mode")
 
     use_no_georeferencing = bool(_get(cfg, "no_georef", "use_no_georeferencing", False))
-    if use_no_georeferencing:
-        # ToDO: Possibly remove the next line?
-        fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
-        undistort_image = bool(_require(cfg, "no_georef", "undistort_image"))
-        if undistort_image:
-            camera_intrinsics_matrix = np.array(_as_optional_value(_get(cfg,"no_georef",
-                                                                            "camera_intrinsics_matrix")))
-            camera_distortion_coefficients = np.array(_as_optional_value(_get(cfg,"no_georef",
-                                                                                  "camera_distortion_coefficients")))
+    fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
+    undistort_image = bool(_get(cfg, "no_georef", "undistort_image", False))
+    camera_intrinsics_matrix = None
+    camera_distortion_coefficients = None
+    if undistort_image:
+        camera_intrinsics_matrix = np.array(
+            _require(cfg, "no_georef", "camera_intrinsics_matrix")
+        )
+        camera_distortion_coefficients = np.array(
+            _require(cfg, "no_georef", "camera_distortion_coefficients")
+        )
 
     downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
     downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
@@ -238,26 +279,24 @@ def run_from_config(config_path: str):
     print(f"Image pairs to process ({pairing_mode}): {len(year_pairs)}")
 
     polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename))
-    polygon_inside  = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
-
-    polygon_crs_outside = polygon_outside.crs
-    polygon_crs_inside = polygon_inside.crs
-    if (polygon_crs_outside is None) != (polygon_crs_inside is None):
+    polygon_inside = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
+    polygon_outside_crs = polygon_outside.crs
+    polygon_inside_crs = polygon_inside.crs
+    if (polygon_outside_crs is None) != (polygon_inside_crs is None):
         raise ValueError(
             "Polygon CRS mismatch: outside has "
-            + _crs_label(polygon_crs_outside)
+            + _crs_label(polygon_outside_crs)
             + ", inside has "
-            + _crs_label(polygon_crs_inside)
+            + _crs_label(polygon_inside_crs)
         )
-    if polygon_crs_outside is not None and polygon_crs_outside != polygon_crs_inside:
+    if polygon_outside_crs is not None and _normalize_crs(polygon_outside_crs) != _normalize_crs(polygon_inside_crs):
         raise ValueError(
             "Polygon CRS mismatch: outside has "
-            + _crs_label(polygon_crs_outside)
+            + _crs_label(polygon_outside_crs)
             + ", inside has "
-            + _crs_label(polygon_crs_inside)
+            + _crs_label(polygon_inside_crs)
         )
-    polygon_crs = polygon_crs_outside
-
+    polygons_crs = polygon_outside_crs
 
     align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
@@ -292,37 +331,7 @@ def run_from_config(config_path: str):
         print(f"   File 2: {filename_2}")
 
         try:
-            image_crs_1 = _read_image_crs(filename_1)
-            image_crs_2 = _read_image_crs(filename_2)
-            if (image_crs_1 is None) != (image_crs_2 is None):
-                raise ValueError(
-                    "Image CRS mismatch: file 1 has "
-                    + _crs_label(image_crs_1)
-                    + ", file 2 has "
-                    + _crs_label(image_crs_2)
-                )
-            if image_crs_1 is not None and image_crs_1 != image_crs_2:
-                raise ValueError(
-                    "Image CRS mismatch: file 1 has "
-                    + _crs_label(image_crs_1)
-                    + ", file 2 has "
-                    + _crs_label(image_crs_2)
-                )
-            image_crs = image_crs_1
-            if (image_crs is None) != (polygon_crs is None):
-                raise ValueError(
-                    "CRS mismatch between images and polygons: images have "
-                    + _crs_label(image_crs)
-                    + ", polygons have "
-                    + _crs_label(polygon_crs)
-                )
-            if image_crs is not None and image_crs != polygon_crs:
-                raise ValueError(
-                    "CRS mismatch between images and polygons: images have "
-                    + _crs_label(image_crs)
-                    + ", polygons have "
-                    + _crs_label(polygon_crs)
-                )
+            image_crs = _resolve_common_crs(polygons_crs, filename_1, filename_2)
             # compute years_between (hour-precise)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
@@ -397,11 +406,11 @@ def run_from_config(config_path: str):
             param_dict["use_no_georeferencing"]             = bool(use_no_georeferencing)
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
             param_dict["downsample_factor"]                 = int(downsample_factor)
-            param_dict["crs"]                               = image_crs
             param_dict["undistort_image"]                   = undistort_image
             param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
             param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
 
+            param_dict["crs"]                               = image_crs
  
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
@@ -430,7 +439,7 @@ def run_from_config(config_path: str):
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue
-                    if not use_alignment_cache:
+                    if use_alignment_cache:
                         save_alignment_cache(
                             image_pair, align_dir, year1, year2,
                             align_params=alignment_params.__dict__,
