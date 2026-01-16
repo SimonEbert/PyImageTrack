@@ -25,3 +25,7 @@ output/
 
 # local artifacts
 wsl
+
+# local configs (keep example template)
+configs/*.toml
+!configs/example_config.toml
