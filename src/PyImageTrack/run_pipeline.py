@@ -8,7 +8,7 @@ import argparse
 import csv
 import os
 from pathlib import Path
-import multiprocessing as mp
+import numpy as np
 
 try:
     import tomllib
@@ -115,8 +115,16 @@ def run_from_config(config_path: str):
     pairing_mode = _require(cfg, "pairing", "mode")
 
     use_no_georeferencing = bool(_get(cfg, "no_georef", "use_no_georeferencing", False))
-    fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
-    fake_crs_epsg = _as_optional_value(_get(cfg, "no_georef", "fake_crs_epsg", poly_CRS))
+    if use_no_georeferencing:
+        # ToDO: Possibly remove the next two lines?
+        fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
+        fake_crs_epsg = _as_optional_value(_get(cfg, "no_georef", "fake_crs_epsg", poly_CRS))
+        undistort_image = bool(_require(cfg, "no_georef", "undistort_image"))
+        if undistort_image:
+            camera_intrinsics_matrix = np.array(_as_optional_value(_get(cfg,"no_georef",
+                                                                        "camera_intrinsics_matrix")))
+            camera_distortion_coefficients = np.array(_as_optional_value(_get(cfg,"no_georef",
+                                                                              "camera_distortion_coefficients")))
 
     downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
     downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
@@ -312,11 +320,15 @@ def run_from_config(config_path: str):
             param_dict["control_search_extent_deltas"]      = base_align_deltas         # user input (for logs)
             param_dict["search_extent_px"]                  = adaptive_extents          # used by code
             param_dict["search_extent_deltas"]              = base_track_deltas         # user input (for logs)
-            param_dict["use_no_georeferencing"]           = bool(use_no_georeferencing)
+            param_dict["use_no_georeferencing"]             = bool(use_no_georeferencing)
             # param_dict["fake_crs_epsg"]                     = int(fake_crs_epsg) if fake_crs_epsg is not None else None
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
             param_dict["downsample_factor"]                 = int(downsample_factor)
             param_dict["crs"]                               = poly_CRS
+            param_dict["undistort_image"]                   = undistort_image
+            param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
+            param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
+
  
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(

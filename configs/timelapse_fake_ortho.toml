@@ -20,6 +20,8 @@ mode = "first_to_all"
 use_no_georeferencing = true
 # 1 px = 1 unit
 fake_pixel_size = 1.0
+# set true for applying an undistortion step to camera images before tracking
+undistort_image = false
 # use your polygon CRS for fake georef
 fake_crs_epsg = 32632
 
