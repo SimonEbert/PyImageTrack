@@ -44,6 +44,11 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
     # for multichannel images, flattening ensures that always the same band is being compared
     tracked_vector = tracked_cell_matrix.flatten()
 
+    if tracked_vector.size == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="cross-correlation",
+                               cross_correlation_coefficient=np.nan,
+                               tracking_success=False)
+
     # normalize the tracked vector
     tracked_vector = tracked_vector - np.mean(tracked_vector)
 
@@ -60,6 +65,8 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarra
                                                             search_cell_matrix)
             # flatten the comparison cell matrix
             search_subcell_vector = search_subcell_matrix.flatten()
+            if search_subcell_vector.size == 0:
+                continue
             # if np.linalg.norm(search_subcell_vector) == 0:
             #     continue
 
@@ -273,11 +280,26 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     # flatten the comparison cell matrix
     moved_cell_submatrix_vector = moved_cell_matrix.flatten()
 
+    if moved_cell_submatrix_vector.size == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                               tracking_success=False)
+
     moved_cell_submatrix_vector = moved_cell_submatrix_vector - np.mean(moved_cell_submatrix_vector)
-    moved_cell_submatrix_vector = moved_cell_submatrix_vector / np.linalg.norm(moved_cell_submatrix_vector)
+    moved_cell_norm = np.linalg.norm(moved_cell_submatrix_vector)
+    if moved_cell_norm == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                               tracking_success=False)
+    moved_cell_submatrix_vector = moved_cell_submatrix_vector / moved_cell_norm
     tracked_cell_vector = tracked_cell_matrix.flatten()
+    if tracked_cell_vector.size == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                               tracking_success=False)
     tracked_cell_vector = tracked_cell_vector - np.mean(tracked_cell_vector)
-    tracked_cell_vector = tracked_cell_vector / np.linalg.norm(tracked_cell_vector)
+    tracked_cell_norm = np.linalg.norm(tracked_cell_vector)
+    if tracked_cell_norm == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                               tracking_success=False)
+    tracked_cell_vector = tracked_cell_vector / tracked_cell_norm
     corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
     # if corr > 0.85:
     #      rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")

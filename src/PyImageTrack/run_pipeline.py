@@ -280,6 +280,9 @@ def run_from_config(config_path: str):
 
     polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename))
     polygon_inside = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
+    if use_no_georeferencing:
+        polygon_outside = polygon_outside.set_crs(None, allow_override=True)
+        polygon_inside = polygon_inside.set_crs(None, allow_override=True)
     polygon_outside_crs = polygon_outside.crs
     polygon_inside_crs = polygon_inside.crs
     if (polygon_outside_crs is None) != (polygon_inside_crs is None):
@@ -331,7 +334,7 @@ def run_from_config(config_path: str):
         print(f"   File 2: {filename_2}")
 
         try:
-            image_crs = _resolve_common_crs(polygons_crs, filename_1, filename_2)
+            image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
             # compute years_between (hour-precise)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
@@ -462,7 +465,12 @@ def run_from_config(config_path: str):
                 if use_tracking_cache and not force_recompute_tracking:
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
                     if used_cache_tracking:
-                        print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
+                        if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
+                            used_cache_tracking = False
+                            image_pair.tracking_results = None
+                            print("[CACHE] Tracking cache CRS not compatible with no-georef; recomputing.")
+                        else:
+                            print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
 
 
                 if not used_cache_tracking:
@@ -501,7 +509,12 @@ def run_from_config(config_path: str):
                     if use_lod_cache and not force_recompute_lod:
                         used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
                         if used_cache_lod:
-                            print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
+                            if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs", None) is not None:
+                                used_cache_lod = False
+                                image_pair.level_of_detection_points = None
+                                print("[CACHE] LoD cache CRS not compatible with no-georef; recomputing.")
+                            else:
+                                print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
 
                     if not used_cache_lod:
                         lod_points = random_points_on_polygon_by_number(

@@ -317,7 +317,6 @@ class ImagePair:
         Returns
         -------
         """
-        print("Starting image alignment.")
         if reference_area.crs != self.crs:
             raise ValueError("Got reference area with crs " + str(reference_area.crs) + " and images with crs "
                              + str(self.crs) + ". Reference area and images are supposed to have the same crs.")
