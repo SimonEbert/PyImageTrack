@@ -57,6 +57,7 @@ Notes:
 - Use `pip install .` (no `-e`) if you want a fixed install from this repo.
 - Dependencies are installed automatically when you use `pip install -e .` or `pip install .`.
 - Use `[downsampling]` in your config to speed up smoke tests (`downsample_factor = 4`).
+- Input filenames must start with the date token (e.g., `YYYY-MM-DD`, `YYYYMMDD`, or `YYYYMMDD-HHMMSS`).
 
 ## Project layout
 
