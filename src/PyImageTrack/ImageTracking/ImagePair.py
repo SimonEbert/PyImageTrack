@@ -873,7 +873,7 @@ class ImagePair:
 
         if "first_image_matrix" in save_files:
             _save_raster_as_tif(
-                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format="%Y-%m-%d")}.jpeg",
+                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
                 raster=self.image1_matrix.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -882,7 +882,7 @@ class ImagePair:
 
         if "second_image_matrix" in save_files:
             _save_raster_as_tif(
-                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.jpeg",
+                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
                 raster=self.image2_matrix.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -904,7 +904,7 @@ class ImagePair:
         if raster_valid is not None:
             if "movement_bearing_valid_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_valid_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_bearing_valid_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_valid["raster"]["movement_bearing_pixels"],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
@@ -912,7 +912,7 @@ class ImagePair:
 
             if "movement_rate_valid_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_valid_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_rate_valid_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_valid["raster"][self.displacement_column_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
@@ -922,14 +922,14 @@ class ImagePair:
         if raster_outlier_filtered is not None:
             if "movement_bearing_outlier_filtered_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_outlier_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_bearing_outlier_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_outlier_filtered["raster"]["movement_bearing_pixels"],
                     transform=raster_outlier_filtered["transform"],
                     crs=raster_outlier_filtered["crs"]
                 )
             if "movement_rate_outlier_filtered_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_outlier_filtered["raster"][self.displacement_column_name],
                     transform=raster_outlier_filtered["transform"],
                     crs=raster_outlier_filtered["crs"]
@@ -939,14 +939,14 @@ class ImagePair:
         if raster_lod_filtered is not None:
             if "movement_bearing_LoD_filtered_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_LoD_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_bearing_LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_lod_filtered["raster"]["movement_bearing_pixels"],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
             if "movement_rate_LoD_filtered_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_lod_filtered["raster"][self.displacement_column_name],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
@@ -956,7 +956,7 @@ class ImagePair:
         if raster_all is not None:
             if "movement_bearing_all_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_all_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_bearing_all_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_all["raster"]["movement_bearing_pixels"],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -964,7 +964,7 @@ class ImagePair:
 
             if "movement_rate_all_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_all_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/movement_rate_all_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_all["raster"][self.displacement_column_name],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -979,7 +979,7 @@ class ImagePair:
             invalid_raster = _make_raster(invalid_mask, ["invalid_int"])
             if invalid_raster is not None:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/mask_invalid_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                    path=f"{folder_path}/mask_invalid_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=invalid_raster["raster"]["invalid_int"],
                     transform=invalid_raster["transform"],
                     crs=invalid_raster["crs"]
@@ -994,7 +994,7 @@ class ImagePair:
                     mask_grid = _make_raster(mask_df, ["mask_int"])
                     if mask_grid is not None:
                         _save_raster_as_tif(
-                            path=f"{folder_path}/{filename_root}_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                            path=f"{folder_path}/{filename_root}_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                             raster=mask_grid["raster"]["mask_int"],
                             transform=mask_grid["transform"],
                             crs=mask_grid["crs"]
@@ -1008,13 +1008,13 @@ class ImagePair:
         # LoD points
         if "LoD_points_geojson" in save_files and self.level_of_detection_points is not None:
             self.level_of_detection_points.to_file(
-                f"{folder_path}/LoD_points_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.fgb",
+                f"{folder_path}/LoD_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
                 driver="FlatGeobuf"
             )
 
         if "control_points_geojson" in save_files and self.tracked_control_points is not None:
             self.tracked_control_points.to_file(
-                f"{folder_path}/control_points_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.fgb",
+                f"{folder_path}/control_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
                 driver="FlatGeobuf"
             )
 
@@ -1036,7 +1036,7 @@ class ImagePair:
                     return np.nan
 
             with (open(
-                    f"{folder_path}/statistical_results_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.txt",
+                    f"{folder_path}/statistical_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
                     "w",
             ) as statistics_file):
                 lod_str = (
@@ -1134,21 +1134,21 @@ class ImagePair:
 
         # --- Parameter logs ---
         with open(
-                f"{folder_path}/parameters_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.txt",
+                f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
                 "w",
         ) as text_file:
             text_file.write(self.alignment_parameters.__str__())
 
         if self.tracking_parameters is not None:
             with open(
-                    f"{folder_path}/parameters_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.txt",
+                    f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
                     "a",
             ) as text_file:
                 text_file.write(self.tracking_parameters.__str__())
 
         if self.filter_parameters is not None:
-            with (open(folder_path + "/parameters_" + str(self.image1_observation_date.strftime(format="%Y-%m-%d"))
-                       + "_" + str(self.image2_observation_date.strftime(format="%Y-%m-%d"))
+            with (open(folder_path + "/parameters_" + str(self.image1_observation_date.strftime(format='%Y-%m-%d'))
+                       + "_" + str(self.image2_observation_date.strftime(format='%Y-%m-%d'))
                        + ".txt", "a") as text_file):
                 text_file.write(self.filter_parameters.__str__())
 
@@ -1160,7 +1160,7 @@ class ImagePair:
                 lod_raster = _make_raster(lod_mask, ["is_below_LoD_int"])
                 if lod_raster is not None:
                     _save_raster_as_tif(
-                        path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
+                        path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                         raster=lod_raster["raster"]["is_below_LoD_int"],
                         transform=lod_raster["transform"],
                         crs=lod_raster["crs"]
@@ -1170,14 +1170,14 @@ class ImagePair:
                 self.image1_matrix,
                 self.image1_transform,
                 self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.jpg",
+                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
             )
         else:
             plot_movement_of_points(
                 self.image1_matrix,
                 self.image1_transform,
                 self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.jpg",
+                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
             )
 
     def load_results(self, file_path, reference_area):
