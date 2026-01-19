@@ -153,7 +153,6 @@ def run_from_config(config_path: str):
 
     use_no_georeferencing = bool(_get(cfg, "no_georef", "use_no_georeferencing", False))
     if use_no_georeferencing:
-        # ToDO: Possibly remove the next line?
         fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
         undistort_image = bool(_require(cfg, "no_georef", "undistort_image"))
         if undistort_image:
@@ -161,6 +160,7 @@ def run_from_config(config_path: str):
                                                                             "camera_intrinsics_matrix")))
             camera_distortion_coefficients = np.array(_as_optional_value(_get(cfg,"no_georef",
                                                                                   "camera_distortion_coefficients")))
+        convert_to_3d_displacement = bool(_get(cfg, "no_georef", "convert_to_3d_displacement", False))
 
     downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
     downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
@@ -291,7 +291,7 @@ def run_from_config(config_path: str):
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
 
-        try:
+        if True:
             image_crs_1 = _read_image_crs(filename_1)
             image_crs_2 = _read_image_crs(filename_2)
             if (image_crs_1 is None) != (image_crs_2 is None):
@@ -401,6 +401,7 @@ def run_from_config(config_path: str):
             param_dict["undistort_image"]                   = undistort_image
             param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
             param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
+            param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
 
  
             image_pair = ImagePair(parameter_dict=param_dict)
@@ -556,7 +557,7 @@ def run_from_config(config_path: str):
 
             successes.append((year1, year2))
 
-        except Exception as e:
+        else: #except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")

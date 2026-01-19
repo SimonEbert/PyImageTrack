@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.plot
+from matplotlib import image as mpimg
 from rasterio.crs import CRS
 from geocube.api.core import make_geocube
 from shapely.geometry import box
@@ -25,6 +26,8 @@ from ..CreateGeometries.HandleGeometries import (
     grid_points_on_polygon_by_distance,
     random_points_on_polygon_by_number,
 )
+from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_position_image
+
 # filter functions
 from ..DataProcessing.DataPostprocessing import (
     calculate_lod_points,
@@ -35,7 +38,6 @@ from ..DataProcessing.DataPostprocessing import (
 from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images
 from ..DataProcessing.ImagePreprocessing import undistort_camera_image
 from .AlignImages import align_images_lsm_scarce
-# Alignment and Tracking functions
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
@@ -65,6 +67,10 @@ class ImagePair:
         self.image2_matrix_original = None
         self.image2_matrix_truecolor = None
 
+        # Optional: Store position images corresponding to non-georeferenced images for 3d displacement calculation
+        self.position_image_time1 = None
+        self.position_image_time2 = None
+
         # Parameters
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
         self.filter_parameters = None
@@ -86,6 +92,7 @@ class ImagePair:
         self.undistort_image = parameter_dict.get("undistort_image", False)
         self.camera_intrinsics_matrix = parameter_dict.get("camera_intrinsics_matrix", None)
         self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
+        self.convert_to_3d_displacement = parameter_dict.get("convert_to_3d_displacement", False)
 
     def _effective_pixel_size(self) -> float:
         """CRS units per pixel (assumes square pixels)."""
@@ -203,6 +210,20 @@ class ImagePair:
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2
+
+
+            if self.convert_to_3d_displacement:
+                basename1 = os.path.splitext(os.path.basename(filename_1))[0]
+                basename2 = os.path.splitext(os.path.basename(filename_2))[0]
+                position_image_time1_path = os.path.join(os.path.dirname(filename_1), "Position_images", basename1
+                                                      + "_position.tiff")
+                position_image_time2_path = os.path.join(os.path.dirname(filename_2), "Position_images", basename2
+                                                      + "_position.tiff")
+                position_image_time1 = rasterio.open(position_image_time1_path, 'r').read()
+                position_image_time2 = rasterio.open(position_image_time2_path, 'r').read()
+                self.position_image_time1 = squeeze(position_image_time1)
+                self.position_image_time2 = squeeze(position_image_time2)
+
 
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])
@@ -482,11 +503,13 @@ class ImagePair:
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
 
-        georeferenced_tracked_points = georeference_tracked_points(tracked_pixels=tracked_points,
-                                                                   raster_transform=self.image1_transform,
-                                                                   crs=tracking_area.crs,
-                                                                   years_between_observations=years_between_observations
-                                                                   )
+        if self.convert_to_3d_displacement:
+            georeferenced_tracked_points = calculate_displacement_from_position_image(
+                tracked_points, position_image_time1=self.position_image_time1, position_image_time2=self.position_image_time2)
+        else:
+            georeferenced_tracked_points = georeference_tracked_points(
+                tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
+                years_between_observations=years_between_observations)
 
         return georeferenced_tracked_points
 
@@ -800,7 +823,12 @@ class ImagePair:
                 )
 
         # Grids for various subsets
-        meas = ["movement_bearing_pixels", "movement_distance_per_year"]
+        if self.convert_to_3d_displacement:
+            displacement_row_name = "3d_displacement_distance"
+        else:
+            displacement_row_name = "movement_distance_per_year"
+        meas = ["movement_bearing_pixels", displacement_row_name]
+
         raster_valid = _make_raster(tr_valid, meas)
         raster_outlier_filtered = _make_raster(tr_without_outliers, meas)
         raster_lod_filtered = _make_raster(tr_above_lod, meas)  # above LoD, keep outliers
@@ -821,7 +849,7 @@ class ImagePair:
             if "movement_rate_valid_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_valid_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_valid["raster"]["movement_distance_per_year"],
+                    raster=raster_valid["raster"][displacement_row_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
                     )
@@ -838,7 +866,7 @@ class ImagePair:
             if "movement_rate_outlier_filtered_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_outlier_filtered["raster"]["movement_distance_per_year"],
+                    raster=raster_outlier_filtered["raster"][displacement_row_name],
                     transform=raster_outlier_filtered["transform"],
                     crs=raster_outlier_filtered["crs"]
                 )
@@ -855,7 +883,7 @@ class ImagePair:
             if "movement_rate_LoD_filtered_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_lod_filtered["raster"]["movement_distance_per_year"],
+                    raster=raster_lod_filtered["raster"][displacement_row_name],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
@@ -873,7 +901,7 @@ class ImagePair:
             if "movement_rate_all_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_all_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_all["raster"]["movement_distance_per_year"],
+                    raster=raster_all["raster"][displacement_row_name],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
                 )
@@ -1002,32 +1030,32 @@ class ImagePair:
                 ref_df1 = tr_without_outliers if not tr_without_outliers.empty else tr_all
                 statistics_file.write(
                     "Movement rate with points below LoD:\n"
-                    + f"\tMean: {_fmt(np.nanmean(ref_df1['movement_distance_per_year']))}\n"
-                    + f"\tMedian: {_fmt(np.nanmedian(ref_df1['movement_distance_per_year']))}\n"
-                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df1['movement_distance_per_year']))}\n"
-                    + f"\tQ90: {_fmt(np.nanquantile(ref_df1['movement_distance_per_year'], 0.9))}\n"
-                    + f"\tQ99: {_fmt(np.nanquantile(ref_df1['movement_distance_per_year'], 0.99))}\n"
+                    + f"\tMean: {_fmt(np.nanmean(ref_df1[displacement_row_name]))}\n"
+                    + f"\tMedian: {_fmt(np.nanmedian(ref_df1[displacement_row_name]))}\n"
+                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df1[displacement_row_name]))}\n"
+                    + f"\tQ90: {_fmt(np.nanquantile(ref_df1[displacement_row_name], 0.9))}\n"
+                    + f"\tQ99: {_fmt(np.nanquantile(ref_df1[displacement_row_name], 0.99))}\n"
                 )
 
                 ref_df2 = tr_valid if not tr_valid.empty else tr_above_lod
                 statistics_file.write(
                     "Movement rate without points below LoD:\n"
-                    + f"\tMean: {_fmt(np.nanmean(ref_df2['movement_distance_per_year']))}\n"
-                    + f"\tMedian: {_fmt(np.nanmedian(ref_df2['movement_distance_per_year']))}\n"
-                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df2['movement_distance_per_year']))}\n"
-                    + f"\tQ90: {_fmt(np.nanquantile(ref_df2['movement_distance_per_year'], 0.9))}\n"
-                    + f"\tQ99: {_fmt(np.nanquantile(ref_df2['movement_distance_per_year'], 0.99))}\n"
+                    + f"\tMean: {_fmt(np.nanmean(ref_df2[displacement_row_name]))}\n"
+                    + f"\tMedian: {_fmt(np.nanmedian(ref_df2[displacement_row_name]))}\n"
+                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df2[displacement_row_name]))}\n"
+                    + f"\tQ90: {_fmt(np.nanquantile(ref_df2[displacement_row_name], 0.9))}\n"
+                    + f"\tQ99: {_fmt(np.nanquantile(ref_df2[displacement_row_name], 0.99))}\n"
                 )
 
                 if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None
                 ) and len(self.level_of_detection_points) > 0:
                     statistics_file.write(
                         "Movement rate of LoD points:\n"
-                        + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points['movement_distance_per_year']))}\n"
-                        + f"\tMedian: {_fmt(np.nanmedian(self.level_of_detection_points['movement_distance_per_year']))}\n"
-                        + f"\tStandard deviation: {_fmt(np.nanstd(self.level_of_detection_points['movement_distance_per_year']))}\n"
-                        + f"\tQ90: {_fmt(np.nanquantile(self.level_of_detection_points['movement_distance_per_year'], 0.9))}\n"
-                        + f"\tQ99: {_fmt(np.nanquantile(self.level_of_detection_points['movement_distance_per_year'], 0.99))}\n"
+                        + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points[displacement_row_name]))}\n"
+                        + f"\tMedian: {_fmt(np.nanmedian(self.level_of_detection_points[displacement_row_name]))}\n"
+                        + f"\tStandard deviation: {_fmt(np.nanstd(self.level_of_detection_points[displacement_row_name]))}\n"
+                        + f"\tQ90: {_fmt(np.nanquantile(self.level_of_detection_points[displacement_row_name], 0.9))}\n"
+                        + f"\tQ99: {_fmt(np.nanquantile(self.level_of_detection_points[displacement_row_name], 0.99))}\n"
                         + f"\tUsed points: {valid_lod_points} points\n"
                     )
 
