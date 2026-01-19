@@ -291,7 +291,7 @@ def run_from_config(config_path: str):
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
 
-        if True:
+        try:
             image_crs_1 = _read_image_crs(filename_1)
             image_crs_2 = _read_image_crs(filename_2)
             if (image_crs_1 is None) != (image_crs_2 is None):
@@ -557,7 +557,7 @@ def run_from_config(config_path: str):
 
             successes.append((year1, year2))
 
-        else: #except Exception as e:
+        except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")

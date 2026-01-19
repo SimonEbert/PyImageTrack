@@ -641,7 +641,11 @@ class ImagePair:
                                                                     years_between_observations=years_between_observations)
         self.level_of_detection_points = unfiltered_level_of_detection_points
 
-        self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points["movement_distance_per_year"],
+        if self.convert_to_3d_displacement:
+            displacement_row_name = "3d_displacement_distance"
+        else:
+            displacement_row_name = "movement_distance_per_year"
+        self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[displacement_row_name],
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
