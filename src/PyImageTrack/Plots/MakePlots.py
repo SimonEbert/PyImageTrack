@@ -108,17 +108,24 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     # Arrow plotting
     if show_arrows:
-        for row in sorted(list(set(point_movement.loc[:, "row"])))[::8]:
-            for column in sorted(list(set(point_movement.loc[:, "column"])))[::8]:
+        # displays roughly 12 arrows vertically
+        arrow_spacing_rows = int(np.ceil(len(list(set(point_movement.loc[:, "row"])))/12))
+        # displays roughly 16 arrows horizontally
+        arrow_spacing_columns = int(np.ceil(len(list(set(point_movement.loc[:, "row"])))/16))
+        point_spacing_pixels = np.abs(np.array([point_movement["row"].diff() / arrow_spacing_rows, point_movement["column"].diff() / arrow_spacing_columns]))
+        arrow_spacing_pixels = np.nanmin(point_spacing_pixels[point_spacing_pixels > 0])
+
+        for row in sorted(list(set(point_movement.loc[:, "row"])))[::arrow_spacing_rows]:
+            for column in sorted(list(set(point_movement.loc[:, "column"])))[::arrow_spacing_columns]:
 
                 arrow_point = point_movement.loc[(point_movement['row'] == row) & (point_movement['column'] == column)]
                 if not arrow_point.empty:
                     arrow_point = arrow_point.iloc[0]
-                    if ((arrow_point["movement_column_direction"] == 0) & (arrow_point["movement_row_direction"] == 0)):
+                    if arrow_point["movement_distance_per_year"] == 0:
                         continue
                     ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
-                             arrow_point["movement_column_direction"] * 1.5 ,
-                             -arrow_point["movement_row_direction"] * 1.5 ,
+                             arrow_point["movement_column_direction"] * 3650 / arrow_point["movement_distance_per_year"],
+                             -arrow_point["movement_row_direction"] * 3650 / arrow_point["movement_distance_per_year"],
                              head_width=10, head_length=10, color="black", alpha=1)
 
     unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
