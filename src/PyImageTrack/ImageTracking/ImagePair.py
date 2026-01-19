@@ -33,6 +33,7 @@ from ..DataProcessing.DataPostprocessing import (
 )
 # DataPreProcessing
 from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images
+from ..DataProcessing.ImagePreprocessing import undistort_camera_image
 from .AlignImages import align_images_lsm_scarce
 # Alignment and Tracking functions
 # Plotting
@@ -82,6 +83,9 @@ class ImagePair:
         self.tracking_results = None
         self.level_of_detection = None
         self.level_of_detection_points = None
+        self.undistort_image = parameter_dict.get("undistort_image", False)
+        self.camera_intrinsics_matrix = parameter_dict.get("camera_intrinsics_matrix", None)
+        self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
 
     def _effective_pixel_size(self) -> float:
         """CRS units per pixel (assumes square pixels)."""
@@ -189,8 +193,16 @@ class ImagePair:
             def squeeze(arr):
                 return arr[0] if arr.shape[0] == 1 else arr
 
-            self.image1_matrix = squeeze(arr1)
-            self.image2_matrix = squeeze(arr2)
+            arr1 = squeeze(arr1)
+            arr2 = squeeze(arr2)
+
+            if self.undistort_image:
+                arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
+                arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
+
+
+            self.image1_matrix = arr1
+            self.image2_matrix = arr2
 
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])

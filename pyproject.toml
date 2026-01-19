@@ -15,6 +15,10 @@ maintainers = [
 ]
 readme = "README.md"
 requires-python = ">=3.8"
+# ToDo: Adjust dependencies section
+dependencies = [
+    "opencv-python"
+]
 
 [project.scripts]
 pyimagetrack-run = "PyImageTrack.run_pipeline:main"

@@ -111,11 +111,9 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                     arrow_point = arrow_point.iloc[0]
                     if arrow_point["movement_distance_per_year"] == 0:
                         continue
-                    displacement_norm = np.sqrt((arrow_point["movement_column_direction"]**2 +
-                        arrow_point["movement_row_direction"]**2))
                     ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
-                             arrow_point["movement_column_direction"] / displacement_norm * arrow_spacing_pixels / 2,
-                             -arrow_point["movement_row_direction"] / displacement_norm * arrow_spacing_pixels / 2,
+                             arrow_point["movement_column_direction"] * 3650 / arrow_point["movement_distance_per_year"],
+                             -arrow_point["movement_row_direction"] * 3650 / arrow_point["movement_distance_per_year"],
                              head_width=10, head_length=10, color="black", alpha=1)
 
     unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
