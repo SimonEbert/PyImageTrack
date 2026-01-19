@@ -776,7 +776,7 @@ class ImagePair:
         # --- Always save the full tracking results GeoJSON ---
 
         self.tracking_results.to_file(
-            f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.fgb",
+            f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
             driver="FlatGeobuf"
         )
 
