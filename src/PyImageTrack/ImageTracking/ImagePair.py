@@ -30,7 +30,6 @@ from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_
 
 # filter functions
 from ..DataProcessing.DataPostprocessing import (
-    calculate_lod_points,
     filter_lod_points,
     filter_outliers_full,
 )
@@ -93,6 +92,10 @@ class ImagePair:
         self.camera_intrinsics_matrix = parameter_dict.get("camera_intrinsics_matrix", None)
         self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
         self.convert_to_3d_displacement = parameter_dict.get("convert_to_3d_displacement", False)
+        if self.convert_to_3d_displacement:
+            self.displacement_column_name = "3d_displacement_distance"
+        else:
+            self.displacement_column_name = "movement_distance_per_year"
 
     def _effective_pixel_size(self) -> float:
         """CRS units per pixel (assumes square pixels)."""
@@ -587,14 +590,66 @@ class ImagePair:
             return
         print("Filtering outliers. This may take a moment.")
         self.filter_parameters = filter_parameters
-        self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters)
+        self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
+                                                     self.displacement_column_name)
+
+
+    def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame,
+                         years_between_observations) -> gpd.GeoDataFrame:
+        """
+        Performs tracking on given stable points (for calculating an LoD)
+        Parameters
+        ----------
+        points_for_lod_calculation
+        years_between_observations
+
+        Returns
+        -------
+        tracked_points: gpd.GeoDataFrame
+            The tracked points which can be used for calculating the LoD.
+        """
+        points = points_for_lod_calculation
+        tracked_points = track_movement_lsm(
+            image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix, image_transform=self.image1_transform,
+            points_to_be_tracked=points, tracking_parameters=self.tracking_parameters, alignment_tracking=False,
+            save_columns=["movement_row_direction",
+                          "movement_column_direction",
+                          "movement_distance_pixels",
+                          "movement_bearing_pixels",
+                          ],
+            task_label="Tracking points for LoD"
+        )
+        tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
+
+        if len(tracked_control_pixels_valid) == 0:
+            raise ValueError(
+                "Was not able to track any points with a cross-correlation higher than the cross-correlation "
+                "threshold. Cross-correlation values were " + str(
+                    list(tracked_points[
+                             "correlation_coefficient"])) + " (None-values may signify problems during tracking).")
+
+        print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
+
+
+        if self.convert_to_3d_displacement:
+            tracked_points = calculate_displacement_from_position_image(tracked_control_pixels_valid,
+                                                                        self.position_image_time1,
+                                                                        self.position_image_time2)
+        else:
+            tracked_points = georeference_tracked_points(tracked_control_pixels_valid,
+                                                         self.image1_transform,
+                                                         crs=self.crs,
+                                                         years_between_observations=years_between_observations)
+
+        return tracked_points
+
 
     def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame,
                       filter_parameters: FilterParameters = None) -> None:
         """
         Calculates the Level of Detection of a matching between two images. For calculating the LoD a specified number
         of points are generated randomly in some reference area, which is assumed to be stable. The level of detection
-        is defined as some quantile (default: 0.5) of the movement rates of these points. The quantile can be set in the
+        is defined as some quantile of the movement rates of these points. The quantile can be set in the
         tracking parameters. This method sets the value of the lod as self.level_of_detection. The level of detection is
         given in movement per year.
         Parameters
@@ -632,20 +687,12 @@ class ImagePair:
 
         level_of_detection_quantile = filter_parameters.level_of_detection_quantile
 
-        unfiltered_level_of_detection_points = calculate_lod_points(image1_matrix=self.image1_matrix,
-                                                                    image2_matrix=self.image2_matrix,
-                                                                    image_transform=self.image1_transform,
-                                                                    points_for_lod_calculation=points_for_lod_calculation,
-                                                                    tracking_parameters=self.tracking_parameters,
-                                                                    crs=self.crs,
+        unfiltered_level_of_detection_points = self.track_lod_points(points_for_lod_calculation=points_for_lod_calculation,
                                                                     years_between_observations=years_between_observations)
         self.level_of_detection_points = unfiltered_level_of_detection_points
 
-        if self.convert_to_3d_displacement:
-            displacement_row_name = "3d_displacement_distance"
-        else:
-            displacement_row_name = "movement_distance_per_year"
-        self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[displacement_row_name],
+
+        self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[self.displacement_column_name],
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
@@ -666,7 +713,8 @@ class ImagePair:
 
         if not self.valid_alignment_possible:
             return
-        self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection)
+        self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection,
+                                                  self.displacement_column_name)
 
     def full_filter(self, reference_area, filter_parameters: FilterParameters):
         points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
@@ -827,11 +875,8 @@ class ImagePair:
                 )
 
         # Grids for various subsets
-        if self.convert_to_3d_displacement:
-            displacement_row_name = "3d_displacement_distance"
-        else:
-            displacement_row_name = "movement_distance_per_year"
-        meas = ["movement_bearing_pixels", displacement_row_name]
+
+        meas = ["movement_bearing_pixels", self.displacement_column_name]
 
         raster_valid = _make_raster(tr_valid, meas)
         raster_outlier_filtered = _make_raster(tr_without_outliers, meas)
@@ -853,7 +898,7 @@ class ImagePair:
             if "movement_rate_valid_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_valid_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_valid["raster"][displacement_row_name],
+                    raster=raster_valid["raster"][self.displacement_column_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
                     )
@@ -870,7 +915,7 @@ class ImagePair:
             if "movement_rate_outlier_filtered_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_outlier_filtered["raster"][displacement_row_name],
+                    raster=raster_outlier_filtered["raster"][self.displacement_column_name],
                     transform=raster_outlier_filtered["transform"],
                     crs=raster_outlier_filtered["crs"]
                 )
@@ -887,7 +932,7 @@ class ImagePair:
             if "movement_rate_LoD_filtered_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_lod_filtered["raster"][displacement_row_name],
+                    raster=raster_lod_filtered["raster"][self.displacement_column_name],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
@@ -905,7 +950,7 @@ class ImagePair:
             if "movement_rate_all_tif" in save_files:
                 _save_raster_as_tif(
                     path=f"{folder_path}/movement_rate_all_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.tif",
-                    raster=raster_all["raster"][displacement_row_name],
+                    raster=raster_all["raster"][self.displacement_column_name],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
                 )
@@ -1034,32 +1079,32 @@ class ImagePair:
                 ref_df1 = tr_without_outliers if not tr_without_outliers.empty else tr_all
                 statistics_file.write(
                     "Movement rate with points below LoD:\n"
-                    + f"\tMean: {_fmt(np.nanmean(ref_df1[displacement_row_name]))}\n"
-                    + f"\tMedian: {_fmt(np.nanmedian(ref_df1[displacement_row_name]))}\n"
-                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df1[displacement_row_name]))}\n"
-                    + f"\tQ90: {_fmt(np.nanquantile(ref_df1[displacement_row_name], 0.9))}\n"
-                    + f"\tQ99: {_fmt(np.nanquantile(ref_df1[displacement_row_name], 0.99))}\n"
+                    + f"\tMean: {_fmt(np.nanmean(ref_df1[self.displacement_column_name]))}\n"
+                    + f"\tMedian: {_fmt(np.nanmedian(ref_df1[self.displacement_column_name]))}\n"
+                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df1[self.displacement_column_name]))}\n"
+                    + f"\tQ90: {_fmt(np.nanquantile(ref_df1[self.displacement_column_name], 0.9))}\n"
+                    + f"\tQ99: {_fmt(np.nanquantile(ref_df1[self.displacement_column_name], 0.99))}\n"
                 )
 
                 ref_df2 = tr_valid if not tr_valid.empty else tr_above_lod
                 statistics_file.write(
                     "Movement rate without points below LoD:\n"
-                    + f"\tMean: {_fmt(np.nanmean(ref_df2[displacement_row_name]))}\n"
-                    + f"\tMedian: {_fmt(np.nanmedian(ref_df2[displacement_row_name]))}\n"
-                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df2[displacement_row_name]))}\n"
-                    + f"\tQ90: {_fmt(np.nanquantile(ref_df2[displacement_row_name], 0.9))}\n"
-                    + f"\tQ99: {_fmt(np.nanquantile(ref_df2[displacement_row_name], 0.99))}\n"
+                    + f"\tMean: {_fmt(np.nanmean(ref_df2[self.displacement_column_name]))}\n"
+                    + f"\tMedian: {_fmt(np.nanmedian(ref_df2[self.displacement_column_name]))}\n"
+                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df2[self.displacement_column_name]))}\n"
+                    + f"\tQ90: {_fmt(np.nanquantile(ref_df2[self.displacement_column_name], 0.9))}\n"
+                    + f"\tQ99: {_fmt(np.nanquantile(ref_df2[self.displacement_column_name], 0.99))}\n"
                 )
 
                 if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None
                 ) and len(self.level_of_detection_points) > 0:
                     statistics_file.write(
                         "Movement rate of LoD points:\n"
-                        + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points[displacement_row_name]))}\n"
-                        + f"\tMedian: {_fmt(np.nanmedian(self.level_of_detection_points[displacement_row_name]))}\n"
-                        + f"\tStandard deviation: {_fmt(np.nanstd(self.level_of_detection_points[displacement_row_name]))}\n"
-                        + f"\tQ90: {_fmt(np.nanquantile(self.level_of_detection_points[displacement_row_name], 0.9))}\n"
-                        + f"\tQ99: {_fmt(np.nanquantile(self.level_of_detection_points[displacement_row_name], 0.99))}\n"
+                        + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points[self.displacement_column_name]))}\n"
+                        + f"\tMedian: {_fmt(np.nanmedian(self.level_of_detection_points[self.displacement_column_name]))}\n"
+                        + f"\tStandard deviation: {_fmt(np.nanstd(self.level_of_detection_points[self.displacement_column_name]))}\n"
+                        + f"\tQ90: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.9))}\n"
+                        + f"\tQ99: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.99))}\n"
                         + f"\tUsed points: {valid_lod_points} points\n"
                     )
 
@@ -1116,7 +1161,7 @@ class ImagePair:
         saved_tracking_results = saved_tracking_results.loc[
             :, ["row", "column", "movement_row_direction", "movement_column_direction",
                 "movement_distance_pixels", "movement_bearing_pixels", "movement_distance",
-                "movement_distance_per_year", "geometry"]]
+                self.displacement_column_name, "geometry"]]
         saved_tracking_results["valid"] = True
         self.align_images(reference_area)
         self.tracking_results = saved_tracking_results
