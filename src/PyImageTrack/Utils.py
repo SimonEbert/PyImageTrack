@@ -100,8 +100,7 @@ def collect_pairs(input_folder: str,
         date_df["year"] = date_df["year"].astype(str)
         csv_year_to_date = dict(zip(date_df["year"], date_df["date"]))
     elif date_csv_path is not None:
-        print(f"[WARN] image_dates.csv not found at: {date_csv_path}. "
-              f"Files named only as 'YYYY' or 'YYYY-MM' will be skipped.")
+        pass
 
     # 2) Collect all files with allowed extensions
     # Default (None) = keep legacy behavior: only TIF/TIFF
@@ -155,32 +154,50 @@ def collect_pairs(input_folder: str,
             id_to_date[id_] = dt.strftime("%Y-%m-%d")  # no hour printed later
             id_hastime_from_filename[id_] = False
 
-        # Case: YYYY-MM -> MUST use CSV
+        # Case: YYYY-MM -> use CSV if available, else assume first day of month
         elif re.match(r'^\d{4}-\d{2}$', lead):
             ym = re.match(r'^(\d{4}-\d{2})', lead).group(1)
-            if not csv_year_to_date:
-                print(f"[WARN] Skipping '{f}' (needs image_dates.csv for '{ym}').")
-                continue
-            if ym not in csv_year_to_date:
-                print(f"[WARN] Skipping '{f}' (no date found in CSV for '{ym}').")
-                continue
+            if csv_year_to_date and ym in csv_year_to_date:
+                date_str = csv_year_to_date[ym]
+            else:
+                date_str = f"{ym}-01"
+                if not csv_year_to_date:
+                    print(
+                        f"[WARN] Only year+month detected in filename '{f}'. "
+                        f"image_dates.csv not found at: {date_csv_path}. "
+                        f"Assuming date '{date_str}'."
+                    )
+                else:
+                    print(
+                        f"[WARN] Only year+month detected in filename '{f}'. "
+                        f"No CSV entry for '{ym}'. Assuming date '{date_str}'."
+                    )
             id_ = ym
             id_to_file[id_] = path
-            id_to_date[id_] = csv_year_to_date[ym]
+            id_to_date[id_] = date_str
             id_hastime_from_filename[id_] = False
 
-        # Case: YYYY -> MUST use CSV
+        # Case: YYYY -> use CSV if available, else assume Jan 1st
         elif re.match(r'^\d{4}$', lead):
             y = lead[:4]
-            if not csv_year_to_date:
-                print(f"[WARN] Skipping '{f}' (needs image_dates.csv for '{y}').")
-                continue
-            if y not in csv_year_to_date:
-                print(f"[WARN] Skipping '{f}' (no date found in CSV for '{y}').")
-                continue
+            if csv_year_to_date and y in csv_year_to_date:
+                date_str = csv_year_to_date[y]
+            else:
+                date_str = f"{y}-01-01"
+                if not csv_year_to_date:
+                    print(
+                        f"[WARN] Only year detected in filename '{f}'. "
+                        f"image_dates.csv not found at: {date_csv_path}. "
+                        f"Assuming date '{date_str}'."
+                    )
+                else:
+                    print(
+                        f"[WARN] Only year detected in filename '{f}'. "
+                        f"No CSV entry for '{y}'. Assuming date '{date_str}'."
+                    )
             id_ = y
             id_to_file[id_] = path
-            id_to_date[id_] = csv_year_to_date[y]
+            id_to_date[id_] = date_str
             id_hastime_from_filename[id_] = False
 
         else:

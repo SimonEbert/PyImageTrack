@@ -27,7 +27,7 @@ Follow the steps for your platform.
    python3 -m venv .venv
    source .venv/bin/activate
    ```
-2) Install the package in editable mode from the repo root:
+2) Install the package in editable mode from the repo root (installs all dependencies):
    ```bash
    pip install -e .
    ```
@@ -42,7 +42,7 @@ Follow the steps for your platform.
    python -m venv .venv
    .\.venv\Scripts\Activate.ps1
    ```
-2) Install the package in editable mode from the repo root:
+2) Install the package in editable mode from the repo root (installs all dependencies):
    ```powershell
    pip install -e .
    ```
@@ -55,8 +55,9 @@ Notes:
 - The package uses `pyproject.toml` (modern packaging standard) at the repo root.
 - Editable install means code changes in `src/PyImageTrack/` take effect immediately.
 - Use `pip install .` (no `-e`) if you want a fixed install from this repo.
-- If you use Python < 3.11, install `tomli` (see `src/PyImageTrack/requirements.txt`).
+- Dependencies are installed automatically when you use `pip install -e .` or `pip install .`.
 - Use `[downsampling]` in your config to speed up smoke tests (`downsample_factor = 4`).
+- Input filenames must start with the date token (e.g., `YYYY-MM-DD`, `YYYYMMDD`, or `YYYYMMDD-HHMMSS`).
 
 ## Project layout
 

@@ -1,14 +1,14 @@
 [paths]
-input_folder = "../input/hillshades"
-output_folder = "../output/hillshades"
+input_folder = "/path/to/input/hillshades"
+output_folder = "/path/to/output/hillshades"
 # can be set to "none" if the day is reflected in the filename
-date_csv_path = "../input/hillshades/image_dates.csv"
+date_csv_path = "/path/to/input/hillshades/image_dates.csv"
 # can be set to "none" if all or successive pairing mode is selected below
-pairs_csv_path = "../input/hillshades/image_pairs.csv"
+pairs_csv_path = "/path/to/input/hillshades/image_pairs.csv"
 
 [polygons]
-outside_filename = "stable_area_drone.shp"
-inside_filename = "moving_area_drone.shp"
+outside_filename = "stable_area.shp"
+inside_filename = "moving_area.shp"
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
@@ -24,19 +24,19 @@ undistort_image = false
 
 [downsampling]
 # downsample input images by this integer factor to speed up runs
-downsample_factor = 4
+downsample_factor = 1
 
 [flags]
 do_alignment = true
 do_tracking = true
 do_filtering = true
-do_plotting = false
+do_plotting = true
 # optional image enhancement via CLAHE
 do_image_enhancement = false
 
 [cache]
-use_alignment_cache = false
-use_tracking_cache = false
+use_alignment_cache = true
+use_tracking_cache = true
 use_lod_cache = false
 force_recompute_alignment = false
 force_recompute_tracking = false
