@@ -4,6 +4,7 @@ import json
 import hashlib
 import geopandas as gpd
 import rasterio
+from rasterio.crs import CRS as RioCRS
 
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
