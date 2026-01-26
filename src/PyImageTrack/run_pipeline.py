@@ -9,6 +9,8 @@ import csv
 import os
 from pathlib import Path
 
+
+
 try:
     import tomllib
 except ModuleNotFoundError as exc:
@@ -191,17 +193,32 @@ def run_from_config(config_path: str):
     pairing_mode = _require(cfg, "pairing", "mode")
 
     use_no_georeferencing = bool(_get(cfg, "no_georef", "use_no_georeferencing", False))
-    fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
-    undistort_image = bool(_get(cfg, "no_georef", "undistort_image", False))
-    camera_intrinsics_matrix = None
-    camera_distortion_coefficients = None
-    if undistort_image:
-        camera_intrinsics_matrix = np.array(
-            _require(cfg, "no_georef", "camera_intrinsics_matrix")
-        )
-        camera_distortion_coefficients = np.array(
-            _require(cfg, "no_georef", "camera_distortion_coefficients")
-        )
+    if use_no_georeferencing:
+        fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
+        convert_to_3d_displacement = bool(_get(cfg, "no_georef", "convert_to_3d_displacement", False))
+        undistort_image = bool(_get(cfg, "no_georef", "undistort_image", False))
+        if undistort_image:
+            camera_intrinsics_matrix = np.array(_require(cfg, "no_georef",
+                                                         "camera_intrinsics_matrix"))
+            camera_distortion_coefficients = np.array(_require(cfg, "no_georef",
+                                                               "camera_distortion_coefficients"))
+        else:
+            camera_intrinsics_matrix = None
+            camera_distortion_coefficients = None
+        if convert_to_3d_displacement:
+            camera_to_3d_coordinates_transform = np.array(_as_optional_value(_get(cfg,
+                                                                                  "no_georef",
+                                                                                  "camera_to_3d_coordinates_transform",
+                                                                                  None)))
+        else:
+            camera_to_3d_coordinates_transform = None
+    else:
+        fake_pixel_size = None
+        convert_to_3d_displacement = False
+        undistort_image = False
+        camera_intrinsics_matrix = None
+        camera_distortion_coefficients = None
+        camera_to_3d_coordinates_transform = None
 
     downsample_factor = _as_optional_value(_get(cfg, "downsampling", "downsample_factor", 1))
     downsample_factor = int(downsample_factor) if downsample_factor is not None else 1
@@ -412,6 +429,8 @@ def run_from_config(config_path: str):
             param_dict["undistort_image"]                   = undistort_image
             param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
             param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
+            param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
+            param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
 
             param_dict["crs"]                               = image_crs
  
@@ -475,6 +494,7 @@ def run_from_config(config_path: str):
 
                 if not used_cache_tracking:
                     if used_cache_alignment or getattr(image_pair, "images_aligned", False):
+
                         tracked_points = image_pair.track_points(tracking_area=polygon_inside)
                         image_pair.tracking_results = tracked_points
                     else:

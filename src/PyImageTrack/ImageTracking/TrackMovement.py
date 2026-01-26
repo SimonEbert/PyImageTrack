@@ -341,11 +341,6 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
     shm2 = multiprocessing.shared_memory.SharedMemory(name=shm2_name)
     shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
 
-
-
-
-
-
     # Extract the tracked (template) cell from image1
     track_cell1 = get_submatrix_symmetric(
         central_index=central_index,
@@ -385,7 +380,6 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
             tracking_method="least-squares",
             transformation_matrix=None, tracking_success=False
         )
-
     logging.info("Tracking point" + str(central_index))
     tracking_results = track_cell_lsm(track_cell1, search_area2, search_center=search_center)
     return tracking_results
@@ -482,7 +476,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
-
     # build partial function
     partial_lsm_tracking_function = partial(
         track_cell_lsm_parallelized,

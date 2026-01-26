@@ -8,51 +8,6 @@ from ..Parameters.FilterParameters import FilterParameters
 from ..Parameters.TrackingParameters import TrackingParameters
 
 
-def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
-                         points_for_lod_calculation: gpd.GeoDataFrame,
-                         tracking_parameters: TrackingParameters, crs, years_between_observations) -> gpd.GeoDataFrame:
-    """
-
-    Parameters
-    ----------
-    image1_matrix
-    image2_matrix
-    image_transform
-    points_for_lod_calculation
-    tracking_parameters
-    crs
-    years_between_observations
-
-    Returns
-    -------
-    tracked_points: gpd.GeoDataFrame
-        The random points which can be used for calculating the LoD.
-    """
-    points = points_for_lod_calculation
-    tracked_points = TrackMovement.track_movement_lsm(
-        image1_matrix=image1_matrix, image2_matrix=image2_matrix, image_transform=image_transform,
-        points_to_be_tracked=points, tracking_parameters=tracking_parameters, alignment_tracking=False,
-        save_columns=["movement_row_direction",
-                      "movement_column_direction",
-                      "movement_distance_pixels",
-                      "movement_bearing_pixels",
-                      ],
-        task_label="Tracking points for LoD"
-    )
-    tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
-
-    if len(tracked_control_pixels_valid) == 0:
-        raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
-                         "threshold. Cross-correlation values were " + str(
-            list(tracked_points["correlation_coefficient"])) + " (None-values may signify problems during tracking).")
-
-    print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
-
-    tracked_points = georeference_tracked_points(tracked_control_pixels_valid, image_transform, crs=crs,
-                                                 years_between_observations=years_between_observations)
-
-    return tracked_points
-
 
 def _ensure_bool_col(df, col):
     if col not in df.columns:
@@ -60,7 +15,7 @@ def _ensure_bool_col(df, col):
     return df[col].astype(bool).to_numpy()
 
 
-def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: float) -> gpd.GeoDataFrame:
+def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: float, displacement_column_name: str) -> gpd.GeoDataFrame:
     """
     Sets the movement distance of all points that fall below the calculated level of detection to 0 and their
         movement bearing to NaN. Returns the respective changed GeoDataFrame.
@@ -69,13 +24,17 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
     tracking_results: The GeoDataFrame as obtained from an image tracking
     level_of_detection: The value to filter for. Yearly movement rates below this value will be set to 0 and the
     corresponding movement bearing to NaN.
+    displacement_column_name: The column name of the displacement column ('movement_distance_per_year' for georeferenced
+    images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
+    calculated.
     Returns
     -------
     tracking_results: GeoDataFrame
         The changed GeoDataFrame
     """
+
     tracking_results["is_below_LoD"] = False
-    tracking_results.loc[tracking_results["movement_distance_per_year"] < level_of_detection, "is_below_LoD"] = True
+    tracking_results.loc[tracking_results[displacement_column_name] < level_of_detection, "is_below_LoD"] = True
     tracking_results.loc[tracking_results["is_below_LoD"], "valid"] = False
     return tracking_results
 
@@ -222,7 +181,7 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
 
 
 def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
-                                             filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+                                             filter_parameters: FilterParameters, displacement_column_name: str) -> gpd.GeoDataFrame:
     """
     Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
      average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
@@ -238,6 +197,10 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
         An instance of FilterParameters containing the parameters used to filter the results. If the parameters that are
         relevant for this sort of filtering are set to None, no filtering is performed. The value of irrelevant filter
         parameters is ignored.
+    displacement_column_name: str
+        The column name of the displacement column ('movement_distance_per_year' for georeferenced
+        images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
+        calculated).
     Returns
     -------
     tracking_results: GeoDataFrame
@@ -255,8 +218,8 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
         return tracking_results
 
     available_outlier_columns = list(
-        set(["is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
-             "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"])
+        {"is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
+         "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"}
         & set(tracking_results.columns))
 
     if available_outlier_columns:
@@ -282,17 +245,18 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
         if not any(list_is_within_current_point):
             continue
         surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point, :]
-        average_movement_rate = np.nanmedian(surrounding_points["movement_distance_per_year"])
+        average_movement_rate = np.nanmedian(surrounding_points[displacement_column_name])
 
         if np.abs(average_movement_rate - tracking_results.loc[
-            i, "movement_distance_per_year"]) > movement_rate_threshold:
+            i, displacement_column_name]) > movement_rate_threshold:
             tracking_results.loc[i, "is_movement_rate_difference_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
 
 def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDataFrame,
-                                                     filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+                                                     filter_parameters: FilterParameters,
+                                                     displacement_column_name: str) -> gpd.GeoDataFrame:
     """
     Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
      average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
@@ -308,6 +272,10 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
         An instance of FilterParameters containing the parameters used to filter the results. If the parameters that are
         relevant for this sort of filtering are set to None, no filtering is performed. The value of irrelevant filter
         parameters is ignored.
+    displacement_column_name: str
+        The column name of the displacement column ('movement_distance_per_year' for georeferenced
+        images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
+        calculated).
     Returns
     -------
     tracking_results: GeoDataFrame
@@ -325,8 +293,8 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
         return tracking_results
 
     available_outlier_columns = list(
-        set(["is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
-             "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"])
+        {"is_bearing_difference_outlier", "is_bearing_standard_deviation_outlier",
+         "is_movement_rate_difference_outlier", "is_movement_rate_standard_deviation_outlier"}
         & set(tracking_results.columns))
 
     if available_outlier_columns:
@@ -352,20 +320,21 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
         if not any(list_is_within_current_point):
             continue
         surrounding_points = tracking_results_non_outliers.loc[list_is_within_current_point, :]
-        standard_deviation_movement_rate = np.nanstd(surrounding_points["movement_distance_per_year"])
-        if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i, "movement_distance_per_year"]) >
+        standard_deviation_movement_rate = np.nanstd(surrounding_points[displacement_column_name])
+        if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i, displacement_column_name]) >
                 movement_rate_threshold):
             tracking_results.loc[i, "is_movement_rate_standard_deviation_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
 
-def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
+def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: FilterParameters,
+                         displacement_column_name: str) -> gpd.GeoDataFrame:
     filtered_tracking_results = filter_outliers_movement_bearing_difference(tracking_results, filter_parameters)
     filtered_tracking_results = filter_outliers_movement_bearing_standard_deviation(
         filtered_tracking_results, filter_parameters)
     filtered_tracking_results = filter_outliers_movement_rate_difference(
-        filtered_tracking_results, filter_parameters)
+        filtered_tracking_results, filter_parameters, displacement_column_name)
     filtered_tracking_results = filter_outliers_movement_rate_standard_deviation(
-        filtered_tracking_results, filter_parameters)
+        filtered_tracking_results, filter_parameters, displacement_column_name)
     return filtered_tracking_results

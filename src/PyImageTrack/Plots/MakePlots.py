@@ -34,7 +34,6 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
                             save_path: str = None, show_arrows: bool = True):
-    # ToDo: Change size of the single points for a smooth image regardless of point grid resolution
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -71,6 +70,17 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     None
     """
 
+    # --- Estimate median point spacing in map units ---
+    coords = np.vstack([point_movement.geometry.x, point_movement.geometry.y]).T
+
+    # Sort by x then y for fast nearest-neighbor estimate
+    coords_sorted = coords[np.lexsort((coords[:, 1], coords[:, 0]))]
+    deltas = np.sqrt(np.sum(np.diff(coords_sorted, axis=0) ** 2, axis=1))
+    median_spacing = np.nanmedian(deltas[deltas > 0])
+
+    if not np.isfinite(median_spacing):
+        median_spacing = 1.0
+
     show_figure = False
     if ax is None and fig is None:
         fig, ax = plt.subplots(dpi=200)
@@ -81,12 +91,26 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         masking_polygon = masking_polygon.to_crs(crs=point_movement.crs)
         point_movement = gpd.overlay(point_movement, masking_polygon, how="intersection")
 
+    point_size = np.clip((median_spacing ** 2) * 0.04, 2, 30)
+
+    if "3d_displacement_distance_per_year" in list(point_movement.columns):
+        displacement_column_name = "3d_displacement_distance_per_year"
+    else:
+        displacement_column_name = "movement_distance_per_year"
+
     if point_color is None:
-        point_movement.plot(ax=ax, column="movement_distance_per_year", legend=True, markersize=5, marker=".",
-                            alpha=1.0,
-                            # missing_kwds={'color': 'gray'}
-                            # vmin=0, vmax=3.5,
-                            )
+        try:
+            point_movement.plot(ax=ax, column=displacement_column_name, legend=True, markersize=point_size, marker=".",
+                                    alpha=1.0,
+                                    # missing_kwds={'color': 'gray'}
+                                    # vmin=0, vmax=3.5,
+                                    )
+
+
+        except:
+            raise ValueError("Could not find columns 'movement_distance_per_year' or '3d_displacement_distance_per_year'."
+                             "Provide a dataframe with either one of these columns for movement plotting.")
+
     else:
         point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)
 
@@ -94,23 +118,53 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     if raster_matrix is not None:
         rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
+
+
     # Arrow plotting
     if show_arrows:
-        for row in sorted(list(set(point_movement.loc[:, "row"])))[::8]:
-            for column in sorted(list(set(point_movement.loc[:, "column"])))[::8]:
+        arrow_spacing = median_spacing * 3
+        arrow_length = median_spacing * 1.2
 
-                arrow_point = point_movement.loc[(point_movement['row'] == row) & (point_movement['column'] == column)]
-                if not arrow_point.empty:
-                    arrow_point = arrow_point.iloc[0]
-                    if arrow_point["movement_distance_per_year"] == 0:
-                        continue
-                    ax.arrow(arrow_point["geometry"].x, arrow_point["geometry"].y,
-                             arrow_point["movement_column_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
-                             -arrow_point["movement_row_direction"] * 1.5 / arrow_point["movement_distance_per_year"],
-                             head_width=10, head_length=10, color="black", alpha=1)
+        xmin, ymin, xmax, ymax = point_movement.total_bounds
+
+        ix = ((point_movement.geometry.x - xmin) // arrow_spacing).astype(int)
+        iy = ((point_movement.geometry.y - ymin) // arrow_spacing).astype(int)
+
+        pm = point_movement.assign(_ix=ix, _iy=iy)
+
+        # One arrow per grid cell
+        for (_, _), p in pm.groupby(["_ix", "_iy"]).first().iterrows():
+
+            dx = p["movement_column_direction"]
+            dy = -p["movement_row_direction"]
+
+            norm = np.hypot(dx, dy)
+            if norm == 0:
+                continue
+
+            dx /= norm
+            dy /= norm
+
+            ax.arrow(
+                p.geometry.x,
+                p.geometry.y,
+                dx * arrow_length,
+                dy * arrow_length,
+                width = arrow_length * 0.12,
+                head_width=arrow_length * 0.36,
+                head_length=arrow_length * 0.25,
+                color="black",
+                alpha=1,
+                length_includes_head=True,
+                zorder=5
+            )
 
     unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
-    plt.title("Movement velocity in " + unit_name + " per year")
+
+    if displacement_column_name == "3d_displacement_distance_per_year":
+        plt.title("3d-displacement distance per year")
+    else:
+        plt.title("Movement velocity in " + unit_name + " per year")
 
     if show_figure:
         fig.show()
