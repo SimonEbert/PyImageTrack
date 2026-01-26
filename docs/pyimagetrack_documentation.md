@@ -1,5 +1,5 @@
 # PyImageTrack Documentation
-2026-01-13
+2026-01-26
 
 ## Overview
 PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and plotting.
@@ -37,7 +37,7 @@ Configs are TOML files and share the same structure. Use these as templates:
 - `[paths]`: input/output folders, optional CSVs for dates/pairs.
 - `[polygons]`: stable/moving area shapefiles and CRS.
 - `[pairing]`: pairing mode (`all`, `first_to_all`, `successive`, `custom`).
-- `[no_georef]`: enable for non-ortho images (e.g., JPGs).
+- `[no_georef]`: enable for non-ortho images (e.g., JPGs) and configure fake georeferencing and depth-image options.
 - `[downsampling]`: optional downsampling for fast smoke tests.
 - `[flags]`: alignment/tracking/filtering/plotting toggles.
 - `[cache]`: caching and recompute flags.
@@ -46,52 +46,23 @@ Configs are TOML files and share the same structure. Use these as templates:
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
 
+### Downsampling
+```
+[downsampling]
+downsample_factor = 4
+```
+Set `downsample_factor = 1` to keep full resolution. If `downsample_factor > 1`, the pipeline will decimate image arrays by an integer factor.
 
-### Config: [no_georef] options
-
-If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are
-handled and how optional 3D displacement calculation from depth images is performed. First, the usage of the different
-options is described and then an example config file part is given:
-
-- `convert_to_3d_displacement`: When true, the pipeline will look for per-image depth rasters and compute 3D displacements.
-The depth image corresponding to an image `image_filename` on which tracking is performed is assumed to be called
-`<image_filename>_depth.tiff` and located in a subfolder `Depth_images` of the folder, where the tracking images are
-stored.
-- `fake_pixel_size` gives the pixel size used when working without a CRS (units per pixel).
-- `camera_intrinsics_matrix` and `camera_distortion_coefficients` are only required if undistort_image = true. In this
-case the positions will be correctly transformed into the camera coordinate system.
-- `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix. The expected format is: [[R (3×3), t (3×1)],
-[0 0 0, 1 ]] where R is rotation and t is translation. (See CreateGeometries/DepthImageConversion.py for details and a
-note about current implementation behavior.)
-
-Arrays in TOML are parsed into lists and converted to numpy arrays by the pipeline — use numeric literals (no strings).
-
-
-#### Depth images
-
-When convert_to_3d_displacement is enabled the pipeline expects depth images to be stored next to each original image in a "Depth_images" subfolder, with basename appended by "_depth.tiff". Example:
-
-    Image: /path/to/foo.jpg
-    Depth raster: /path/to/Depth_images/foo_depth.tiff
-
-Depth rasters must be single-band arrays with depth values along the camera optical axis (Z) in a consistent unit (e.g.,
-meters). Depth arrays are treated as having the same image coordinate system as the tracking images. If
-`undistort_image = true`, the pipeline will undistort depth rasters using the same intrinsics and distortion
-coefficients as for the tracking images automatically. Therefore, no preprocessing step is needed, except ensuring that
-tracking image pixels and depth_image_pixels correspond to the *exact* same locations.
+### [no_georef] options and depth-image settings
+If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are handled and how optional 3D displacement calculation from depth images is performed.
 
 Example TOML snippet:
 ```toml
 [no_georef]
 use_no_georeferencing = true
-fake_pixel_size = 1                     # CRS units per pixel (e.g., meters per pixel)
-# If true, compute 3D displacements using depth images. In this case, the folder that contains the tracking images
-# should contain a subfolder named "Depth_images", which itself should contain a depth image file for every image file,
-# named <image_file_name>_depth.tiff
-convert_to_3d_displacement = true      
-# If true, undistort both RGB and depth images before tracking. In this case the camera_intrinsics_matrix and the
-# camera_distortion_coefficients need to be specified
-undistort_image = true                  
+fake_pixel_size = 1                 # CRS units per pixel (e.g., meters per pixel)
+convert_to_3d_displacement = true   # If true, compute 3D displacements using depth images
+undistort_image = true              # If true, undistort both RGB and depth images before tracking
 
 # Camera intrinsics: 3x3 matrix in the following format
 camera_intrinsics_matrix = [
@@ -113,6 +84,12 @@ camera_to_3d_coordinates_transform = [
   [0.0,  0.0,  0.0,  1.0]
 ]
 ```
+Notes and requirements:
+- `convert_to_3d_displacement`: when true, the pipeline will look for per-image depth rasters and compute 3D displacements.
+- `fake_pixel_size` gives the pixel size used when working without a CRS (units per pixel).
+- `camera_intrinsics_matrix` and `camera_distortion_coefficients` are required if `undistort_image = true` or when computing image→camera coordinate transforms.
+- `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix in standard row-major layout: [[R (3×3), t (3×1)], [0 0 0, 1]]. The pipeline applies this matrix directly (no internal transpose) when transforming points.
+- Arrays in TOML are parsed into lists and converted to numpy arrays by the pipeline — use numeric literals (no strings).
 
 
 ### Downsampling
@@ -173,7 +150,7 @@ value : any
     The required config value.
 
 ### _as_optional_value(value)
-Normalizes "", "none", and "null" to `None`.
+Normalizes `""`, `"none"`, and `"null"` to `None`.
 
 Parameters
 ----------
@@ -911,11 +888,11 @@ Parameters are read from `parameter_dict`. Common keys:
 - use_no_georeferencing
 - fake_pixel_size
 - downsample_factor
-- convert_to_3d_displacement # when true, compute 3D displacements using depth rasters
-- undistort_image # if true, undistort both image and depth rasters using camera intrinsics
-- camera_intrinsics_matrix # 3x3 matrix (if undistortion or 3D conversion is enabled)
-- camera_distortion_coefficients # 2- or 4-element array (OpenCV format)
-- camera_to_3d_coordinates_transform # optional 4x4 homogeneous transform for output coordinates
+- convert_to_3d_displacement       # when true, compute 3D displacements using depth rasters
+- undistort_image                 # if true, undistort both image and depth rasters using camera intrinsics
+- camera_intrinsics_matrix        # 3x3 matrix (if undistortion or 3D conversion is enabled)
+- camera_distortion_coefficients  # 2- or 4-element array (OpenCV format)
+- camera_to_3d_coordinates_transform  # optional 4x4 homogeneous transform for output coordinates
 
 #### _effective_pixel_size() -> float
 Returns CRS units per pixel (assumes square pixels).
@@ -930,7 +907,7 @@ Scales an affine transform by `factor` for downsampling.
 Selects bands for tracking. Default uses first three channels.
 
 #### load_images_from_file(filename_1, observation_date_1, filename_2, observation_date_2, selected_channels=None, NA_value=None)
-Loads and crops images to the intersection, handles fake georeferencing and downsampling, and sets bounds.
+Loads and crops images to the intersection, handles fake georeferencing and downsampling, and sets bounds. When operating with fake georeferencing and `convert_to_3d_displacement` enabled, the function will attempt to read corresponding depth rasters using the naming convention described above.
 
 Parameters
 ----------
