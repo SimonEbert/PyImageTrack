@@ -9,6 +9,7 @@ import rasterio.plot
 from matplotlib import image as mpimg
 from rasterio.crs import CRS
 from geocube.api.core import make_geocube
+from scipy.sparse.csgraph import depth_first_tree
 from shapely.geometry import box
 import scipy
 import sklearn
@@ -26,7 +27,7 @@ from ..CreateGeometries.HandleGeometries import (
     grid_points_on_polygon_by_distance,
     random_points_on_polygon_by_number,
 )
-from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_position_image
+from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_depth_images
 
 # filter functions
 from ..DataProcessing.DataPostprocessing import (
@@ -34,13 +35,12 @@ from ..DataProcessing.DataPostprocessing import (
     filter_outliers_full,
 )
 # DataPreProcessing
-from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images
-from ..DataProcessing.ImagePreprocessing import undistort_camera_image
+from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image
 from .AlignImages import align_images_lsm_scarce
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
-    plot_movement_of_points_with_valid_mask,
+    plot_movement_of_points_with_valid_mask, plot_raster_and_geometry,
 )
 # Date Handling
 from ..Utils import parse_date
@@ -67,8 +67,8 @@ class ImagePair:
         self.image2_matrix_truecolor = None
 
         # Optional: Store position images corresponding to non-georeferenced images for 3d displacement calculation
-        self.position_image_time1 = None
-        self.position_image_time2 = None
+        self.depth_image1 = None
+        self.depth_image2 = None
 
         # Parameters
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
@@ -88,12 +88,13 @@ class ImagePair:
         self.tracking_results = None
         self.level_of_detection = None
         self.level_of_detection_points = None
+        self.convert_to_3d_displacement = parameter_dict.get("convert_to_3d_displacement", False)
         self.undistort_image = parameter_dict.get("undistort_image", False)
         self.camera_intrinsics_matrix = parameter_dict.get("camera_intrinsics_matrix", None)
         self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
-        self.convert_to_3d_displacement = parameter_dict.get("convert_to_3d_displacement", False)
+        self.camera_to_3d_coordinates_transform = parameter_dict.get("camera_to_3d_coordinates_transform", None)
         if self.convert_to_3d_displacement:
-            self.displacement_column_name = "3d_displacement_distance"
+            self.displacement_column_name = "3d_displacement_distance_per_year"
         else:
             self.displacement_column_name = "movement_distance_per_year"
 
@@ -164,8 +165,9 @@ class ImagePair:
                 raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
                                  " but the two images must have the same crs.")
             if self.crs != file1.crs:
-                raise ValueError("Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
-                                 str(file1.crs))
+                raise ValueError(
+                    "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
+                    str(file1.crs))
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -210,23 +212,27 @@ class ImagePair:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
                 arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
 
-
             self.image1_matrix = arr1
             self.image2_matrix = arr2
-
 
             if self.convert_to_3d_displacement:
                 basename1 = os.path.splitext(os.path.basename(filename_1))[0]
                 basename2 = os.path.splitext(os.path.basename(filename_2))[0]
-                position_image_time1_path = os.path.join(os.path.dirname(filename_1), "Position_images", basename1
-                                                      + "_position.tiff")
-                position_image_time2_path = os.path.join(os.path.dirname(filename_2), "Position_images", basename2
-                                                      + "_position.tiff")
-                position_image_time1 = rasterio.open(position_image_time1_path, 'r').read()
-                position_image_time2 = rasterio.open(position_image_time2_path, 'r').read()
-                self.position_image_time1 = squeeze(position_image_time1)
-                self.position_image_time2 = squeeze(position_image_time2)
-
+                depth_image1_path = os.path.join(os.path.dirname(filename_1), "Depth_images", basename1
+                                                 + "_depth.tiff")
+                depth_image2_path = os.path.join(os.path.dirname(filename_2), "Depth_images", basename2
+                                                 + "_depth.tiff")
+                depth_image1 = rasterio.open(depth_image1_path, 'r').read()
+                depth_image2 = rasterio.open(depth_image2_path, 'r').read()
+                depth_image1 = squeeze(depth_image1)
+                depth_image2 = squeeze(depth_image2)
+                if self.undistort_image:
+                    depth_image1 = undistort_camera_image(depth_image1, self.camera_intrinsics_matrix,
+                                                          self.camera_distortion_coefficients)
+                    depth_image2 = undistort_camera_image(depth_image2, self.camera_intrinsics_matrix,
+                                                          self.camera_distortion_coefficients)
+                self.depth_image1 = depth_image1
+                self.depth_image2 = depth_image2
 
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])
@@ -247,7 +253,6 @@ class ImagePair:
 
             self.image1_transform = tform
             self.image2_transform = tform
-
 
             # Bounds in that CRS (pixel grid space), then shrink by search radius
             from rasterio.transform import array_bounds
@@ -495,20 +500,30 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
+        image_bounds_values = self.image_bounds.bounds.iloc[0]
+        within_image_mask = ((image_bounds_values.minx <= points_to_be_tracked.geometry.x) &
+                            (image_bounds_values.maxx >= points_to_be_tracked.geometry.x) &
+                            (image_bounds_values.miny <= points_to_be_tracked.geometry.y) &
+                            (image_bounds_values.maxy >= points_to_be_tracked.geometry.y))
+
+        points_to_be_tracked = points_to_be_tracked[within_image_mask]
+
 
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
                                             alignment_tracking=False,
                                             task_label="Tracking points for movement tracking")
-
         # calculate the years between observations from the two given observation dates
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
 
         if self.convert_to_3d_displacement:
-            georeferenced_tracked_points = calculate_displacement_from_position_image(
-                tracked_points, position_image_time1=self.position_image_time1, position_image_time2=self.position_image_time2)
+            georeferenced_tracked_points = calculate_displacement_from_depth_images(
+                tracked_points, depth_image_time1=self.depth_image1,
+                depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
+                camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
+                years_between_observations=years_between_observations)
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
@@ -593,7 +608,6 @@ class ImagePair:
         self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
                                                      self.displacement_column_name)
 
-
     def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame,
                          years_between_observations) -> gpd.GeoDataFrame:
         """
@@ -630,11 +644,12 @@ class ImagePair:
 
         print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
 
-
         if self.convert_to_3d_displacement:
-            tracked_points = calculate_displacement_from_position_image(tracked_control_pixels_valid,
-                                                                        self.position_image_time1,
-                                                                        self.position_image_time2)
+            tracked_points = calculate_displacement_from_depth_images(
+                tracked_control_pixels_valid,self.depth_image1,self.depth_image2,
+                camera_intrinsics_matrix=self.camera_intrinsics_matrix,
+                camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
+                years_between_observations=years_between_observations)
         else:
             tracked_points = georeference_tracked_points(tracked_control_pixels_valid,
                                                          self.image1_transform,
@@ -642,7 +657,6 @@ class ImagePair:
                                                          years_between_observations=years_between_observations)
 
         return tracked_points
-
 
     def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame,
                       filter_parameters: FilterParameters = None) -> None:
@@ -687,10 +701,10 @@ class ImagePair:
 
         level_of_detection_quantile = filter_parameters.level_of_detection_quantile
 
-        unfiltered_level_of_detection_points = self.track_lod_points(points_for_lod_calculation=points_for_lod_calculation,
-                                                                    years_between_observations=years_between_observations)
+        unfiltered_level_of_detection_points = self.track_lod_points(
+            points_for_lod_calculation=points_for_lod_calculation,
+            years_between_observations=years_between_observations)
         self.level_of_detection_points = unfiltered_level_of_detection_points
-
 
         self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[self.displacement_column_name],
                                                  level_of_detection_quantile)
@@ -804,8 +818,8 @@ class ImagePair:
             # Calculate resolution and therefore full raster dimensions from distance of tracked points for raster cells
             # as large as possible without burning several points to the same raster pixel
             res = float(self.tracking_parameters.distance_of_tracked_points_px) * self._effective_pixel_size()
-            height = int(np.ceil(height / res)) + 1 # + 1 needed for proper centering of points w.r.t. raster grid
-            width = int(np.ceil(width / res)) + 1 # + 1 needed for proper centering of points w.r.t. raster grid
+            height = int(np.ceil(height / res)) + 1  # + 1 needed for proper centering of points w.r.t. raster grid
+            width = int(np.ceil(width / res)) + 1  # + 1 needed for proper centering of points w.r.t. raster grid
 
             # if df.crs is not None:
             #     transform = rasterio.transform.from_origin(bounds[0], bounds[3], res, res)
@@ -827,7 +841,7 @@ class ImagePair:
                     transform=transform,
                     fill=np.nan,
                     dtype="float32"
-                    )
+                )
             return {
                 "raster": data,
                 "transform": transform,
@@ -841,20 +855,21 @@ class ImagePair:
                 dtype = "float32"
 
             with rasterio.open(
-                path,
-                "w",
-                driver=driver,
-                height=raster.shape[0],
-                width=raster.shape[1],
-                transform=transform,
-                crs=crs,
-                count=1,
-                nodata=np.nan,
-                dtype=dtype
-                ) as dst:
-                    dst.write(raster, 1)
+                    path,
+                    "w",
+                    driver=driver,
+                    height=raster.shape[0],
+                    width=raster.shape[1],
+                    transform=transform,
+                    crs=crs,
+                    count=1,
+                    nodata=np.nan,
+                    dtype=dtype
+            ) as dst:
+                dst.write(raster, 1)
 
-                    # --- Save input images if requested ---
+                # --- Save input images if requested ---
+
         if "first_image_matrix" in save_files:
             _save_raster_as_tif(
                 path=f"{folder_path}/image_{self.image1_observation_date.strftime(format="%Y-%m-%d")}.jpeg",
@@ -864,7 +879,6 @@ class ImagePair:
                 driver="JPEG"
             )
 
-
         if "second_image_matrix" in save_files:
             _save_raster_as_tif(
                 path=f"{folder_path}/image_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.jpeg",
@@ -872,7 +886,7 @@ class ImagePair:
                 transform=self.image1_transform,
                 crs=self.crs,
                 driver="JPEG"
-                )
+            )
 
         # Grids for various subsets
 
@@ -901,7 +915,7 @@ class ImagePair:
                     raster=raster_valid["raster"][self.displacement_column_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
-                    )
+                )
 
         # Outlier-filtered rasters (exclude outliers, keep everything else)
         if raster_outlier_filtered is not None:
@@ -955,7 +969,6 @@ class ImagePair:
                     crs=raster_all["crs"]
                 )
 
-
         # --- Masks ---
 
         # invalid mask: marks all non-valid points
@@ -992,16 +1005,16 @@ class ImagePair:
         _write_reason_mask("is_bearing_standard_deviation_outlier", "mask_outlier_bsd_tif", "mask_outlier_bsd")
 
         # LoD points
-        if "LoD_points_geojson" in save_files and hasattr(self, "level_of_detection_points"):
+        if "LoD_points_geojson" in save_files and self.level_of_detection_points is not None:
             self.level_of_detection_points.to_file(
                 f"{folder_path}/LoD_points_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.fgb",
-            driver="FlatGeobuf"
+                driver="FlatGeobuf"
             )
 
-        if "control_points_geojson" in save_files and hasattr(self, "tracked_control_points"):
+        if "control_points_geojson" in save_files and self.tracked_control_points is not None:
             self.tracked_control_points.to_file(
                 f"{folder_path}/control_points_{self.image1_observation_date.strftime(format="%Y-%m-%d")}_{self.image2_observation_date.strftime(format="%Y-%m-%d")}.fgb",
-            driver="FlatGeobuf"
+                driver="FlatGeobuf"
             )
 
         # --- Statistics text file (robust to missing columns) ---

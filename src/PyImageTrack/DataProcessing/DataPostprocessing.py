@@ -25,7 +25,8 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
     level_of_detection: The value to filter for. Yearly movement rates below this value will be set to 0 and the
     corresponding movement bearing to NaN.
     displacement_column_name: The column name of the displacement column ('movement_distance_per_year' for georeferenced
-    images and '3d_displacement_distance' for non-georeferenced images, for which 3d displacements have been calculated.
+    images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
+    calculated.
     Returns
     -------
     tracking_results: GeoDataFrame
@@ -198,7 +199,7 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
         parameters is ignored.
     displacement_column_name: str
         The column name of the displacement column ('movement_distance_per_year' for georeferenced
-        images and '3d_displacement_distance' for non-georeferenced images, for which 3d displacements have been
+        images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
         calculated).
     Returns
     -------
@@ -273,7 +274,7 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
         parameters is ignored.
     displacement_column_name: str
         The column name of the displacement column ('movement_distance_per_year' for georeferenced
-        images and '3d_displacement_distance' for non-georeferenced images, for which 3d displacements have been
+        images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
         calculated).
     Returns
     -------
