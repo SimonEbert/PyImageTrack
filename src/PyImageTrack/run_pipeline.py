@@ -350,7 +350,7 @@ def run_from_config(config_path: str):
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
 
-        try:
+        if True: #try:
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
             # compute years_between (hour-precise)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
@@ -474,6 +474,7 @@ def run_from_config(config_path: str):
             else:
                 image_pair.valid_alignment_possible = True
                 image_pair.images_aligned = False
+                used_cache_alignment = False
 
 
             # ==============================
@@ -493,8 +494,7 @@ def run_from_config(config_path: str):
 
 
                 if not used_cache_tracking:
-                    if used_cache_alignment or getattr(image_pair, "images_aligned", False):
-
+                    if getattr(image_pair, "images_aligned", False) or not used_cache_alignment:
                         tracked_points = image_pair.track_points(tracking_area=polygon_inside)
                         image_pair.tracking_results = tracked_points
                     else:
@@ -598,7 +598,7 @@ def run_from_config(config_path: str):
 
             successes.append((year1, year2))
 
-        except Exception as e:
+        else: #except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")
