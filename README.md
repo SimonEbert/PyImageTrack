@@ -12,8 +12,9 @@ least-squares matching for usage on rock glaciers.
 - Calculation of the Level of Detection of a performed tracking
 - Removing outliers based on movement bearing and movement rate in the surrounding area
 - Tracking on non-georeferenced images and giving the results in pixels
-	--> For this the respective shapefiles must be in image coordinates and have no valid CRS. This can be achieved by deleting the "filename.prj" file from the folder where the "filename.shp" file is stored
-
+	--> For this the respective shapefiles must be in image coordinates and have no valid CRS. This can be achieved by
+deleting the "filename.prj" file from the folder where the "filename.shp" file is stored
+- Optional 3D displacement from depth images when working with non-georeferenced photos
 - Full documentation: `docs/pyimagetrack_documentation.md`
 - Config templates: `configs/`
 

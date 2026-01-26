@@ -26,8 +26,8 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
         in the image coordinate system to 3d points.
     camera_to_3d_coordinates_transform: np.ndarray = None
         A 4x4 homogeneous transformation matrix used to transform points from the camera coordinate system to an
-        arbitrary 3d coordinate system. The matrix is assumed to have the format [[R, 0]\n
-                                                                                  [t, 1]]
+        arbitrary 3d coordinate system. The matrix is assumed to have the format [[R, t]\n
+                                                                                  [0, 1]]
 
     Returns
     -------
@@ -52,9 +52,10 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
     Y = -points[:, 0] * Z
     points_xyz = np.stack([X, Y, Z, np.ones_like(Z)], axis=1).transpose()
     if camera_to_3d_coordinates_transform is not None:
-        points_transformed = camera_to_3d_coordinates_transform.transpose() @ points_xyz
+        points_transformed = camera_to_3d_coordinates_transform @ points_xyz
     else:
         points_transformed = points_xyz
+    points_transformed = points_transformed[0:3]
     return points_transformed.transpose()
 
 
@@ -80,7 +81,7 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         It is possible to give the same depth image for these two variables. However, the resulting
         "3d-displacement-column" will then only include the 2d displacement in the plane perpendicular to the
         optical axis of the camera. It will, however, be given normalized to the units of the depth image, i.e.
-        perspective effects stemming from varying distances to the camery across the image will be removed.
+        perspective effects stemming from varying distances to the camera across the image will be removed.
     camera_intrinsic_matrix: np.ndarray
         The intrinsic matrix of the camera. Assumed to have the format [[f_x, s, c_x],\n
                                                                         [0, f_y, c_y],\n
@@ -97,14 +98,14 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         coordinate system such that the "x", "y" and "z" entries of the resulting gpd.GeoDataFrame are given in
         transformed coordinates (in the new coordinate system independent of the image coordinate system). As for
         the 'row' and 'column' data, the 'x', 'y' and 'z' values correspond to the position at the first time point.
-        This matrix is assumed to be a 4x4 homogeneous matrix in the format [[R, 0]\n
-                                                                             [t, 1]]
+        This matrix is assumed to be a 4x4 homogeneous matrix in the format [[R, t]\n
+                                                                             [0, 1]]
 
     Returns
     -------
     georeferenced_tracked_pixels: gpd.GeoDataFrame
         A GeoDataFrame that is 'pseudo-georeferenced': It contains a column '3d_displacement_distance' that gives
-        the full displacement between the 2 image time points as well as a column ' 3d_displacement_distance_per_year'
+        the full displacement between the 2 image time points as well as a column '3d_displacement_distance_per_year'
         that gives a comparable velocity for each point. The units of these columns are determined by the unit of
         the depth image (e.g. m). The DataFrame also contains the 'x', 'y' and 'z' positions corresponding to the
         used 3d coordinate system. If camera_to_3d_coordinates_transform is None, this coordinate system is such

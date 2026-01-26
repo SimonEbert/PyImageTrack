@@ -46,6 +46,75 @@ Configs are TOML files and share the same structure. Use these as templates:
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
 
+
+### Config: [no_georef] options
+
+If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are
+handled and how optional 3D displacement calculation from depth images is performed. First, the usage of the different
+options is described and then an example config file part is given:
+
+- `convert_to_3d_displacement`: When true, the pipeline will look for per-image depth rasters and compute 3D displacements.
+The depth image corresponding to an image `image_filename` on which tracking is performed is assumed to be called
+`<image_filename>_depth.tiff` and located in a subfolder `Depth_images` of the folder, where the tracking images are
+stored.
+- `fake_pixel_size` gives the pixel size used when working without a CRS (units per pixel).
+- `camera_intrinsics_matrix` and `camera_distortion_coefficients` are only required if undistort_image = true. In this
+case the positions will be correctly transformed into the camera coordinate system.
+- `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix. The expected format is: [[R (3×3), t (3×1)],
+[0 0 0, 1 ]] where R is rotation and t is translation. (See CreateGeometries/DepthImageConversion.py for details and a
+note about current implementation behavior.)
+
+Arrays in TOML are parsed into lists and converted to numpy arrays by the pipeline — use numeric literals (no strings).
+
+
+#### Depth images
+
+When convert_to_3d_displacement is enabled the pipeline expects depth images to be stored next to each original image in a "Depth_images" subfolder, with basename appended by "_depth.tiff". Example:
+
+    Image: /path/to/foo.jpg
+    Depth raster: /path/to/Depth_images/foo_depth.tiff
+
+Depth rasters must be single-band arrays with depth values along the camera optical axis (Z) in a consistent unit (e.g.,
+meters). Depth arrays are treated as having the same image coordinate system as the tracking images. If
+`undistort_image = true`, the pipeline will undistort depth rasters using the same intrinsics and distortion
+coefficients as for the tracking images automatically. Therefore, no preprocessing step is needed, except ensuring that
+tracking image pixels and depth_image_pixels correspond to the *exact* same locations.
+
+Example TOML snippet:
+```toml
+[no_georef]
+use_no_georeferencing = true
+fake_pixel_size = 1                     # CRS units per pixel (e.g., meters per pixel)
+# If true, compute 3D displacements using depth images. In this case, the folder that contains the tracking images
+# should contain a subfolder named "Depth_images", which itself should contain a depth image file for every image file,
+# named <image_file_name>_depth.tiff
+convert_to_3d_displacement = true      
+# If true, undistort both RGB and depth images before tracking. In this case the camera_intrinsics_matrix and the
+# camera_distortion_coefficients need to be specified
+undistort_image = true                  
+
+# Camera intrinsics: 3x3 matrix in the following format
+camera_intrinsics_matrix = [
+  [fx, s, cx],
+  [0.0, fy, cy],
+  [0.0, 0.0, 1.0]
+]
+
+# Distortion coefficients: 2 or 4 elements as required by OpenCV (radial +/- tangential)
+camera_distortion_coefficients = [k1, k2]  # or [k1,k2,p1,p2]
+
+# Optional 4x4 homogeneous transform mapping camera coords -> target 3D coords
+# Can be used to transform computed 3d image coordinates from the depth image to an arbitrary 3d coordinate system
+# given the respective homogeneous transform in the following format
+camera_to_3d_coordinates_transform = [
+  [r11, r12, r13, t1],
+  [r21, r22, r23, t2],
+  [r31, r32, r33, t3],
+  [0.0,  0.0,  0.0,  1.0]
+]
+```
+
+
 ### Downsampling
 ```
 [downsampling]
@@ -619,6 +688,81 @@ submatrix : np.ndarray
 center_in_submatrix : tuple
     (row, col) of original center inside the submatrix.
 
+
+## Module: CreateGeometries/DepthImageConversion.py
+
+This module provides utilities to convert pixel coordinates and depth rasters into 3D positions and to compute 3D
+displacements from tracked points and depth images.
+### calculate_3d_position_from_depth_image(points, depth_image, camera_intrinsics_matrix, camera_to_3d_coordinates_transform=None)
+Transform 2D image pixel coordinates with corresponding depth values into 3D coordinates.
+
+Parameters
+----------
+`points`: numpy.ndarray, shape (n, 2)
+    An array of image pixel coordinates in the format (row, column).
+
+`depth_image`: numpy.ndarray, shape (H, W)
+    Single-band depth raster giving Z (distance along the camera optical axis) per pixel in consistent units (e.g.,
+meters). Indexing uses [row, column].
+
+`camera_intrinsics_matrix`: numpy.ndarray, shape (3, 3)
+    Intrinsic camera matrix in row-major form: [[f_x, s, c_x], [0, f_y, c_y], [0, 0, 1 ]]
+
+`camera_to_3d_coordinates_transform`: numpy.ndarray, shape (4, 4), optional
+    Optional homogeneous transform mapping camera coordinates to a desired 3D coordinate system. Expected layout (row-major): [[R (3×3), t (3×1)], [0 0 0, 1 ]]
+
+Returns
+
+`points_transformed`: numpy.ndarray, shape (n, 4)
+An n×3 array containing corresponding 3D coordinates: columns are [x, y, z]. Coordinate sign conventions:
+        X aligns with image columns (increasing to the right).
+        Y is set so that positive Y points upwards (computed as -row-direction × Z).
+        Z is along the camera optical axis (distance from the camera).
+
+
+### calculate_displacement_from_depth_images(tracked_points, depth_image_time1, depth_image_time2, camera_intrinsics_matrix, years_between_observations, camera_to_3d_coordinates_transform=None)
+ Compute 3D displacements and annualized velocities for tracked points using two depth images.
+
+#### Parameters
+
+ `tracked_points`: pd.DataFrame with at least the following columns:
+
+- "row", "column": pixel coordinates of the point at time1
+- "movement_row_direction", "movement_column_direction": float offsets from time1 to time2 in pixel units (as returned by
+tracking functions such as track_movement_lsm)
+
+`depth_image_time1`: numpy.ndarray, shape (H, W)
+    Single-band depth raster giving Z (distance along the camera optical axis) per pixel in consistent units (e.g.,
+meters) for the first time point of tracking.
+
+`depth_image_time2`: numpy.ndarray, shape (H, W)
+    Single-band depth raster giving Z (distance along the camera optical axis) per pixel in consistent units (e.g.,
+meters) for the second time point of tracking.
+
+`camera_intrinsics_matrix`: numpy.ndarray, shape (3, 3)
+    Intrinsic camera matrix in row-major form: [[f_x, s, c_x], [0, f_y, c_y], [0, 0, 1 ]]
+
+`camera_to_3d_coordinates_transform`: numpy.ndarray, shape (4, 4), optional
+    Optional homogeneous transform mapping camera coordinates to a desired 3D coordinate system. Expected layout (row-major): [[R (3×3), t (3×1)], [0 0 0, 1 ]]
+
+
+#### Returns
+
+`georeferenced_tracked_pixels`: geopandas.GeoDataFrame with the following important columns:
+- "3d_displacement_distance": Euclidean length of the 3D displacement (units of depth image, e.g., meters)
+- "3d_displacement_distance_per_year": the above value divided by years_between_observations
+- "x","y","z": 3D coordinates (from time1) in the coordinate system given by camera_to_3d_coordinates_transform
+if provided, otherwise in camera coordinates
+- "valid": boolean; points with NaN displacement_distance are marked invalid
+- geometry: created as gpd.points_from_xy(x=column, y=-row). Note the negative sign for y so that geometries follow the convention of y increasing upwards.
+
+### Note
+
+    Depth images should encode distances along the optical axis (Z). Use consistent units (e.g., meters).
+    Missing or invalid depths should be encoded as NaN. The function marks points with NaN displacements as invalid in the returned GeoDataFrame.
+    Depth values ≤ 0 are not explicitly handled by the function and may lead to unexpected results; clean or mask invalid depths prior to invocation.
+
+
 ## Module: ImageTracking/TrackingResults.py
 ### class TrackingResults
 Represents the result of tracking a single point/cell.
@@ -768,6 +912,11 @@ Parameters are read from `parameter_dict`. Common keys:
 - use_no_georeferencing
 - fake_pixel_size
 - downsample_factor
+- convert_to_3d_displacement # when true, compute 3D displacements using depth rasters
+- undistort_image # if true, undistort both image and depth rasters using camera intrinsics
+- camera_intrinsics_matrix # 3x3 matrix (if undistortion or 3D conversion is enabled)
+- camera_distortion_coefficients # 2- or 4-element array (OpenCV format)
+- camera_to_3d_coordinates_transform # optional 4x4 homogeneous transform for output coordinates
 
 #### _effective_pixel_size() -> float
 Returns CRS units per pixel (assumes square pixels).

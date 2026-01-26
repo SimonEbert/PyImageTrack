@@ -245,6 +245,8 @@ class ImagePair:
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
+                self.depth_image1 = self._downsample_array(self.depth_image1, factor)
+                self.depth_image2 = self._downsample_array(self.depth_image2, factor)
 
             # Synthetic transform: origin (0,0) upper-left, pixel size = fake_pixel_size
             from affine import Affine
