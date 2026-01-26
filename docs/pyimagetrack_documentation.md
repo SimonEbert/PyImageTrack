@@ -696,8 +696,7 @@ displacements from tracked points and depth images.
 ### calculate_3d_position_from_depth_image(points, depth_image, camera_intrinsics_matrix, camera_to_3d_coordinates_transform=None)
 Transform 2D image pixel coordinates with corresponding depth values into 3D coordinates.
 
-Parameters
-----------
+#### Parameters
 `points`: numpy.ndarray, shape (n, 2)
     An array of image pixel coordinates in the format (row, column).
 
