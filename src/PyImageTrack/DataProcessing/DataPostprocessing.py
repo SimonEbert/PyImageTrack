@@ -8,6 +8,56 @@ from ..Parameters.FilterParameters import FilterParameters
 from ..Parameters.TrackingParameters import TrackingParameters
 
 
+def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
+                         points_for_lod_calculation: gpd.GeoDataFrame,
+                         tracking_parameters: TrackingParameters, crs, years_between_observations) -> gpd.GeoDataFrame:
+    """
+
+    Parameters
+    ----------
+    image1_matrix
+    image2_matrix
+    image_transform
+    points_for_lod_calculation
+    tracking_parameters
+    crs
+    years_between_observations
+
+    Returns
+    -------
+    tracked_points: gpd.GeoDataFrame
+        The random points which can be used for calculating the LoD.
+    """
+    points = points_for_lod_calculation
+    tracked_points = TrackMovement.track_movement_lsm(
+        image1_matrix=image1_matrix, image2_matrix=image2_matrix, image_transform=image_transform,
+        points_to_be_tracked=points, tracking_parameters=tracking_parameters, alignment_tracking=False,
+        save_columns=["movement_row_direction",
+                      "movement_column_direction",
+                      "movement_distance_pixels",
+                      "movement_bearing_pixels",
+                      ],
+        task_label="Tracking points for LoD"
+    )
+    tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
+
+    if len(tracked_control_pixels_valid) == 0:
+        # Check if correlation_coefficient column exists before accessing it
+        if "correlation_coefficient" in tracked_points.columns:
+            cc_values = str(list(tracked_points["correlation_coefficient"]))
+        else:
+            cc_values = "N/A (column not available)"
+        raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
+                         "threshold. Cross-correlation values were " + cc_values +
+                         " (None-values may signify problems during tracking).")
+
+    print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
+
+    tracked_points = georeference_tracked_points(tracked_control_pixels_valid, image_transform, crs=crs,
+                                                 years_between_observations=years_between_observations)
+
+    return tracked_points
+
 
 def _ensure_bool_col(df, col):
     if col not in df.columns:

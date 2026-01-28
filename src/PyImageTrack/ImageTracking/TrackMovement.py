@@ -236,13 +236,21 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         moved_cell_matrix_dy_times_y = np.multiply(moved_cell_matrix_dy,
                                                    indices[1, :].reshape(tracked_cell_matrix.shape))
 
-        model = sklearn.linear_model.LinearRegression().fit(
-            np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
+        # Prepare input and output for linear regression
+        X = np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
                              moved_cell_matrix_dx.flatten(), moved_cell_matrix_dy_times_x.flatten(),
                              moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten(),
                              np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()
-                             ]),
-            (tracked_cell_matrix - moved_cell_matrix).flatten())
+                             ])
+        y = (tracked_cell_matrix - moved_cell_matrix).flatten()
+        
+        # Check for NaN values before fitting
+        if np.any(np.isnan(X)) or np.any(np.isnan(y)):
+            logging.info("NaN values detected in LSM optimization. Skipping this point.")
+            return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                                   tracking_success=False)
+        
+        model = sklearn.linear_model.LinearRegression().fit(X, y)
 
         coefficient_adjustment = model.coef_
 
@@ -439,13 +447,19 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         movement_cell_size = tracking_parameters.movement_cell_size
         cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
 
-    # Create shared memory for image1_matrix
+    # Check image sizes and create shared memory for image1_matrix
+    if image1_matrix.nbytes == 0:
+        raise ValueError("Image1 matrix has zero size. Cannot create shared memory.")
+    
     shared_memory_image1 = shared_memory.SharedMemory(create=True, size=image1_matrix.nbytes)
     shared_image_matrix1 = np.ndarray(image1_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image1.buf)
     shared_image_matrix1[:] = image1_matrix[:]
     shape_image1 = image1_matrix.shape
 
-    # Create shared memory for image2_matrix
+    # Check image sizes and create shared memory for image2_matrix
+    if image2_matrix.nbytes == 0:
+        raise ValueError("Image2 matrix has zero size. Cannot create shared memory.")
+    
     shared_memory_image2 = shared_memory.SharedMemory(create=True, size=image2_matrix.nbytes)
     shared_image_matrix2 = np.ndarray(image2_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image2.buf)
     shared_image_matrix2[:] = image2_matrix[:]
@@ -489,31 +503,39 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         search_extents=shared_search_extents
     )
 
-    procs = max(1, multiprocessing.cpu_count() - 1)
-    with multiprocessing.Pool(processes=procs) as pool:
-        tracking_results = list(
-            tqdm.tqdm(
-                pool.imap(partial_lsm_tracking_function, list_of_central_indices),
-                total=len(list_of_central_indices),
-                desc=task_label,
-                unit="points",
-                smoothing=0.1,
-                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
+    tracking_results = []
+    try:
+        procs = max(1, multiprocessing.cpu_count() - 1)
+        with multiprocessing.Pool(processes=procs) as pool:
+            tracking_results = list(
+                tqdm.tqdm(
+                    pool.imap(partial_lsm_tracking_function, list_of_central_indices),
+                    total=len(list_of_central_indices),
+                    desc=task_label,
+                    unit="points",
+                    smoothing=0.1,
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
+                )
             )
-        )
-        # tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
-        #                                   total=len(list_of_central_indices),
-        #                                   desc=task_label,
-        #                                   unit="points",
-        #                                   smoothing=0.1,
-        #                                   bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
-        #                                              "[{remaining}, {rate_fmt}]"))
-
-    # Clean-up image matrices from shared memory
-    shared_memory_image1.close()
-    shared_memory_image1.unlink()
-    shared_memory_image2.close()
-    shared_memory_image2.unlink()
+            # tracking_results = list(tqdm.tqdm(pool.imap(track_cell_lsm_parallelized, list_of_central_indices),
+            #                                   total=len(list_of_central_indices),
+            #                                   desc=task_label,
+            #                                   unit="points",
+            #                                   smoothing=0.1,
+            #                                   bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}"
+            #                                              "[{remaining}, {rate_fmt}]"))
+    finally:
+        # Clean-up image matrices from shared memory - always execute, even on error
+        try:
+            shared_memory_image1.close()
+            shared_memory_image1.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
+        try:
+            shared_memory_image2.close()
+            shared_memory_image2.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
 
     # access the respective tracked point coordinates and its movement
     movement_row_direction = [results.movement_rows for results in tracking_results]
@@ -541,11 +563,16 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     if "transformation_matrix" in save_columns:
         tracked_pixels["transformation_matrix"] = [results.transformation_matrix for results in tracking_results]
 
+    # Add correlation coefficient column BEFORE filtering on it
     tracked_pixels["correlation_coefficient"] = [results.cross_correlation_coefficient for results in tracking_results]
 
-    tracked_pixels_above_cc_threshold = tracked_pixels[
-        tracked_pixels["correlation_coefficient"] > cross_correlation_threshold]
+    # Filter by correlation threshold - handle case where column might not exist
+    if "correlation_coefficient" in tracked_pixels.columns:
+        tracked_pixels_above_cc_threshold = tracked_pixels[
+            tracked_pixels["correlation_coefficient"] > cross_correlation_threshold]
+    else:
+        tracked_pixels_above_cc_threshold = tracked_pixels.copy()
 
-    if "correlation_coefficient" not in save_columns:
+    if "correlation_coefficient" not in save_columns and "correlation_coefficient" in tracked_pixels_above_cc_threshold.columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
     return tracked_pixels_above_cc_threshold
