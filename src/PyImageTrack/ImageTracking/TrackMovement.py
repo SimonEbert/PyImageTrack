@@ -340,7 +340,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
             moved_cell_matrix.reshape(-1),
         ])
 
-
         # Check for NaN values before fitting
         if np.any(np.isnan(J)) or np.any(np.isnan(residuals)):
             logging.info("NaN values detected in LSM optimization. Skipping this point.")
