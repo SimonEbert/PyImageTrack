@@ -127,7 +127,7 @@ class ImagePair:
     def select_image_channels(self, selected_channels: int = None):
         if self.image1_matrix.ndim == 2:
             return
-        if (self.image1_matrix.ndim != self.image2_matrix.ndim):
+        if self.image1_matrix.ndim != self.image2_matrix.ndim:
             raise ValueError("Got matrices with a different number of dimensions, signifying possibly a single-channel "
                              "vs. multi-channel mismatch between the images.")
         if selected_channels is None:
@@ -153,8 +153,6 @@ class ImagePair:
             The filename of the second image
         observation_date_2: str
             The observation date of the second image in format %d-%m-%Y
-        selected_channels: list[int]
-            The image channels to be selected. Defaults to [0,1,2]
         Returns
         -------
         """
