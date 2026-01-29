@@ -88,6 +88,7 @@ class ImagePair:
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
         self.image_bands = parameter_dict.get("image_bands", None)
+        self.coordinate_system_unit_name = parameter_dict.get("unit_name", None)
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         self.tracked_control_points = None
         self.tracking_results = None
@@ -158,7 +159,6 @@ class ImagePair:
         """
         file1 = rasterio.open(filename_1, 'r')
         file2 = rasterio.open(filename_2, 'r')
-
         # Choose path: true georef vs fake georef
         no_crs_either = (file1.crs is None) or (file2.crs is None)
         force_fake = self.use_no_georeferencing or no_crs_either
@@ -175,6 +175,7 @@ class ImagePair:
                 raise ValueError(
                     "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
                     str(file1.crs))
+            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -222,6 +223,10 @@ class ImagePair:
             # Store original matrices before any preprocessing (e.g. undistorting, channel selection, CLAHE)
             self.image1_matrix_original = arr1.copy()
             self.image2_matrix_original = arr2.copy()
+
+            # Adjust unit name if we are working in the non-georeferenced setting and the name has not been set
+            if self.coordinate_system_unit_name is None:
+                self.coordinate_system_unit_name = "pixel"
 
             if self.undistort_image:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
@@ -497,6 +502,8 @@ class ImagePair:
                 depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
                 years_between_observations=years_between_observations)
+            if self.coordinate_system_unit_name is "pixel":
+                self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
@@ -546,7 +553,8 @@ class ImagePair:
         None
         """
         if self.tracking_results is not None:
-            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results)
+            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results,
+                                    unit_name=self.coordinate_system_unit_name)
         else:
             logging.warning("No results calculated yet. Plot not provided")
 
@@ -558,7 +566,8 @@ class ImagePair:
         -------
         """
         if self.tracking_results is not None:
-            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
+            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
+                                                    unit_name=self.coordinate_system_unit_name)
         else:
             logging.warning("No results calculated yet. Plot not provided")
 
@@ -1168,6 +1177,7 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                unit_name=self.coordinate_system_unit_name
             )
         else:
             plot_movement_of_points(
@@ -1175,5 +1185,6 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                unit_name=self.coordinate_system_unit_name
             )
 

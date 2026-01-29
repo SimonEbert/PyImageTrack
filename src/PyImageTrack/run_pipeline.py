@@ -215,6 +215,7 @@ def run_from_config(config_path: str):
     force_recompute_lod = bool(_get(cfg, "cache", "force_recompute_lod", False))
 
     image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
+    unit_name = _as_optional_value(_get(cfg, "image", "unit_name", None))
 
     # adaptive tracking window options
     use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
@@ -361,6 +362,7 @@ def run_from_config(config_path: str):
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
             param_dict["image_bands"]                       = image_bands
+            param_dict["unit_name"]                         = unit_name
 
             param_dict["crs"]                               = image_crs
  
