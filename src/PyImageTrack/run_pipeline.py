@@ -262,6 +262,7 @@ def run_from_config(config_path: str):
         # usually this refers to the offset in px between the images,
         # but if the adaptive mode is used, this means the expected offset in px per year
         "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
+        "initial_shift_values": _as_optional_value(_get(cfg, "tracking", "initial_shift_values")),
     })
 
     filter_params = FilterParameters({
@@ -349,14 +350,14 @@ def run_from_config(config_path: str):
 
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
-
+        # ToDo: Change
         if True: #try:
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
             # compute years_between (hour-precise)
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
 
-
+            print(alignment_params.control_search_extent_px)
             # alignment: convert user-entered deltas -> effective extents
             base_align_deltas = alignment_params.control_search_extent_px
             effective_align_extents = make_effective_extents_from_deltas(
@@ -443,6 +444,7 @@ def run_from_config(config_path: str):
                 selected_channels=tracking_params.image_bands
             )
 
+
             # optional image enhancement (CLAHE) before alignment/tracking
             if do_image_enhancement and hasattr(image_pair, "equalize_adapthist_images"):
                 image_pair.equalize_adapthist_images()
@@ -475,7 +477,6 @@ def run_from_config(config_path: str):
                 image_pair.valid_alignment_possible = True
                 image_pair.images_aligned = False
                 used_cache_alignment = False
-
 
             # ==============================
             # TRACKING (optional)
@@ -516,7 +517,6 @@ def run_from_config(config_path: str):
                         print(f"[CACHE] Tracking saved to:   {track_dir}  (pair {year1}->{year2})")
             else:
                 print("Tracking is disabled (alignment-only run).")
-
 
             # ==============================
             # FILTERING + PLOTS + SAVING (optional)
@@ -571,7 +571,6 @@ def run_from_config(config_path: str):
                                 print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
 
                     image_pair.filter_lod_points()
-
                 if do_plotting:
                     image_pair.plot_tracking_results_with_valid_mask()
 
@@ -619,6 +618,7 @@ def main(argv=None):
     parser.add_argument("--config", required=True, help="Path to TOML config file")
     args = parser.parse_args()
     run_from_config(args.config)
+
 
 
 if __name__ == "__main__":

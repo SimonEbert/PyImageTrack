@@ -2,11 +2,13 @@ import geopandas as gpd
 import numpy as np
 import scipy
 import sklearn
+import rasterio
 
 from ..CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
 from .TrackMovement import move_indices_from_transformation_matrix
 from .TrackMovement import track_movement_lsm
 from ..Parameters.AlignmentParameters import AlignmentParameters
+from .ImageInterpolator import ImageInterpolator
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
@@ -25,8 +27,7 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         transform for the second matrix. The transform of the first image has to be supplied. Thus, the first image is
         assumed to be correctly georeferenced.
     image_transform :
-        An object of the class Affine as provided by the rasterio package. The two images are assumed to be aligned
-        (for example as a result of align_images) and therefore have the same transform.
+        An object of the class Affine as provided by the rasterio package specifying the transform for the first image.
     reference_area : gpd.GeoDataFrame
         A single-element GeoDataFrame, containing a polygon for specifying the reference area used for the alignment.
         This is the area, where no movement is suspected.
@@ -35,7 +36,8 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     Returns
     ----------
     [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
-    are aligned, they possess the same transformation. You can therefore assume that
+    are aligned, they possess the same transformation. You can therefore assume that image_transform (the transform for
+    the first image) corresponds to both images.
     """
 
     if len(reference_area) == 0:
@@ -102,12 +104,10 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
          [transformation_linear_model.coef_[1, 0], transformation_linear_model.coef_[1, 1],
           transformation_linear_model.intercept_[1]]])
 
-    indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[0]), np.arange(0, image1_matrix.shape[1]))
+    indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[-2]), np.arange(0, image1_matrix.shape[-1]))
                        ).T.reshape(-1, 2).T
     moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
-    image2_matrix_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, image2_matrix.shape[0]),
-                                                                 np.arange(0, image2_matrix.shape[1]),
-                                                                 image2_matrix)
+    image2_matrix_spline = ImageInterpolator(image2_matrix)
     print("Resampling the second image matrix with transformation matrix\n" + str(sampling_transformation_matrix) +
           "\nThis may take some time.")
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(

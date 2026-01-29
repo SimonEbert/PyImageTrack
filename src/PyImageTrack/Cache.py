@@ -4,6 +4,7 @@ import json
 import hashlib
 import geopandas as gpd
 import rasterio
+import logging
 
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
@@ -94,11 +95,17 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
+    if image_pair.image1_matrix.shape != image_pair.image2_matrix.shape:
+        logging.warning("The two matrices have not the same shape, signifying probably either a channel mismatch or "
+                        "non-aligned images.\n"
+                        "Shape of the first image: " + str(image_pair.image1_matrix.shape) + "\n"
+                        "Shape of the second image: " + str(image_pair.image2_matrix.shape))
     if os.path.exists(control_pts):
         try:
             image_pair.tracked_control_points = gpd.read_file(control_pts)
-        except Exception:
-            pass
+        except FileNotFoundError:
+            logging.warning("Did not find control points in alignment cache. Control points for this alignment are not"
+                         "available.")
     return True
 
 def tracking_cache_paths(track_dir: str, year1: str, year2: str):

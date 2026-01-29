@@ -26,18 +26,9 @@ def get_submatrix_symmetric(central_index, shape, matrix):
     ----------
     submatrix: A numpy array of the specified shape.
     """
-    # central_index = central_index.astype(float)#  np.array([float(central_index[0]), float(central_index[1])]
-    # matrix is three-dimensional if there are several channels
-    if len(matrix.shape) == 3:
-        submatrix = matrix[
-            :,
-            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
-            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
-    else:
-
-        submatrix = matrix[
-            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
-            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
+    submatrix = matrix[...,
+            max(0,int(central_index[0] - np.ceil(shape[0] / 2)) + 1):max(0,int(central_index[0] + np.ceil(shape[0] / 2))),
+            max(0,int(central_index[1] - np.ceil(shape[1] / 2)) + 1):max(0,int(central_index[1] + np.ceil(shape[1] / 2)))]
     return submatrix
 
 

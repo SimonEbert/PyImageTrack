@@ -59,7 +59,8 @@ class ImagePair:
         self.image2_matrix = None
         self.image2_transform = None
         self.image2_observation_date = None
-        self.image_bounds = None
+        self.safe_image_bounds_tracking = None
+        self.safe_image_bounds_alignment = None
 
         # Optional: store original (true-color) matrices for writing aligned products
         self.image1_matrix_original = None
@@ -241,7 +242,6 @@ class ImagePair:
                 self.image1_matrix[:h, :w]
             self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
                 self.image2_matrix[:h, :w]
-
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
@@ -259,16 +259,21 @@ class ImagePair:
             # Bounds in that CRS (pixel grid space), then shrink by search radius
             from rasterio.transform import array_bounds
             bounds_poly = box(*array_bounds(h, w, tform))
-            ext = getattr(self.tracking_parameters, "search_extent_px", None)
-            if not ext:
-                raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
-            buffer_len = px * max(ext)
 
-            image_bounds = gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs).buffer(-buffer_len)
-            image_bounds = gpd.GeoDataFrame(geometry=image_bounds, crs=self.crs)
-            image_bounds = image_bounds.rename(columns={0: "geometry"})
-            image_bounds.set_geometry("geometry", inplace=True)
-            self.image_bounds = image_bounds
+            def make_save_bounds_from_search_extents(extents):
+                if not extents:
+                    raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
+                buffer_len = px * max(extents)
+
+                image_bounds = gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs).buffer(-buffer_len)
+                image_bounds = gpd.GeoDataFrame(geometry=image_bounds, crs=self.crs)
+                image_bounds = image_bounds.rename(columns={0: "geometry"})
+                image_bounds.set_geometry("geometry", inplace=True)
+                return image_bounds
+
+
+            self.safe_image_bounds_tracking = make_save_bounds_from_search_extents(getattr(self.tracking_parameters, "search_extent_px", None))
+            self.safe_image_bounds_alignment = make_save_bounds_from_search_extents(getattr(self.alignment_parameters, "control_search_extent_px", None))
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
@@ -333,7 +338,7 @@ class ImagePair:
         # set correct geometry column
         image_bounds = image_bounds.rename(columns={0: "geometry"})
         image_bounds.set_geometry("geometry", inplace=True)
-        self.image_bounds = image_bounds
+        self.safe_image_bounds_tracking = image_bounds
 
     def align_images(self, reference_area: gpd.GeoDataFrame) -> None:
         """
@@ -351,9 +356,10 @@ class ImagePair:
         if reference_area.crs != self.crs:
             raise ValueError("Got reference area with crs " + str(reference_area.crs) + " and images with crs "
                              + str(self.crs) + ". Reference area and images are supposed to have the same crs.")
-        reference_area = gpd.GeoDataFrame(reference_area.intersection(self.image_bounds))
+        reference_area = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
+
 
         [_, new_image2_matrix, tracked_control_points] = (
             align_images_lsm_scarce(image1_matrix=self.image1_matrix,
@@ -501,7 +507,7 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
-        image_bounds_values = self.image_bounds.bounds.iloc[0]
+        image_bounds_values = self.safe_image_bounds_tracking.bounds.iloc[0]
         within_image_mask = ((image_bounds_values.minx <= points_to_be_tracked.geometry.x) &
                             (image_bounds_values.maxx >= points_to_be_tracked.geometry.x) &
                             (image_bounds_values.miny <= points_to_be_tracked.geometry.y) &
@@ -624,9 +630,13 @@ class ImagePair:
             The tracked points which can be used for calculating the LoD.
         """
         points = points_for_lod_calculation
+        tracking_parameters = self.tracking_parameters
+        if tracking_parameters.initial_shift_values is not None:
+            tracking_parameters.initial_shift_values = [0,0]
+
         tracked_points = track_movement_lsm(
             image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix, image_transform=self.image1_transform,
-            points_to_be_tracked=points, tracking_parameters=self.tracking_parameters, alignment_tracking=False,
+            points_to_be_tracked=points, tracking_parameters=tracking_parameters, alignment_tracking=False,
             save_columns=["movement_row_direction",
                           "movement_column_direction",
                           "movement_distance_pixels",
@@ -688,7 +698,7 @@ class ImagePair:
             self.filter_parameters = filter_parameters
 
         points_for_lod_calculation = gpd.GeoDataFrame(
-            points_for_lod_calculation.intersection(self.image_bounds.geometry[0]))
+            points_for_lod_calculation.intersection(self.safe_image_bounds_tracking.geometry[0]))
         points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
         points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
@@ -854,20 +864,27 @@ class ImagePair:
                 dtype = "uint8"
             else:
                 dtype = "float32"
-
+            if raster.ndim == 2:
+                raster_to_write = raster[np.newaxis, ...]
+                count = 1
+            elif raster.ndim == 3:
+                raster_to_write = raster
+                count = raster.shape[0]
+            else:
+                raise ValueError("Expecting raster to be 2D or 3D, but supplied raster with shape" + str(raster.shape))
             with rasterio.open(
                     path,
                     "w",
                     driver=driver,
-                    height=raster.shape[0],
-                    width=raster.shape[1],
+                    height=raster_to_write.shape[-2],
+                    width=raster_to_write.shape[-1],
                     transform=transform,
                     crs=crs,
-                    count=1,
+                    count=count,
                     nodata=np.nan,
                     dtype=dtype
             ) as dst:
-                dst.write(raster, 1)
+                dst.write(raster_to_write)
 
                 # --- Save input images if requested ---
 
