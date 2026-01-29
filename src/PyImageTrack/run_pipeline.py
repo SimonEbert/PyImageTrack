@@ -437,7 +437,7 @@ def run_from_config(config_path: str):
                             track_dir,
                             year1,
                             year2,
-                            track_params=pair_tracking_config,
+                            track_params=tracking_params.to_dict(),
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
                         )

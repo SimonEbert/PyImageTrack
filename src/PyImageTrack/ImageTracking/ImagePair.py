@@ -125,6 +125,11 @@ class ImagePair:
         return transform * Affine.scale(factor, factor)
 
     def select_image_channels(self, selected_channels: int = None):
+        if self.image1_matrix.ndim == 2:
+            return
+        if (self.image1_matrix.ndim != self.image2_matrix.ndim):
+            raise ValueError("Got matrices with a different number of dimensions, signifying possibly a single-channel "
+                             "vs. multi-channel mismatch between the images.")
         if selected_channels is None:
             selected_channels = [0, 1, 2]
         if len(self.image1_matrix.shape) == 3:

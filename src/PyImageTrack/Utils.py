@@ -390,8 +390,8 @@ def _get(obj, name, default="NA"):
 def abbr_alignment(ap):
     """Short code for alignment parameters; supports objects or dicts."""
     parts = []
-    image_bands = _get(ap, 'image_bands')
-    if image_bands:
+    image_bands = _get(ap, 'image_bands', None)
+    if image_bands is not None:
         parts.append(f"IB{image_bands}".replace(" ",""))
 
     # control extents (posx,negx,posy,negy) if provided
