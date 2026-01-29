@@ -35,7 +35,7 @@ from ..DataProcessing.DataPostprocessing import (
     filter_outliers_full,
 )
 # DataPreProcessing
-from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image
+from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image, undistort_polygon
 from .AlignImages import align_images_lsm_scarce
 # Plotting
 from ..Plots.MakePlots import (
@@ -184,6 +184,10 @@ class ImagePair:
             ([self.image1_matrix, self.image1_transform],
              [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
+            # Store original matrices before any preprocessing (e.g. undistorting, channel selection, CLAHE)
+            self.image1_matrix_original = self.image1_matrix.copy()
+            self.image2_matrix_original = self.image2_matrix.copy()
+
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
@@ -214,6 +218,10 @@ class ImagePair:
 
             arr1 = squeeze(arr1)
             arr2 = squeeze(arr2)
+
+            # Store original matrices before any preprocessing (e.g. undistorting, channel selection, CLAHE)
+            self.image1_matrix_original = arr1.copy()
+            self.image2_matrix_original = arr2.copy()
 
             if self.undistort_image:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
@@ -288,9 +296,6 @@ class ImagePair:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
             self.image2_matrix[self.image2_matrix == NA_value] = 0
 
-        # Store original matrices before any further preprocessing (e.g. channel selection, CLAHE)
-        self.image1_matrix_original = self.image1_matrix.copy()
-        self.image2_matrix_original = self.image2_matrix.copy()
 
         # Compute effective extents if needed
         if ((self.tracking_parameters.search_extent_px is not None) &
@@ -396,6 +401,12 @@ class ImagePair:
         if reference_area.crs != self.crs:
             raise ValueError("Got reference area with crs " + str(reference_area.crs) + " and images with crs "
                              + str(self.crs) + ". Reference area and images are supposed to have the same crs.")
+
+        if self.undistort_image:
+            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
+                                               self.camera_intrinsics_matrix,
+                                               self.camera_distortion_coefficients)
+
         reference_area = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
@@ -443,6 +454,12 @@ class ImagePair:
             raise ValueError("Got tracking area with crs " + str(tracking_area.crs) + " and images with crs "
                              + str(self.crs) + ". Tracking area and images are supposed to have the same crs.")
 
+        if self.undistort_image:
+            tracking_area = undistort_polygon(tracking_area, self.image1_matrix_original.shape[-2:],
+                                               self.camera_intrinsics_matrix,
+                                               self.camera_distortion_coefficients)
+
+        print(tracking_area.loc[0])
         if not self.images_aligned:
             logging.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
 
@@ -619,7 +636,7 @@ class ImagePair:
 
         return tracked_points
 
-    def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame,
+    def calculate_lod(self, reference_area: gpd.GeoDataFrame,
                       filter_parameters: FilterParameters = None) -> None:
         """
         Calculates the Level of Detection of a matching between two images. For calculating the LoD a specified number
@@ -630,13 +647,21 @@ class ImagePair:
         Parameters
         ----------
         points_for_lod_calculation: gpd.GeoDataFrame
-            The points in the area (no motion assumed) for calculating the level of detection. Since for image alignment an evenly spaced grid is used and here, a random distribution of
-            points is advisable, such that it is possible to use the same reference area for both tasks.
+            The area on which the randomly distributed points will be created (assumed to be stable)
         filter_parameters
         Returns
         -------
         None
         """
+        if self.undistort_image:
+            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
+                                               self.camera_intrinsics_matrix,
+                                               self.camera_distortion_coefficients)
+
+        points_for_lod_calculation = random_points_on_polygon_by_number(
+            polygon=reference_area,
+            number_of_points=filter_parameters.number_of_points_for_level_of_detection
+        )
 
         # Set used filter parameters if given as a variable, also set them as correct object for ImagePair
         if filter_parameters is None:
@@ -692,6 +717,12 @@ class ImagePair:
                                                   self.displacement_column_name)
 
     def full_filter(self, reference_area, filter_parameters: FilterParameters):
+
+        if self.undistort_image:
+            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
+                                               self.camera_intrinsics_matrix,
+                                               self.camera_distortion_coefficients)
+
         points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
                                                                         filter_parameters.number_of_points_for_level_of_detection)
         self.filter_outliers(filter_parameters)
@@ -1147,12 +1178,3 @@ class ImagePair:
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
             )
 
-    def load_results(self, file_path, reference_area):
-        saved_tracking_results = gpd.read_file(file_path)
-        saved_tracking_results = saved_tracking_results.loc[
-            :, ["row", "column", "movement_row_direction", "movement_column_direction",
-                "movement_distance_pixels", "movement_bearing_pixels", "movement_distance",
-                self.displacement_column_name, "geometry"]]
-        saved_tracking_results["valid"] = True
-        self.align_images(reference_area)
-        self.tracking_results = saved_tracking_results

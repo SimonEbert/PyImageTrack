@@ -326,7 +326,8 @@ def run_from_config(config_path: str):
 
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
-        try:
+        # ToDo: Change
+        if True: #try:
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
 
             alignment_params_dict = alignment_params.to_dict()
@@ -463,11 +464,10 @@ def run_from_config(config_path: str):
                                 print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
 
                     if not used_cache_lod:
-                        lod_points = random_points_on_polygon_by_number(
-                            polygon_outside,
-                            filter_params.number_of_points_for_level_of_detection
-                        )
-                        image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
+
+
+
+                        image_pair.calculate_lod(polygon_outside, filter_parameters=filter_params)
                         if use_lod_cache:
                             save_lod_cache(
                                 image_pair,
@@ -480,11 +480,8 @@ def run_from_config(config_path: str):
                             print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
                     else:
                         if not _recompute_lod_from_points(image_pair, filter_params):
-                            lod_points = random_points_on_polygon_by_number(
-                                polygon_outside,
-                                filter_params.number_of_points_for_level_of_detection
-                            )
-                            image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
+
+                            image_pair.calculate_lod(polygon_outside, filter_parameters=filter_params)
                             if use_lod_cache:
                                 save_lod_cache(
                                     image_pair,
@@ -523,7 +520,7 @@ def run_from_config(config_path: str):
 
             successes.append((year1, year2))
 
-        except Exception as e:
+        else:# except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")

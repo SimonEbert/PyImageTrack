@@ -61,7 +61,7 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
             points.append(shapely.geometry.Point(x, y))
 
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
-    points = points[points.intersects(polygon.loc[0, "geometry"])]
+    points = points[points.intersects(polygon.geometry[0])]
 
     if polygon.crs is not None:
         unit_name = points.crs.axis_info[0].unit_name
@@ -93,7 +93,7 @@ def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_poin
         y = np.random.uniform(miny, maxy, 2 * number_of_points).tolist()
         # create DataFrame with the new points
         new_points = gpd.GeoDataFrame(crs=polygon.crs, geometry=gpd.points_from_xy(x, y))
-        points = pd.concat([points, new_points[new_points.intersects(polygon.loc[0, "geometry"])]])
+        points = pd.concat([points, new_points[new_points.intersects(polygon.geometry[0])]])
     points = points.head(number_of_points)
     points.set_index(np.arange(number_of_points), inplace=True)
     return points
