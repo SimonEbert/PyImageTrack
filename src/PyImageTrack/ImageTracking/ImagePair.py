@@ -459,7 +459,6 @@ class ImagePair:
                                                self.camera_intrinsics_matrix,
                                                self.camera_distortion_coefficients)
 
-        print(tracking_area.loc[0])
         if not self.images_aligned:
             logging.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
 
