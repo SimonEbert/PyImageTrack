@@ -568,15 +568,19 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     # Movement mode reads TrackingParameters.search_extent_px,
     # Alignment mode reads AlignmentParameters.control_search_extent_px.
     if alignment_tracking:
-        if getattr(alignment_parameters, "control_search_extent_px", None):
-            shared_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_px)
+        if getattr(alignment_parameters, "control_search_extent_full_cell", None):
+            full_cell_shared_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_full_cell)
         else:
-            raise ValueError("Alignment: control_search_extent_px must be set (tuple posx,negx,posy,negy).")
+            raise ValueError("Alignment: control_search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
+                             "Transformation from relative extents to full cell extents can be achieved using the"
+                             "function 'make_effective_extents_from_deltas' in the Utils module")
     else:
-        if getattr(tracking_parameters, "search_extent_px", None):
-            shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_px)
+        if getattr(tracking_parameters, "search_extent_full_cell", None):
+            full_cell_shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_full_cell)
         else:
-            raise ValueError("Movement: search_extent_px must be set (tuple posx,negx,posy,negy).")
+            raise ValueError("Movement: search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
+                             "Transformation from relative extents to full cell extents can be achieved using the"
+                             "function 'make_effective_extents_from_deltas' in the Utils module")
     initial_shift_values = getattr(tracking_parameters, "initial_shift_values", None)
 
 
@@ -597,7 +601,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         shape2=shape_image2,
         dtype=image1_dtype,
         tracked_cell_size=movement_cell_size,
-        search_extents=shared_search_extents,
+        search_extents=full_cell_shared_search_extents,
         initial_shift_values=initial_shift_values
     )
 

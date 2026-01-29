@@ -29,8 +29,8 @@ from .Parameters.AlignmentParameters import AlignmentParameters
 from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
-    collect_pairs, ensure_dir, abbr_alignment, 
-    abbr_tracking, abbr_filter, parse_date,
+    collect_pairs, ensure_dir, abbr_alignment,
+    abbr_tracking, abbr_filter, parse_date, make_effective_extents_from_deltas,
 )
 
 from .Cache import (
@@ -132,28 +132,6 @@ def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
             f"CRS mismatch between polygons ({polygons_crs}) and images ({image_crs})."
         )
     return image_crs
-
-
-def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
-    """
-    Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
-    by adding half the template size per side and scaling deltas by years_between.
-
-    deltas: (dx+, dx-, dy+, dy-) meaning *extra* pixels beyond half the template per year.
-    cell_size: movement_cell_size or control_cell_size
-    years_between: time span in years between the two images
-    cap_per_side: optional int to clamp each side (to keep windows bounded)
-
-    Returns (posx, negx, posy, negy) as ints >= half.
-    """
-    half = int(cell_size) // 2
-    def one(v):
-        eff = half + int(round(float(v) * float(years_between)))
-        if cap_per_side is not None:
-            eff = min(int(cap_per_side), eff)
-        return max(half, eff)
-    px, nx, py, ny = deltas
-    return (one(px), one(nx), one(py), one(ny))
 
 
 def _recompute_lod_from_points(image_pair, filter_params) -> bool:
@@ -351,54 +329,11 @@ def run_from_config(config_path: str):
         # ToDo: Change
         if True: #try:
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
-            # compute years_between (hour-precise)
-            delta_hours = (dt2 - dt1).total_seconds() / 3600.0
-            years_between = delta_hours / (24.0 * 365.25)
 
-            # alignment: convert user-entered deltas -> effective extents
-            base_align_deltas = alignment_params.control_search_extent_px
-            effective_align_extents = make_effective_extents_from_deltas(
-                deltas=base_align_deltas,
-                cell_size=alignment_params.control_cell_size,
-                years_between=1.0,
-                cap_per_side=None
-            )
-
-            # use deltas for folder code (so names reflect what user typed)
-            pair_alignment_config_for_code = {
-                "image_bands": image_bands,
-                "number_of_control_points": alignment_params.number_of_control_points,
-                "control_cell_size": alignment_params.control_cell_size,
-                "cross_correlation_threshold_alignment": alignment_params.cross_correlation_threshold_alignment,
-                "control_search_extent_px": base_align_deltas,
-            }
-            align_code = abbr_alignment(pair_alignment_config_for_code)
-
-            # movement: convert user-entered deltas -> effective extents
-            base_track_deltas = tracking_params.search_extent_px
-            adaptive_extents = make_effective_extents_from_deltas(
-                deltas=base_track_deltas,
-                cell_size=tracking_params.movement_cell_size,
-                years_between=years_between if use_adaptive_tracking_window else 1.0,
-                cap_per_side=None
-            )
-
-            pair_tracking_config_for_code = {
-                "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
-                "movement_cell_size": tracking_params.movement_cell_size,
-                "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
-                "search_extent_px": base_track_deltas,  # user-entered deltas for folder code
-            }
-
-            pair_tracking_config = {
-                "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
-                "movement_cell_size": tracking_params.movement_cell_size,
-                "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
-                "search_extent_deltas": base_track_deltas,
-                "search_extent_px_effective": adaptive_extents,
-            }
-            
-            track_code  = abbr_tracking(pair_tracking_config_for_code)
+            alignment_params_dict = alignment_params.to_dict()
+            alignment_params_dict.update({"image_bands": image_bands})
+            align_code = abbr_alignment(alignment_params_dict)
+            track_code  = abbr_tracking(tracking_params)
             filter_code = abbr_filter(filter_params)
 
             # Directories
@@ -416,19 +351,16 @@ def run_from_config(config_path: str):
             param_dict.update(alignment_params.to_dict())
             param_dict.update(tracking_params.to_dict())
 
-            param_dict["control_search_extent_px"]          = effective_align_extents   # used by code
-            param_dict["control_search_extent_deltas"]      = base_align_deltas         # user input (for logs)
-            param_dict["search_extent_px"]                  = adaptive_extents          # used by code
-            param_dict["search_extent_deltas"]              = base_track_deltas         # user input (for logs)
             param_dict["use_no_georeferencing"]             = bool(use_no_georeferencing)
             param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
             param_dict["downsample_factor"]                 = int(downsample_factor)
+            param_dict["use_adaptive_tracking_window"]      =use_adaptive_tracking_window
             param_dict["undistort_image"]                   = undistort_image
             param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
             param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
-            param_dict["image_bands"]                       =image_bands
+            param_dict["image_bands"]                       = image_bands
 
             param_dict["crs"]                               = image_crs
  

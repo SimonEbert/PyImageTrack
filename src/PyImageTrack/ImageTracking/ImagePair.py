@@ -44,6 +44,8 @@ from ..Plots.MakePlots import (
 )
 # Date Handling
 from ..Utils import parse_date
+# Effective search extent calculation
+from ..Utils import make_effective_extents_from_deltas
 
 
 class ImagePair:
@@ -59,6 +61,7 @@ class ImagePair:
         self.image2_matrix = None
         self.image2_transform = None
         self.image2_observation_date = None
+        self.years_between_observations = None
         self.safe_image_bounds_tracking = None
         self.safe_image_bounds_alignment = None
 
@@ -85,6 +88,7 @@ class ImagePair:
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
         self.image_bands = parameter_dict.get("image_bands", None)
+        self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -257,7 +261,7 @@ class ImagePair:
             from rasterio.transform import array_bounds
             bounds_poly = box(*array_bounds(h, w, tform))
 
-            def make_save_bounds_from_search_extents(extents):
+            def make_safe_bounds_from_search_extents(extents):
                 if not extents:
                     raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
                 buffer_len = px * max(extents)
@@ -268,12 +272,14 @@ class ImagePair:
                 image_bounds.set_geometry("geometry", inplace=True)
                 return image_bounds
 
-
-            self.safe_image_bounds_tracking = make_save_bounds_from_search_extents(getattr(self.tracking_parameters, "search_extent_px", None))
-            self.safe_image_bounds_alignment = make_save_bounds_from_search_extents(getattr(self.alignment_parameters, "control_search_extent_px", None))
+            self.safe_image_bounds_tracking = make_safe_bounds_from_search_extents(getattr(self.tracking_parameters, "search_extent_px", None))
+            self.safe_image_bounds_alignment = make_safe_bounds_from_search_extents(getattr(self.alignment_parameters, "control_search_extent_px", None))
 
         self.image1_observation_date = parse_date(observation_date_1)
-        self.image2_observation_date = parse_date(observation_date_2)
+        self.image2_observation_date = parse_date(observation_date_2)#
+        # compute years_between (hour-precise)
+        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
+        self.years_between_observations = delta_hours / (24.0 * 365.25)
 
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
@@ -282,6 +288,36 @@ class ImagePair:
         # Store original matrices before any further preprocessing (e.g. channel selection, CLAHE)
         self.image1_matrix_original = self.image1_matrix.copy()
         self.image2_matrix_original = self.image2_matrix.copy()
+
+        # Compute effective extents if needed
+        if ((self.tracking_parameters.search_extent_px is not None) &
+                (self.tracking_parameters.search_extent_full_cell is None)):
+            self.tracking_parameters.search_extent_full_cell = (
+                make_effective_extents_from_deltas(
+                    self.tracking_parameters.search_extent_px,
+                    self.tracking_parameters.movement_cell_size,
+                    years_between=self.years_between_observations if self.use_adaptive_tracking_window else 1.0,
+                    cap_per_side=None
+                ))
+        else:
+            raise ValueError("Set exactly one of 'search_extent_px' and 'search_extent_full_cell'.")
+
+
+        if ((self.alignment_parameters.control_search_extent_px is not None) &
+            (self.alignment_parameters.control_search_extent_full_cell is None)):
+            self.alignment_parameters.control_search_extent_full_cell = (
+                make_effective_extents_from_deltas(
+                    self.alignment_parameters.control_search_extent_px,
+                    self.alignment_parameters.control_cell_size,
+                    years_between=1.0,
+                    cap_per_side=None
+                )
+            )
+        else:
+            raise ValueError("Set exactly one of 'control_search_extent_px' and 'control_search_extent_full_cell'.")
+
+
+        # Select image bands
         if self.image_bands is not None:
             self.select_image_channels(selected_channels=self.image_bands)
         elif self.image1_matrix.ndim == 3:
