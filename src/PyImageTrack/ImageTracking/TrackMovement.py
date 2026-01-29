@@ -2,7 +2,6 @@ import logging
 import multiprocessing
 from functools import partial
 from multiprocessing import shared_memory
-from time import sleep
 
 import geopandas as gpd
 import numpy as np
@@ -306,6 +305,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     # than 0.1 (pixels), the iteration halts. For the first comparison, this point is initialized as NaN which has
     # distance > 0.1 to the central point always
     previous_moved_central_point = np.array([np.nan, np.nan])
+
     while iteration < 50:
         moved_indices = move_indices_from_transformation_matrix(transformation_matrix=transformation_matrix,
                                                                 indices=indices)
@@ -339,6 +339,13 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
             np.ones(tracked_cell_matrix.shape).reshape(-1),
             moved_cell_matrix.reshape(-1),
         ])
+
+
+        # Check for NaN values before fitting
+        if np.any(np.isnan(J)) or np.any(np.isnan(residuals)):
+            logging.info("NaN values detected in LSM optimization. Skipping this point.")
+            return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                                   tracking_success=False)
 
         coefficient_adjustment, *_ = np.linalg.lstsq(J, residuals, rcond=None)
 
@@ -403,12 +410,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
                                        tracking_method="least-squares", tracking_success=True,
                                        cross_correlation_coefficient=float(corr))
-    # Todo: Remove
-    # if moved_cell_matrix.shape == tracked_cell_matrix.shape:
-    #     import rasterio
-    #     rasterio.plot.show(moved_cell_matrix, title="M" + str(transformation_matrix))
-    #     rasterio.plot.show(tracked_cell_matrix, title="T")
-
     return tracking_results
 
 
@@ -455,6 +456,7 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
 
     shm2 = multiprocessing.shared_memory.SharedMemory(name=shm2_name)
     shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
+
     # Extract the tracked (template) cell from image1
     track_cell1 = get_submatrix_symmetric(
         central_index=central_index,
@@ -541,13 +543,19 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         movement_cell_size = tracking_parameters.movement_cell_size
         cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
 
-    # Create shared memory for image1_matrix
+    # Check image sizes and create shared memory for image1_matrix
+    if image1_matrix.nbytes == 0:
+        raise ValueError("Image1 matrix has zero size. Cannot create shared memory.")
+
     shared_memory_image1 = shared_memory.SharedMemory(create=True, size=image1_matrix.nbytes)
     shared_image_matrix1 = np.ndarray(image1_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image1.buf)
     shared_image_matrix1[:] = image1_matrix[:]
     shape_image1 = image1_matrix.shape
 
-    # Create shared memory for image2_matrix
+    # Check image sizes and create shared memory for image2_matrix
+    if image2_matrix.nbytes == 0:
+        raise ValueError("Image2 matrix has zero size. Cannot create shared memory.")
+
     shared_memory_image2 = shared_memory.SharedMemory(create=True, size=image2_matrix.nbytes)
     shared_image_matrix2 = np.ndarray(image2_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image2.buf)
     shared_image_matrix2[:] = image2_matrix[:]
@@ -595,24 +603,34 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     )
 
 
-    procs = max(1, multiprocessing.cpu_count() - 1)
-    with multiprocessing.Pool(processes=procs) as pool:
-        tracking_results = list(
-            tqdm.tqdm(
-                pool.imap(partial_lsm_tracking_function, list_of_central_indices),
-                total=len(list_of_central_indices),
-                desc=task_label,
-                unit="points",
-                smoothing=0.1,
-                bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
+    tracking_results = []
+    try:
+        procs = max(1, multiprocessing.cpu_count() - 1)
+        with multiprocessing.Pool(processes=procs) as pool:
+            tracking_results = list(
+                tqdm.tqdm(
+                    pool.imap(partial_lsm_tracking_function, list_of_central_indices),
+                    total=len(list_of_central_indices),
+                    desc=task_label,
+                    unit="points",
+                    smoothing=0.1,
+                    bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
+                )
             )
-        )
-
-    # Clean-up image matrices from shared memory
-    shared_memory_image1.close()
-    shared_memory_image1.unlink()
-    shared_memory_image2.close()
-    shared_memory_image2.unlink()
+    except Exception as e:
+        logging.warning("Failed to assemble multiprocessing. Error: " + str(e))
+    finally:
+        # Clean-up image matrices from shared memory - always execute, even on error
+        try:
+            shared_memory_image1.close()
+            shared_memory_image1.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
+        try:
+            shared_memory_image2.close()
+            shared_memory_image2.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
 
     # access the respective tracked point coordinates and its movement
     movement_row_direction = [results.movement_rows for results in tracking_results]
@@ -640,11 +658,16 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     if "transformation_matrix" in save_columns:
         tracked_pixels["transformation_matrix"] = [results.transformation_matrix for results in tracking_results]
 
+    # Add correlation coefficient column BEFORE filtering on it
     tracked_pixels["correlation_coefficient"] = [results.cross_correlation_coefficient for results in tracking_results]
 
-    tracked_pixels_above_cc_threshold = tracked_pixels[
-        tracked_pixels["correlation_coefficient"] > cross_correlation_threshold]
+    # Filter by correlation threshold - handle case where column might not exist
+    if "correlation_coefficient" in tracked_pixels.columns:
+        tracked_pixels_above_cc_threshold = tracked_pixels[
+            tracked_pixels["correlation_coefficient"] > cross_correlation_threshold]
+    else:
+        tracked_pixels_above_cc_threshold = tracked_pixels.copy()
 
-    if "correlation_coefficient" not in save_columns:
+    if "correlation_coefficient" not in save_columns and "correlation_coefficient" in tracked_pixels_above_cc_threshold.columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
     return tracked_pixels_above_cc_threshold

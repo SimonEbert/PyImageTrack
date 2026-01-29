@@ -1,3 +1,5 @@
+import logging
+
 import geopandas as gpd
 import numpy as np
 import scipy
@@ -91,6 +93,20 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     linear_model_input = np.column_stack([tracked_control_pixels_valid["row"], tracked_control_pixels_valid["column"]])
     linear_model_output = np.column_stack(
         [tracked_control_pixels_valid["new_row"], tracked_control_pixels_valid["new_column"]])
+    
+    # Check for NaN values in input/output before fitting
+    if np.any(np.isnan(linear_model_input)) or np.any(np.isnan(linear_model_output)):
+        # Filter out rows with NaN values
+        valid_mask = ~(np.isnan(linear_model_input).any(axis=1) | np.isnan(linear_model_output).any(axis=1))
+        linear_model_input = linear_model_input[valid_mask]
+        linear_model_output = linear_model_output[valid_mask]
+        
+        if len(linear_model_input) == 0:
+            raise ValueError("All alignment points contain NaN values. This may indicate tracking issues "
+                             "with the image pair. Consider checking image quality or adjusting alignment parameters.")
+        
+        logging.warning(f"Filtered out {np.sum(~valid_mask)} points with NaN values from alignment data.")
+    
     transformation_linear_model = sklearn.linear_model.LinearRegression()
     transformation_linear_model.fit(linear_model_input, linear_model_output)
 

@@ -16,6 +16,7 @@ least-squares matching for usage on rock glaciers.
 deleting the "filename.prj" file from the folder where the "filename.shp" file is stored
 - Optional 3D displacement from depth images when working with non-georeferenced photos
 - Full documentation: `docs/pyimagetrack_documentation.md`
+- Absolute beginner installation + quickstart + input file layout: `docs/absolute_beginner_installation.md`
 - Config templates: `configs/`
 
 ## Quick start (CLI)
@@ -41,7 +42,7 @@ Follow the steps for your platform.
 1) Create and activate a virtual environment:
    ```powershell
    python -m venv .venv
-   .\.venv\Scripts\Activate.ps1
+   .\.venv\Scripts\activate
    ```
 2) Install the package in editable mode from the repo root (installs all dependencies):
    ```powershell
