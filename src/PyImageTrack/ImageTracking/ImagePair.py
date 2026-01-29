@@ -65,7 +65,6 @@ class ImagePair:
         # Optional: store original (true-color) matrices for writing aligned products
         self.image1_matrix_original = None
         self.image2_matrix_original = None
-        self.image2_matrix_truecolor = None
 
         # Optional: Store position images corresponding to non-georeferenced images for 3d displacement calculation
         self.depth_image1 = None
@@ -85,6 +84,7 @@ class ImagePair:
 
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
+        self.image_bands = parameter_dict.get("image_bands", None)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -127,8 +127,7 @@ class ImagePair:
             self.image1_matrix = self.image1_matrix[selected_channels, :, :]
             self.image2_matrix = self.image2_matrix[selected_channels, :, :]
 
-    def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
-                              selected_channels: int = None, NA_value: float = None):
+    def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,NA_value: float = None):
         """
         Loads two image files from the respective file paths. The order of the provided image paths is expected to
         align with the observation order, that is the first image is assumed to be the earlier observation. The two
@@ -238,10 +237,8 @@ class ImagePair:
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])
             w = min(self.image1_matrix.shape[-1], self.image2_matrix.shape[-1])
-            self.image1_matrix = self.image1_matrix[..., :h, :w] if self.image1_matrix.ndim == 3 else \
-                self.image1_matrix[:h, :w]
-            self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
-                self.image2_matrix[:h, :w]
+            self.image1_matrix = self.image1_matrix[..., :h, :w]
+            self.image2_matrix = self.image2_matrix[..., :h, :w]
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
@@ -285,8 +282,12 @@ class ImagePair:
         # Store original matrices before any further preprocessing (e.g. channel selection, CLAHE)
         self.image1_matrix_original = self.image1_matrix.copy()
         self.image2_matrix_original = self.image2_matrix.copy()
-
-        self.select_image_channels(selected_channels=selected_channels)
+        if self.image_bands is not None:
+            self.select_image_channels(selected_channels=self.image_bands)
+        elif self.image1_matrix.ndim == 3:
+            self.image_bands = self.image1_matrix.shape[0]
+        else:
+            self.image_bands = None
 
     def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
                                               image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
@@ -383,96 +384,6 @@ class ImagePair:
 
         self.images_aligned = True
 
-        # Optionally derive a true-color aligned image (if original data are available)
-        try:
-            self.compute_truecolor_aligned_from_control_points()
-        except Exception as e:
-            logging.warning(f"Could not compute true-color aligned image: {e}")
-
-    def compute_truecolor_aligned_from_control_points(self):
-        """rebuild a true-color aligned version of image2 using the alignment control points.
-
-        this uses the same least-squares affine model + spline resampling approach
-        as in alignimages.align_images_lsm_scarce, but applies it to the original
-        (potentially multi-band) second image.
-        """
-        if self.tracked_control_points is None or len(self.tracked_control_points) == 0:
-            raise ValueError("no tracked control points available – cannot compute true-color alignment.")
-
-        if self.image2_matrix_original is None:
-            raise ValueError("no original second image stored – cannot compute true-color alignment.")
-
-        df = self.tracked_control_points
-
-        required_cols = ["row", "column", "movement_row_direction", "movement_column_direction"]
-        if not all(col in df.columns for col in required_cols):
-            raise ValueError("tracked control points are missing required pixel columns for reconstruction.")
-
-        # input: original pixel positions (row, column)
-        linear_model_input = np.column_stack([df["row"].values, df["column"].values])
-
-        # output: new positions after shift (row + drow, col + dcol)
-        linear_model_output = np.column_stack([
-            df["row"].values + df["movement_row_direction"].values,
-            df["column"].values + df["movement_column_direction"].values,
-        ])
-
-        # fit affine transform (same approach as in alignimages.align_images_lsm_scarce)
-        transformation_linear_model = sklearn.linear_model.LinearRegression()
-        transformation_linear_model.fit(linear_model_input, linear_model_output)
-
-        sampling_transformation_matrix = np.array([
-            [transformation_linear_model.coef_[0, 0],
-             transformation_linear_model.coef_[0, 1],
-             transformation_linear_model.intercept_[0]],
-            [transformation_linear_model.coef_[1, 0],
-             transformation_linear_model.coef_[1, 1],
-             transformation_linear_model.intercept_[1]],
-        ])
-
-        # build output index grid (rows, cols) in the aligned image grid
-        # use the shape of self.image1_matrix (reference image)
-        if self.image1_matrix is None:
-            raise ValueError("image1_matrix is not set – cannot infer output grid size.")
-
-        if self.image1_matrix.ndim == 2:
-            out_rows, out_cols = self.image1_matrix.shape
-        else:
-            # assume (bands, rows, cols)
-            out_rows = self.image1_matrix.shape[-2]
-            out_cols = self.image1_matrix.shape[-1]
-
-        indices = np.array(
-            np.meshgrid(np.arange(0, out_rows), np.arange(0, out_cols))
-        ).T.reshape(-1, 2).T
-
-        # move indices according to the affine transform
-        moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
-
-        # warp the original second image (can be single- or multi-band)
-        src = self.image2_matrix_original
-
-        if src.ndim == 2:
-            src_rows = np.arange(0, src.shape[0])
-            src_cols = np.arange(0, src.shape[1])
-            spline = scipy.interpolate.RectBivariateSpline(src_rows, src_cols, src.astype(float))
-            moved = spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(out_rows, out_cols)
-        else:
-            bands, src_rows_n, src_cols_n = src.shape
-            src_rows = np.arange(0, src_rows_n)
-            src_cols = np.arange(0, src_cols_n)
-            moved = np.zeros((bands, out_rows, out_cols), dtype=float)
-            for b in range(bands):
-                spline = scipy.interpolate.RectBivariateSpline(
-                    src_rows,
-                    src_cols,
-                    src[b, :, :].astype(float),
-                )
-                moved[b, :, :] = spline.ev(
-                    moved_indices[0, :], moved_indices[1, :]
-                ).reshape(out_rows, out_cols)
-
-        self.image2_matrix_truecolor = moved
 
     def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """

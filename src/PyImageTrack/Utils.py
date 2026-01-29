@@ -390,6 +390,10 @@ def _get(obj, name, default="NA"):
 def abbr_alignment(ap):
     """Short code for alignment parameters; supports objects or dicts."""
     parts = []
+    image_bands = _get(ap, 'image_bands')
+    if image_bands:
+        parts.append(f"IB{image_bands}".replace(" ",""))
+
     # control extents (posx,negx,posy,negy) if provided
     ext = _get(ap, "control_search_extent_px", None)
     if ext:
@@ -397,6 +401,8 @@ def abbr_alignment(ap):
             parts.append(f"AS{int(ext[0])}_{int(ext[1])}_{int(ext[2])}_{int(ext[3])}")
         except Exception:
             parts.append(f"AS{ext}")  # fallback
+
+
 
     parts += [
         f"CP{_get(ap, 'number_of_control_points')}",
@@ -420,7 +426,6 @@ def abbr_tracking(tp):
             parts.append(f"TS{ext}")  # fallback
 
     parts += [
-        f"IB{_get(tp, 'image_bands')}",
         f"DP{_get(tp, 'distance_of_tracked_points_px')}",
         f"MC{_get(tp, 'movement_cell_size')}",
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",

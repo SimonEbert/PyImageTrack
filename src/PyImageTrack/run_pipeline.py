@@ -236,7 +236,7 @@ def run_from_config(config_path: str):
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
     force_recompute_lod = bool(_get(cfg, "cache", "force_recompute_lod", False))
 
-    write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
+    image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
 
     # adaptive tracking window options
     use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
@@ -254,7 +254,6 @@ def run_from_config(config_path: str):
     })
 
     tracking_params = TrackingParameters({
-        "image_bands": _require(cfg, "tracking", "image_bands"),
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
@@ -319,7 +318,6 @@ def run_from_config(config_path: str):
         )
     polygons_crs = polygon_outside_crs
 
-    align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
 
     successes, skipped = [], []
@@ -357,7 +355,6 @@ def run_from_config(config_path: str):
             delta_hours = (dt2 - dt1).total_seconds() / 3600.0
             years_between = delta_hours / (24.0 * 365.25)
 
-            print(alignment_params.control_search_extent_px)
             # alignment: convert user-entered deltas -> effective extents
             base_align_deltas = alignment_params.control_search_extent_px
             effective_align_extents = make_effective_extents_from_deltas(
@@ -369,6 +366,7 @@ def run_from_config(config_path: str):
 
             # use deltas for folder code (so names reflect what user typed)
             pair_alignment_config_for_code = {
+                "image_bands": image_bands,
                 "number_of_control_points": alignment_params.number_of_control_points,
                 "control_cell_size": alignment_params.control_cell_size,
                 "cross_correlation_threshold_alignment": alignment_params.cross_correlation_threshold_alignment,
@@ -386,7 +384,6 @@ def run_from_config(config_path: str):
             )
 
             pair_tracking_config_for_code = {
-                "image_bands": tracking_params.image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
@@ -394,7 +391,6 @@ def run_from_config(config_path: str):
             }
 
             pair_tracking_config = {
-                "image_bands": tracking_params.image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
@@ -432,6 +428,7 @@ def run_from_config(config_path: str):
             param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
+            param_dict["image_bands"]                       =image_bands
 
             param_dict["crs"]                               = image_crs
  
@@ -441,7 +438,6 @@ def run_from_config(config_path: str):
                 observation_date_1=date_1,
                 filename_2=filename_2,
                 observation_date_2=date_2,
-                selected_channels=tracking_params.image_bands
             )
 
 
@@ -469,7 +465,6 @@ def run_from_config(config_path: str):
                             align_params=alignment_params.__dict__,
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
-                            save_truecolor_aligned=write_truecolor_aligned,
                         )
                         print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
 
