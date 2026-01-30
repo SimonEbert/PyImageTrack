@@ -327,8 +327,8 @@ def run_from_config(config_path: str):
 
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
-        # ToDo: Change
-        if True: #try:
+
+        try:
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
 
             alignment_params_dict = alignment_params.to_dict()
@@ -522,7 +522,7 @@ def run_from_config(config_path: str):
 
             successes.append((year1, year2))
 
-        else:# except Exception as e:
+        except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")

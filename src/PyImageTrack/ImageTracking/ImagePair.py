@@ -502,7 +502,7 @@ class ImagePair:
                 depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
                 years_between_observations=years_between_observations)
-            if self.coordinate_system_unit_name is "pixel":
+            if self.coordinate_system_unit_name == "pixel":
                 self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
@@ -705,6 +705,8 @@ class ImagePair:
 
         if points_for_lod_calculation.crs is not None:
             unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+        elif self.coordinate_system_unit_name is not None:
+            unit_name = self.coordinate_system_unit_name
         else:
             unit_name = "pixel"
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "

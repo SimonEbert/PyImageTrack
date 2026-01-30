@@ -97,7 +97,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     if "3d_displacement_distance_per_year" in list(point_movement.columns):
         displacement_column_name = "3d_displacement_distance_per_year"
-        legend_title_part = "Point velocity (3d-displacement) in "
+        legend_title_part = "Point velocity in "
     else:
         displacement_column_name = "movement_distance_per_year"
         legend_title_part = "Point velocity in "

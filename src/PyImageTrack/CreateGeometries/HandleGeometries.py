@@ -184,11 +184,6 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         coordinate reference system and one geometry column.
     """
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
-    # georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
-    #                                                 ["row", "column", "movement_row_direction",
-    #                                                  "movement_column_direction",
-    #                                                  "movement_distance_pixels", "movement_bearing_pixels"]],
-    #                                                 geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels, geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
         [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
