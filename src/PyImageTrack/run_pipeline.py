@@ -9,8 +9,6 @@ import csv
 import os
 from pathlib import Path
 
-
-
 try:
     import tomllib
 except ModuleNotFoundError as exc:
@@ -148,12 +146,10 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     return True
 
 
-
 def run_from_config(config_path: str):
     # ==============================
     # CONFIG (TOML)
     # ==============================
-
 
     config_path = _resolve_config_path(config_path)
     cfg = _load_config(config_path)
@@ -184,10 +180,11 @@ def run_from_config(config_path: str):
             camera_intrinsics_matrix = None
             camera_distortion_coefficients = None
         if convert_to_3d_displacement:
-            camera_to_3d_coordinates_transform = np.array(_as_optional_value(_get(cfg,
-                                                                                  "no_georef",
-                                                                                  "camera_to_3d_coordinates_transform",
-                                                                                  None)))
+
+            camera_to_3d_coordinates_transform = _as_optional_value(
+                _get(cfg, "no_georef", "camera_to_3d_coordinates_transform", None))
+            if camera_to_3d_coordinates_transform is not None:
+                camera_to_3d_coordinates_transform = np.array(camera_to_3d_coordinates_transform)
         else:
             camera_to_3d_coordinates_transform = None
     else:
@@ -247,13 +244,19 @@ def run_from_config(config_path: str):
         "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
         "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
         "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
-        "difference_movement_bearing_moving_window_size": _require(cfg, "filter", "difference_movement_bearing_moving_window_size"),
-        "standard_deviation_movement_bearing_threshold": _require(cfg, "filter", "standard_deviation_movement_bearing_threshold"),
-        "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_bearing_moving_window_size"),
+        "difference_movement_bearing_moving_window_size": _require(cfg, "filter",
+                                                                   "difference_movement_bearing_moving_window_size"),
+        "standard_deviation_movement_bearing_threshold": _require(cfg, "filter",
+                                                                  "standard_deviation_movement_bearing_threshold"),
+        "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter",
+                                                                           "standard_deviation_movement_bearing_moving_window_size"),
         "difference_movement_rate_threshold": _require(cfg, "filter", "difference_movement_rate_threshold"),
-        "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
-        "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
-        "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
+        "difference_movement_rate_moving_window_size": _require(cfg, "filter",
+                                                                "difference_movement_rate_moving_window_size"),
+        "standard_deviation_movement_rate_threshold": _require(cfg, "filter",
+                                                               "standard_deviation_movement_rate_threshold"),
+        "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter",
+                                                                        "standard_deviation_movement_rate_moving_window_size"),
     })
 
     # ==============================
@@ -334,14 +337,14 @@ def run_from_config(config_path: str):
             alignment_params_dict = alignment_params.to_dict()
             alignment_params_dict.update({"image_bands": image_bands})
             align_code = abbr_alignment(alignment_params_dict)
-            track_code  = abbr_tracking(tracking_params)
+            track_code = abbr_tracking(tracking_params)
             filter_code = abbr_filter(filter_params)
 
             # Directories
             base_pair_dir = os.path.join(output_folder, f"{year1}_{year2}")
-            align_dir  = os.path.join(base_pair_dir, align_code)
-            track_dir  = os.path.join(align_dir,     track_code)
-            filter_dir = os.path.join(track_dir,     filter_code)
+            align_dir = os.path.join(base_pair_dir, align_code)
+            track_dir = os.path.join(align_dir, track_code)
+            filter_dir = os.path.join(track_dir, filter_code)
             for d in (align_dir, track_dir, filter_dir):
                 ensure_dir(d)
 
@@ -352,20 +355,20 @@ def run_from_config(config_path: str):
             param_dict.update(alignment_params.to_dict())
             param_dict.update(tracking_params.to_dict())
 
-            param_dict["use_no_georeferencing"]             = bool(use_no_georeferencing)
-            param_dict["fake_pixel_size"]                   = float(fake_pixel_size)
-            param_dict["downsample_factor"]                 = int(downsample_factor)
-            param_dict["use_adaptive_tracking_window"]      =use_adaptive_tracking_window
-            param_dict["undistort_image"]                   = undistort_image
-            param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
-            param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
-            param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
-            param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
-            param_dict["image_bands"]                       = image_bands
-            param_dict["unit_name"]                         = unit_name
+            param_dict["use_no_georeferencing"] = bool(use_no_georeferencing)
+            param_dict["fake_pixel_size"] = float(fake_pixel_size)
+            param_dict["downsample_factor"] = int(downsample_factor)
+            param_dict["use_adaptive_tracking_window"] = use_adaptive_tracking_window
+            param_dict["undistort_image"] = undistort_image
+            param_dict["camera_intrinsics_matrix"] = camera_intrinsics_matrix
+            param_dict["camera_distortion_coefficients"] = camera_distortion_coefficients
+            param_dict["convert_to_3d_displacement"] = convert_to_3d_displacement
+            param_dict["camera_to_3d_coordinates_transform"] = camera_to_3d_coordinates_transform
+            param_dict["image_bands"] = image_bands
+            param_dict["unit_name"] = unit_name
 
-            param_dict["crs"]                               = image_crs
- 
+            param_dict["crs"] = image_crs
+
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
                 filename_1=filename_1,
@@ -373,7 +376,6 @@ def run_from_config(config_path: str):
                 filename_2=filename_2,
                 observation_date_2=date_2,
             )
-
 
             # optional image enhancement (CLAHE) before alignment/tracking
             if do_image_enhancement and hasattr(image_pair, "equalize_adapthist_images"):
@@ -422,7 +424,6 @@ def run_from_config(config_path: str):
                         else:
                             print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
 
-
                 if not used_cache_tracking:
                     if getattr(image_pair, "images_aligned", False) or not used_cache_alignment:
                         tracked_points = image_pair.track_points(tracking_area=polygon_inside)
@@ -458,7 +459,8 @@ def run_from_config(config_path: str):
                     if use_lod_cache and not force_recompute_lod:
                         used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
                         if used_cache_lod:
-                            if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs", None) is not None:
+                            if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs",
+                                                                 None) is not None:
                                 used_cache_lod = False
                                 image_pair.level_of_detection_points = None
                                 print("[CACHE] LoD cache CRS not compatible with no-georef; recomputing.")
@@ -466,8 +468,6 @@ def run_from_config(config_path: str):
                                 print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
 
                     if not used_cache_lod:
-
-
 
                         image_pair.calculate_lod(polygon_outside, filter_parameters=filter_params)
                         if use_lod_cache:
@@ -518,7 +518,7 @@ def run_from_config(config_path: str):
                 # - aligned_image_<year2>.tif
                 # - alignment_control_points_<year1>_<year2>.geojson
                 # - alignment_meta_<year1>_<year2>.json
-                        # Mark this pair as successfully processed
+                # Mark this pair as successfully processed
 
             successes.append((year1, year2))
 
@@ -543,7 +543,6 @@ def main(argv=None):
     parser.add_argument("--config", required=True, help="Path to TOML config file")
     args = parser.parse_args()
     run_from_config(args.config)
-
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import geopandas as gpd
 import pandas as pd
 import numpy as np
+import logging
 
 
 def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.ndarray,
@@ -39,17 +40,31 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
         specified 'camera_to_3d_coordinates_transform'.
     """
 
+    # Make sure the matrix follows the correct convention, used below and change if not:
+    if (camera_to_3d_coordinates_transform[3] != np.array([0,0,0,1])).any():
+        logging.warning("Supplied transformation that does not follow the convention in this package ("
+                        "left-multiplication of column vectors with matrices of the form [[R,t],[0,1]]). "
+                        "Trying to convert the transformation matrix to this convention.")
+        if (camera_to_3d_coordinates_transform[:,3] != np.array([0,0,0,1])).any():
+            raise ValueError("Supplied transformation matrix that does not have a [0,0,0,1] last row or column and is"
+                             "therefore not valid.")
+        else:
+            camera_to_3d_coordinates_transform = camera_to_3d_coordinates_transform.transpose()
 
 
     # Assume depth image coordinate system corresponds exactly to camera coordinate system
-    point_depths = depth_image[points[:, 0].astype(int), points[:, 1].astype(int)]
-    points = np.hstack((points, np.ones((len(points),1))))
-    points = np.linalg.inv(camera_intrinsics_matrix) @ points.transpose()
-    points = points.transpose()
+    point_rows = points[:, 0].astype(int)
+    point_columns = points[:, 1].astype(int)
+    point_depths = depth_image[point_rows, point_columns]
+    # Swap row-major style to x-axis major style
+    # points_uv = np.hstack((points[:, [1,0]], np.ones((len(points),1))))
+    points_uv = np.column_stack((point_columns, point_rows, np.ones(len(points))))
+    points_normalized = np.linalg.inv(camera_intrinsics_matrix) @ points_uv.transpose()
+    points_normalized = points_normalized
+
     Z = point_depths
-    X = points[:, 1] * Z
-    # change sign, s.t. positive y-axis means upwards
-    Y = -points[:, 0] * Z
+    X = points_normalized[0] * Z
+    Y = points_normalized[1] * Z
     points_xyz = np.stack([X, Y, Z, np.ones_like(Z)], axis=1).transpose()
     if camera_to_3d_coordinates_transform is not None:
         points_transformed = camera_to_3d_coordinates_transform @ points_xyz
@@ -126,6 +141,7 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
 
     points_3d_displacement = points_3d2 - points_3d1
     tracked_points["3d_displacement_distance"] = np.linalg.norm(points_3d_displacement, axis=1)
+    tracked_points["depth_change"] = points_3d_displacement[:,0]
     rows = tracked_points["row"]
     columns = tracked_points["column"]
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_points, geometry=gpd.points_from_xy(x=columns, y=-rows))
