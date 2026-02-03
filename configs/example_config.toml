@@ -21,6 +21,13 @@ use_no_georeferencing = false
 fake_pixel_size = 1.0
 # set true for applying an undistortion step to camera images before tracking
 undistort_image = false
+# In this case, the camera intrinsics matrix and the distortion coefficients are needed
+camera_intrinsics_matrix = "none"
+camera_distortion_coefficients = "none"
+convert_to_3d_displacement = false
+# If the positions should be transformed from the camera coordinate system to a different 3d coordinate system, specify
+# the respective transform here
+camera_to_3d_coordinates_transform = "none"
 
 [downsampling]
 # downsample input images by this integer factor to speed up runs
@@ -42,9 +49,11 @@ force_recompute_alignment = false
 force_recompute_tracking = false
 force_recompute_lod = false
 
-[output]
-# if true: additionally write a true-color aligned image
-write_truecolor_aligned = false
+[image]
+# Specify image bands that should be used here. If not specified, the tracking uses all available bands
+image_bands = [0,1,2]
+# Specify units of the output for correct visualization annotation
+#unit_name = "meter"
 
 [adaptive_tracking_window]
 # If true, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
@@ -63,7 +72,6 @@ cross_correlation_threshold_alignment = 0.3
 maximal_alignment_movement = "none"
 
 [tracking]
-image_bands = 0
 # px
 distance_of_tracked_points_px = 100
 # px
