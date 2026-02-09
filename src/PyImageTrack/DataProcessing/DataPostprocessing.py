@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 from shapely import box
+import logging
 
 
 from ..CreateGeometries.HandleGeometries import circular_std_deg
@@ -416,6 +417,9 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
     grid_polygons_gdf = gpd.GeoDataFrame(geometry=grid_polygons,crs=tracking_results.crs)
 
     tracking_results = tracking_results[tracking_results["valid"]]
+    if len(tracking_results) == 0:
+        logging.warning("No valid points available in the tracking results. Returning non-downsampled tracking results.")
+        return tracking_results
 
     for grid_cell in grid_polygons_gdf.itertuples():
         polygon = grid_cell.geometry
@@ -433,6 +437,10 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
         for colname in numeric_cols:
             average_value = points_inside[colname].mean()
             grid_polygons_gdf.at[grid_cell.Index,colname] = average_value
+
+    print(len(grid_polygons_gdf))
+    print(grid_polygons_gdf)
+    print(len(tracking_results))
 
     grid_points_gdf = gpd.GeoDataFrame(grid_polygons_gdf, crs=tracking_results.crs,
                                        geometry=gpd.points_from_xy(grid_polygons_gdf.column,
