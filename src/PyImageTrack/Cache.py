@@ -16,15 +16,16 @@ def _sha256(path: str) -> str:
 
 def alignment_cache_paths(align_dir: str, year1: str, year2: str):
     aligned_tif = os.path.join(align_dir, f"aligned_image_{year2}.tif")
+    aligned_depth_tif = os.path.join(align_dir, f"aligned_image_{year2}_depth.tif")
     control_pts = os.path.join(align_dir, f"alignment_control_points_{year1}_{year2}.fgb")
     meta_json   = os.path.join(align_dir, f"alignment_meta_{year1}_{year2}.json")
-    return aligned_tif, control_pts, meta_json
+    return aligned_tif, aligned_depth_tif, control_pts, meta_json
 
 def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
                          align_params: dict, filenames: dict, dates: dict,
                          version: str = "v1"):
     os.makedirs(align_dir, exist_ok=True)
-    aligned_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
+    aligned_tif, aligned_depth_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
 
     crs = image_pair.crs
     if crs is not None and not isinstance(crs, RioCRS):
@@ -48,6 +49,11 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         else:
             dst.write(image_pair.image2_matrix)
 
+    if image_pair.depth_image2 is not None:
+        profile.update({"count": 1})
+        with rasterio.open(aligned_depth_tif, "w", **profile) as dst:
+            dst.write(image_pair.depth_image2, 1)
+
 
     # write control points if available
     if getattr(image_pair, "tracked_control_points", None) is not None and len(image_pair.tracked_control_points) > 0:
@@ -67,7 +73,7 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
 
 
 def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> bool:
-    aligned_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
+    aligned_tif, aligned_depth_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
     if not os.path.exists(aligned_tif):
         return False
     with rasterio.open(aligned_tif, "r") as src:
@@ -77,6 +83,11 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
+    if image_pair.depth_image1 is not None:
+        with rasterio.open(aligned_depth_tif, "r") as src:
+            depth_arr = src.read()
+        image_pair.depth_image2 = depth_arr
+
     if image_pair.image1_matrix.shape != image_pair.image2_matrix.shape:
         logging.warning("The two matrices have not the same shape, signifying probably either a channel mismatch or "
                         "non-aligned images.\n"

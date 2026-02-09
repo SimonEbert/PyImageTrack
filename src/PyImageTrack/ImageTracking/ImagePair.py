@@ -926,7 +926,7 @@ class ImagePair:
             )
         if "first_image_depth_matrix" in save_files:
             _save_raster_as_tif(
-                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_depth.jpeg",
+                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
                 raster=self.depth_image1.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -935,7 +935,7 @@ class ImagePair:
 
         if "second_image_depth_matrix" in save_files:
             _save_raster_as_tif(
-                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}_depth.jpeg",
+                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
                 raster=self.depth_image2.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,

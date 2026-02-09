@@ -48,7 +48,6 @@ def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformati
     # Put NaN values back into the image at the positions, where they were before the transformation
     if image_contains_nans:
         moved_image_matrix[nan_mask] = np.nan
-    rasterio.plot.show(moved_image_matrix)
     return moved_image_matrix
 
 
