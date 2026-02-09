@@ -438,9 +438,6 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
             average_value = points_inside[colname].mean()
             grid_polygons_gdf.at[grid_cell.Index,colname] = average_value
 
-    print(len(grid_polygons_gdf))
-    print(grid_polygons_gdf)
-    print(len(tracking_results))
 
     grid_points_gdf = gpd.GeoDataFrame(grid_polygons_gdf, crs=tracking_results.crs,
                                        geometry=gpd.points_from_xy(grid_polygons_gdf.column,
