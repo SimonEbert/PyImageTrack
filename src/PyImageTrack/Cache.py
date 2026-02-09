@@ -6,6 +6,7 @@ import geopandas as gpd
 import rasterio
 from rasterio.crs import CRS as RioCRS
 import logging
+import numpy as np
 
 def _sha256(path: str) -> str:
     h = hashlib.sha256()
@@ -86,7 +87,7 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     if image_pair.depth_image1 is not None:
         with rasterio.open(aligned_depth_tif, "r") as src:
             depth_arr = src.read()
-        image_pair.depth_image2 = depth_arr
+        image_pair.depth_image2 = np.squeeze(depth_arr)
 
     if image_pair.image1_matrix.shape != image_pair.image2_matrix.shape:
         logging.warning("The two matrices have not the same shape, signifying probably either a channel mismatch or "
