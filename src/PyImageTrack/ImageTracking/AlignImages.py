@@ -12,9 +12,49 @@ from .TrackMovement import track_movement_lsm
 from ..Parameters.AlignmentParameters import AlignmentParameters
 from .ImageInterpolator import ImageInterpolator
 
+def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformation: np.ndarray, target_shape=None):
+    """
+
+    Parameters
+    ----------
+    image_matrix
+    transformation
+    target_shape
+    Returns
+    -------
+
+    """
+
+    if target_shape is None:
+        target_shape = image_matrix.shape
+
+    indices = np.array(np.meshgrid(np.arange(0, target_shape[-2]), np.arange(0, target_shape[-1]))
+                       ).T.reshape(-1, 2).T
+    moved_indices = move_indices_from_transformation_matrix(transformation, indices)
+
+    # Check if there are NaNs available
+    image_contains_nans = np.isnan(image_matrix).any()
+    if image_contains_nans:
+        # Interpolate NaNs as closest value in the image (for valid spline interpolation)
+        nan_mask = np.isnan(image_matrix)
+        indices_nearest_values = scipy.ndimage.distance_transform_edt(nan_mask, return_distances=False,
+                                                                      return_indices=True)
+        image_matrix = image_matrix[tuple(indices_nearest_values)]
+
+    image_matrix_spline = ImageInterpolator(image_matrix)
+    moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
+        target_shape)
+
+    # Put NaN values back into the image at the positions, where they were before the transformation
+    if image_contains_nans:
+        moved_image_matrix[nan_mask] = np.nan
+    rasterio.plot.show(moved_image_matrix)
+    return moved_image_matrix
+
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
-                            alignment_parameters: AlignmentParameters):
+                            alignment_parameters: AlignmentParameters,
+                            return_alignment_transformation_matrix: bool = False):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
@@ -35,11 +75,21 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         This is the area, where no movement is suspected.
     alignment_parameters: AlignmentParameters
         The alignment parameters used for alignment, e.g. control_search_size_px
+    return_alignment_transformation_matrix:
+        If true, the 3d homogeneous transformation matrix aligning image2 to image1 will be returned as a np.array
     Returns
     ----------
-    [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
-    are aligned, they possess the same transformation. You can therefore assume that image_transform (the transform for
-    the first image) corresponds to both images.
+    [image1_matrix, new_matrix2, tracked_control_pixels(, alignment_transformation_matrix)]:
+        image1_matrix, new_matrix2:
+            The two matrices representing the raster image as numpy arrays. As the two matrices are aligned, they
+            possess the same transformation. You can therefore assume that image_transform (the transform for the first
+            image) corresponds to both images.
+        tracked_control_pixels:
+            The pixels that have been tracked on the reference area and that have been used to estimate a transformation
+            from image2 to image1
+        (alignment_transformation_matrix):
+            If return_alignment_transformation_matrix, the used alignment transformation will be returned as a 3x3
+            np.array representing a homogeneous transformation matrix.
     """
 
     if len(reference_area) == 0:
@@ -120,13 +170,12 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
          [transformation_linear_model.coef_[1, 0], transformation_linear_model.coef_[1, 1],
           transformation_linear_model.intercept_[1]]])
 
-    indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[-2]), np.arange(0, image1_matrix.shape[-1]))
-                       ).T.reshape(-1, 2).T
-    moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
-    image2_matrix_spline = ImageInterpolator(image2_matrix)
     print("Resampling the second image matrix with transformation matrix\n" + str(sampling_transformation_matrix) +
           "\nThis may take some time.")
-    moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
-        image1_matrix.shape)
+    moved_image2_matrix = move_image_matrix_from_transformation(image2_matrix, sampling_transformation_matrix,
+                                                                target_shape=image1_matrix.shape)
+
+    if return_alignment_transformation_matrix:
+        return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid, sampling_transformation_matrix]
 
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]

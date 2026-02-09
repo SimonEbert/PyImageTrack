@@ -101,6 +101,8 @@ downsample_tracking_results_resolution = 100 # In CRS units
 # optional outputs:
 # "first_image_matrix"
 # "second_image_matrix"
+# "first_image_depth_matrix # Only if depth images were supplied
+# "second_image_depth_matrix # Only if depth images were supplied
 # "LoD_points_geojson"
 # "control_points_geojson"
 files = [

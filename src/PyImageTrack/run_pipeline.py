@@ -418,7 +418,6 @@ def run_from_config(config_path: str):
             if do_tracking:
                 if use_tracking_cache and not force_recompute_tracking:
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
-                    print(image_pair.crs)
                     if used_cache_tracking:
                         if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
                             used_cache_tracking = False

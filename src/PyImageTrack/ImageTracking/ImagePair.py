@@ -33,7 +33,7 @@ from ..DataProcessing.DataPostprocessing import (
 
 # DataPreProcessing
 from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image, undistort_polygon
-from .AlignImages import align_images_lsm_scarce
+from .AlignImages import align_images_lsm_scarce, move_image_matrix_from_transformation
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
@@ -414,13 +414,29 @@ class ImagePair:
         reference_area.rename(columns={0: 'geometry'}, inplace=True)
         reference_area.set_geometry('geometry', inplace=True)
 
+        if self.depth_image1 is not None:
+            if self.depth_image2 is None:
+                raise ValueError("Got depth image for time point 1, but not for time point 2.")
 
-        [_, new_image2_matrix, tracked_control_points] = (
-            align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                    image2_matrix=self.image2_matrix,
-                                    image_transform=self.image1_transform,
-                                    reference_area=reference_area,
-                                    alignment_parameters=self.alignment_parameters))
+            [_, new_image2_matrix, tracked_control_points, alignment_transformation_matrix] = (
+                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
+                                        image2_matrix=self.image2_matrix,
+                                        image_transform=self.image1_transform,
+                                        reference_area=reference_area,
+                                        alignment_parameters=self.alignment_parameters,
+                                        return_alignment_transformation_matrix=True))
+            self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
+                                                  target_shape=self.depth_image1.shape[-2:])
+        else:
+            [_, new_image2_matrix, tracked_control_points] = (
+                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
+                                        image2_matrix=self.image2_matrix,
+                                        image_transform=self.image1_transform,
+                                        reference_area=reference_area,
+                                        alignment_parameters=self.alignment_parameters))
+
+        self.image2_matrix = new_image2_matrix
+        self.image2_transform = self.image1_transform
 
         self.valid_alignment_possible = True
 
@@ -432,8 +448,6 @@ class ImagePair:
                                                                   self.crs,
                                                                   years_between_observations)
 
-        self.image2_matrix = new_image2_matrix
-        self.image2_transform = self.image1_transform
 
         self.images_aligned = True
 
@@ -909,6 +923,23 @@ class ImagePair:
                 transform=self.image1_transform,
                 crs=self.crs,
                 driver="JPEG"
+            )
+        if "first_image_depth_matrix" in save_files:
+            _save_raster_as_tif(
+                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_depth.jpeg",
+                raster=self.depth_image1.astype(np.uint8),
+                transform=self.image1_transform,
+                crs=self.crs,
+                driver="GTiff"
+            )
+
+        if "second_image_depth_matrix" in save_files:
+            _save_raster_as_tif(
+                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}_depth.jpeg",
+                raster=self.depth_image2.astype(np.uint8),
+                transform=self.image1_transform,
+                crs=self.crs,
+                driver="GTiff"
             )
 
         # Grids for various subsets
