@@ -6,13 +6,8 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.plot
-from matplotlib import image as mpimg
-from rasterio.crs import CRS
-from geocube.api.core import make_geocube
-from scipy.sparse.csgraph import depth_first_tree
 from shapely.geometry import box
-import scipy
-import sklearn
+from pathlib import Path
 
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
@@ -33,7 +28,9 @@ from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_
 from ..DataProcessing.DataPostprocessing import (
     filter_lod_points,
     filter_outliers_full,
+    downsample_tracking_results
 )
+
 # DataPreProcessing
 from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image, undistort_polygon
 from .AlignImages import align_images_lsm_scarce
@@ -90,6 +87,7 @@ class ImagePair:
         self.image_bands = parameter_dict.get("image_bands", None)
         self.coordinate_system_unit_name = parameter_dict.get("unit_name", None)
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
+        self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -772,6 +770,7 @@ class ImagePair:
             - "LoD_points_geojson", "control_points_geojson"
             - "statistical_parameters_txt"
         """
+
         os.makedirs(folder_path, exist_ok=True)
 
         # --- Always save the full tracking results GeoJSON ---
@@ -780,6 +779,21 @@ class ImagePair:
             f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
             driver="FlatGeobuf"
         )
+
+        if self.downsample_tracking_results_resolution is not None:
+            downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
+                                                                       point_distance=self.downsample_tracking_results_resolution)
+            downsampled_tracking_results.to_file(
+                Path(f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb"),
+                driver="FlatGeobuf"
+            )
+            plot_movement_of_points(
+                self.image1_matrix,
+                self.image1_transform,
+                downsampled_tracking_results,
+                save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                unit_name=self.coordinate_system_unit_name
+            )
 
         # --- Prepare common subsets and guards ---
         tr_all = self.tracking_results

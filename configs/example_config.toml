@@ -93,6 +93,9 @@ difference_movement_rate_threshold = 10 # CRS units / year
 difference_movement_rate_moving_window_size = 10 # CRS units
 standard_deviation_movement_rate_threshold = 10 # CRS units / year
 standard_deviation_movement_rate_moving_window_size = 50 # CRS units
+# Optional: Save a downsampled version of tracking results for smoother visualizations. If given, the downsampled version
+# will be saved alongside the original version
+downsample_tracking_results_resolution = 100 # In CRS units
 
 [save]
 # optional outputs:

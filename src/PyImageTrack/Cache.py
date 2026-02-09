@@ -16,7 +16,7 @@ def _sha256(path: str) -> str:
 
 def alignment_cache_paths(align_dir: str, year1: str, year2: str):
     aligned_tif = os.path.join(align_dir, f"aligned_image_{year2}.tif")
-    control_pts = os.path.join(align_dir, f"alignment_control_points_{year1}_{year2}.geojson")
+    control_pts = os.path.join(align_dir, f"alignment_control_points_{year1}_{year2}.fgb")
     meta_json   = os.path.join(align_dir, f"alignment_meta_{year1}_{year2}.json")
     return aligned_tif, control_pts, meta_json
 
@@ -51,7 +51,7 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
 
     # write control points if available
     if getattr(image_pair, "tracked_control_points", None) is not None and len(image_pair.tracked_control_points) > 0:
-        image_pair.tracked_control_points.to_file(control_pts, driver="GeoJSON")
+        image_pair.tracked_control_points.to_file(control_pts, driver="FlatGeobuf")
 
     # write metadata json
     meta = {
@@ -72,6 +72,7 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
         return False
     with rasterio.open(aligned_tif, "r") as src:
         arr = src.read()
+        image_pair.crs = src.crs
     image_pair.image2_matrix = arr[0] if arr.shape[0] == 1 else arr
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
@@ -90,13 +91,13 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     return True
 
 def tracking_cache_paths(track_dir: str, year1: str, year2: str):
-    raw_geojson = os.path.join(track_dir, f"tracking_raw_{year1}_{year2}.geojson")
+    raw_geojson = os.path.join(track_dir, f"tracking_raw_{year1}_{year2}.fgb")
     meta_json   = os.path.join(track_dir, f"tracking_meta_{year1}_{year2}.json")
     return raw_geojson, meta_json
 
 
 def lod_cache_paths(track_dir: str, year1: str, year2: str):
-    lod_geojson = os.path.join(track_dir, f"lod_points_{year1}_{year2}.geojson")
+    lod_geojson = os.path.join(track_dir, f"lod_points_{year1}_{year2}.fgb")
     meta_json   = os.path.join(track_dir, f"lod_meta_{year1}_{year2}.json")
     return lod_geojson, meta_json
 
@@ -106,7 +107,7 @@ def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
     raw_geojson, meta_json = tracking_cache_paths(track_dir, year1, year2)
     if image_pair.tracking_results is None or len(image_pair.tracking_results) == 0:
         return
-    image_pair.tracking_results.to_file(raw_geojson, driver="GeoJSON")
+    image_pair.tracking_results.to_file(raw_geojson, driver="FlatGeobuf")
     meta = {
         "pair": {"year1": year1, "year2": year2, "date1": dates[year1], "date2": dates[year2]},
         "files": {"file1": filenames[year1], "file2": filenames[year2]},
@@ -124,6 +125,7 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
         return False
     try:
         image_pair.tracking_results = gpd.read_file(raw_geojson)
+        image_pair.crs = image_pair.tracking_results.crs
         return True
     except Exception:
         return False
@@ -135,7 +137,7 @@ def save_lod_cache(image_pair, track_dir: str, year1: str, year2: str,
     lod_geojson, meta_json = lod_cache_paths(track_dir, year1, year2)
     if image_pair.level_of_detection_points is None or len(image_pair.level_of_detection_points) == 0:
         return
-    image_pair.level_of_detection_points.to_file(lod_geojson, driver="GeoJSON")
+    image_pair.level_of_detection_points.to_file(lod_geojson, driver="FlatGeobuf")
     meta = {
         "pair": {"year1": year1, "year2": year2, "date1": dates[year1], "date2": dates[year2]},
         "files": {"file1": filenames[year1], "file2": filenames[year2]},

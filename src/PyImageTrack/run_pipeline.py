@@ -259,6 +259,8 @@ def run_from_config(config_path: str):
                                                                         "standard_deviation_movement_rate_moving_window_size"),
     })
 
+    downsample_tracking_results_resolution = _as_optional_value(_get(cfg, "filter", "downsample_tracking_results_resolution"),)
+
     # ==============================
     # SAVE OPTIONS (final outputs)
     # ==============================
@@ -366,8 +368,8 @@ def run_from_config(config_path: str):
             param_dict["camera_to_3d_coordinates_transform"] = camera_to_3d_coordinates_transform
             param_dict["image_bands"] = image_bands
             param_dict["unit_name"] = unit_name
-
             param_dict["crs"] = image_crs
+            param_dict["downsample_tracking_results_resolution"] = downsample_tracking_results_resolution
 
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
@@ -416,6 +418,7 @@ def run_from_config(config_path: str):
             if do_tracking:
                 if use_tracking_cache and not force_recompute_tracking:
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
+                    print(image_pair.crs)
                     if used_cache_tracking:
                         if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
                             used_cache_tracking = False
