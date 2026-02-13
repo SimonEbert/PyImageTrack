@@ -338,7 +338,6 @@ def run_from_config(config_path: str):
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
 
             alignment_params_dict = alignment_params.to_dict()
-            alignment_params_dict.update({"image_bands": image_bands})
             align_code = abbr_alignment(alignment_params_dict)
             track_code = abbr_tracking(tracking_params)
             filter_code = abbr_filter(filter_params)

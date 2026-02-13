@@ -333,8 +333,6 @@ class ImagePair:
             self.select_image_channels(selected_channels=self.image_bands)
         elif self.image1_matrix.ndim == 3:
             self.image_bands = self.image1_matrix.shape[0]
-        else:
-            self.image_bands = None
 
     def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
                                               image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
