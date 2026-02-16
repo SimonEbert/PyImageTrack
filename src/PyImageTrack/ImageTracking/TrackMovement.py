@@ -184,8 +184,8 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
 
     # --- Define search center ---
     if search_center is None:
-        central_row = search.shape[-2] / 2
-        central_col = search.shape[-1] / 2
+        central_row = search_cell_matrix.shape[-2] / 2
+        central_col = search_cell_matrix.shape[-1] / 2
     else:
         central_row, central_col = map(float, search_center)
 
@@ -218,9 +218,11 @@ def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, i
     movement_indices: np.array
         The indices after applying the transformation matrix, as a (2,n)-shaped np.array.
     """
-    indices_h = np.vstack([indices, np.ones(indices.shape[1])])
-    moved_indices = (transformation_matrix @ indices_h)[0:2]
 
+    linear_transformation_matrix = np.array(transformation_matrix[0:2, 0:2])
+    shift_vector = np.array(np.repeat(np.expand_dims(np.array(transformation_matrix[0:2, 2]), axis=1),
+                                      indices.shape[1], axis=1))
+    moved_indices = np.matmul(linear_transformation_matrix, indices) + shift_vector
     return moved_indices
 
 
@@ -237,7 +239,7 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         The array representing a section of the first image, which is compared to sections of the search_cell_matrix.
     search_cell_matrix: np.ndarray
         An array, which delimits the area in which possible matching image sections are searched.
-    initial_shift_values: list=None
+    initial_shift_values: np.array=None
         Initial shift values in the format [initial_movement_rows, initial_movement_cols] to be used in the first step
         of the least-squares optimization problem.
     Returns
@@ -249,11 +251,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         problem did not converge after 50 iterations), the shift values and the transformation matrix are set to np.nan
         and None, respectively.
     """
-    # Assure the same number of channels for multi-channel image processing
-    if tracked_cell_matrix.ndim == 3:
-        if tracked_cell_matrix.shape[0] != search_cell_matrix.shape[0]:
-            raise ValueError("The tracked cell matrix and the search cell matrix contain different number of channels "
-                             "(Shape mismatch of the two matrices in axis 0).")
 
     # assign indices in respect to indexing in the search cell matrix
     if search_center is None:
@@ -283,7 +280,6 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         initial_shift_values = [[0, 0]]
 
     # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
-
 
     # Interpolator for the image. If search_cell_matrix.ndim == 2, this is a direct wrapper for
     # scipy.interpolate.RectBivariateSpline (and should behave exactly equivalently)
@@ -330,39 +326,36 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
         moved_cell_matrix_dx = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :], dx=1).reshape(
             tracked_cell_matrix.shape)
 
+        moved_cell_matrix_dx_times_x = np.multiply(moved_cell_matrix_dx,
+                                                   indices[0, :].reshape(tracked_cell_matrix.shape))
+
+        moved_cell_matrix_dx_times_y = np.multiply(moved_cell_matrix_dx,
+                                                   indices[1, :].reshape(tracked_cell_matrix.shape))
+
         moved_cell_matrix_dy = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :], dy=1).reshape(
             tracked_cell_matrix.shape)
+        moved_cell_matrix_dy_times_x = np.multiply(moved_cell_matrix_dy,
+                                                   indices[0, :].reshape(tracked_cell_matrix.shape))
+        moved_cell_matrix_dy_times_y = np.multiply(moved_cell_matrix_dy,
+                                                   indices[1, :].reshape(tracked_cell_matrix.shape))
 
-        x = indices[0, :].reshape(tracked_cell_matrix.shape[-2:])
-        y = indices[1, :].reshape(tracked_cell_matrix.shape[-2:])
-
-        moved_cell_matrix_dx_times_x = moved_cell_matrix_dx * x[..., :, :]
-        moved_cell_matrix_dx_times_y = moved_cell_matrix_dx * y[..., :, :]
-        moved_cell_matrix_dy_times_x = moved_cell_matrix_dy * x[..., :, :]
-        moved_cell_matrix_dy_times_y = moved_cell_matrix_dy * y[..., :, :]
-
-        # Residuals: (H×W×C,)
-        residuals = (tracked_cell_matrix - moved_cell_matrix).reshape(-1)
-        #
-        # # Jacobian: (H×W×C, 8)
-        J = np.column_stack([
-            moved_cell_matrix_dx_times_x.reshape(-1),
-            moved_cell_matrix_dx_times_y.reshape(-1),
-            moved_cell_matrix_dx.reshape(-1),
-            moved_cell_matrix_dy_times_x.reshape(-1),
-            moved_cell_matrix_dy_times_y.reshape(-1),
-            moved_cell_matrix_dy.reshape(-1),
-            np.ones(tracked_cell_matrix.shape).reshape(-1),
-            moved_cell_matrix.reshape(-1),
-        ])
-
+        # Prepare input and output for linear regression
+        X = np.column_stack([moved_cell_matrix_dx_times_x.flatten(), moved_cell_matrix_dx_times_y.flatten(),
+                             moved_cell_matrix_dx.flatten(), moved_cell_matrix_dy_times_x.flatten(),
+                             moved_cell_matrix_dy_times_y.flatten(), moved_cell_matrix_dy.flatten(),
+                             np.ones(moved_cell_matrix.shape).flatten(), moved_cell_matrix.flatten()
+                             ])
+        y = (tracked_cell_matrix - moved_cell_matrix).flatten()
+        
         # Check for NaN values before fitting
-        if np.any(np.isnan(J)) or np.any(np.isnan(residuals)):
+        if np.any(np.isnan(X)) or np.any(np.isnan(y)):
             logging.info("NaN values detected in LSM optimization. Skipping this point.")
             return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                    tracking_success=False)
+        
+        model = sklearn.linear_model.LinearRegression().fit(X, y)
 
-        coefficient_adjustment, *_ = np.linalg.lstsq(J, residuals, rcond=None)
+        coefficient_adjustment = model.coef_
 
         # adjust coefficients accordingly
         coefficients += coefficient_adjustment
@@ -378,7 +371,7 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
         # define the position of the newly calculated central point
         new_moved_central_point = np.array([new_central_row, new_central_column])
         # if the adjustment results in less than 0.1 pixel adjustment between the considered points, stop the iteration
-        if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.1:
+        if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.01:
             break
 
         # continue iteration and redefine the previous moved central point
@@ -389,6 +382,7 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
         logging.info("Did not converge after 50 iterations.")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                tracking_success=False)
+
     moved_indices = move_indices_from_transformation_matrix(transformation_matrix=transformation_matrix,
                                                             indices=indices)
     moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
@@ -418,7 +412,10 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
                                tracking_success=False)
     tracked_cell_vector = tracked_cell_vector / tracked_cell_norm
     corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
-
+    # if corr > 0.85:
+    #      rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
+    #      rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
+    #      rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
 
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
@@ -439,23 +436,6 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
     ----------
     central_index: np.ndarray
         A np.ndarray that represents one central index to be tracked
-    shm1_name: str
-        Name of the shared memory for image matrix 1
-    shm2_name: str
-        Name of the shared memory for image matrix 2
-    shape1: np.ndarray
-        Shape of the first image matrix
-    shape2: np.ndarray
-        Shape of the second image matrix
-    dtype:
-        Data type of the image matrices (to read from shared memory)
-    tracked_cell_size: int
-        Size of the tracked cell (assumed to be quadratic)
-    search_extents: np.ndarray=None
-        Extents of the search area given as a tuple (pos_x, neg_x, pos_y, neg_y)
-    initial_shift_values: list=None
-        Initital shift values to circumvent rough cross-correlation guess and directly try to track using the Least
-        Squares Matching approach.
 
     Returns
     -------
@@ -480,14 +460,30 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
         matrix=shared_image_matrix1
     )
 
-
-    search_area2, center_in_search = get_submatrix_rect_from_extents(
+    # Build the search window from extents
+    if control_search_extents is not None:
+        # Alignment mode
+        search_area2, center_in_search = get_submatrix_rect_from_extents(
+            central_index=np.array(central_index),
+            extents=control_search_extents,
+            matrix=shared_image_matrix2
+        )
+        search_center = center_in_search
+    elif search_extents is not None:
+        # Movement mode
+        search_area2, center_in_search = get_submatrix_rect_from_extents(
             central_index=np.array(central_index),
             extents=search_extents,
             matrix=shared_image_matrix2
         )
-    search_center = center_in_search
-
+        search_center = center_in_search
+    else:
+        # No extents configured (should be prevented earlier)
+        return TrackingResults(
+            movement_rows=np.nan, movement_cols=np.nan,
+            tracking_method="least-squares",
+            transformation_matrix=None, tracking_success=False
+        )
 
     # Guard against empty windows (e.g., near borders)
     if getattr(search_area2, "size", 0) == 0:
@@ -554,16 +550,13 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     else:
         if tracking_parameters is None:
             raise ValueError("alignment_tracking=False requires tracking_parameters.")
-        if image1_matrix.ndim != image2_matrix.ndim:
-            raise ValueError("The two matrices have different numbers of dimensions, possibly because of a channel "
-                             "mismatch between the two images.")
         movement_cell_size = tracking_parameters.movement_cell_size
         cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
 
     # Check image sizes and create shared memory for image1_matrix
     if image1_matrix.nbytes == 0:
         raise ValueError("Image1 matrix has zero size. Cannot create shared memory.")
-
+    
     shared_memory_image1 = shared_memory.SharedMemory(create=True, size=image1_matrix.nbytes)
     shared_image_matrix1 = np.ndarray(image1_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image1.buf)
     shared_image_matrix1[:] = image1_matrix[:]
@@ -572,7 +565,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     # Check image sizes and create shared memory for image2_matrix
     if image2_matrix.nbytes == 0:
         raise ValueError("Image2 matrix has zero size. Cannot create shared memory.")
-
+    
     shared_memory_image2 = shared_memory.SharedMemory(create=True, size=image2_matrix.nbytes)
     shared_image_matrix2 = np.ndarray(image2_matrix.shape, dtype=image1_matrix.dtype, buffer=shared_memory_image2.buf)
     shared_image_matrix2[:] = image2_matrix[:]
@@ -585,31 +578,24 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     # Configure which asymmetric extents to use depending on mode.
     # Movement mode reads TrackingParameters.search_extent_px,
     # Alignment mode reads AlignmentParameters.control_search_extent_px.
+    shared_search_extents = None
+    shared_control_search_extents = None
+
     if alignment_tracking:
-        if getattr(alignment_parameters, "control_search_extent_full_cell", None):
-            full_cell_shared_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_full_cell)
+        if getattr(alignment_parameters, "control_search_extent_px", None):
+            shared_control_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_px)
         else:
-            raise ValueError("Alignment: control_search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
-                             "Transformation from relative extents to full cell extents can be achieved using the"
-                             "function 'make_effective_extents_from_deltas' in the Utils module")
+            raise ValueError("Alignment: control_search_extent_px must be set (tuple posx,negx,posy,negy).")
     else:
-        if getattr(tracking_parameters, "search_extent_full_cell", None):
-            full_cell_shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_full_cell)
+        if getattr(tracking_parameters, "search_extent_px", None):
+            shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_px)
         else:
-            raise ValueError("Movement: search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
-                             "Transformation from relative extents to full cell extents can be achieved using the"
-                             "function 'make_effective_extents_from_deltas' in the Utils module")
-    initial_shift_values = getattr(tracking_parameters, "initial_shift_values", None)
-
-
-
+            raise ValueError("Movement: search_extent_px must be set (tuple posx,negx,posy,negy).")
 
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
-
-
     # build partial function
     partial_lsm_tracking_function = partial(
         track_cell_lsm_parallelized,
@@ -623,7 +609,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         initial_shift_values=initial_shift_values,
         tracking_parameters=tracking_parameters
     )
-
 
     tracking_results = []
     try:

@@ -67,10 +67,19 @@ Notes:
   and keeps project files (docs/configs) clearly separated from Python package code.
 
 ## Acknowledgment
-The code in this respository is written and maintained by Lisa Rehn and Simon Ebert. Its first version is
+<<<<<<< HEAD
+The code in this respository is written by Lisa Rehn and Simon Ebert and maintained by Lisa Rehn. Its first version is
 based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example
 of the Kaiserberg Rock Glacier" by Simon Ebert.
 
+=======
+The code in this respository is written and maintained by Lisa Rehn and Simon Ebert. Its first version is based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert.
+## Installation
+To install PyImageTrack, follow these steps:
+1. Clone the repository: `git clone https://github.com/SimonEbert/PyImageTrack.git`
+2. Navigate to the project directory: `cd PyImageTrack`
+3. Install the package: `pip install .`
+>>>>>>> 39a8e67 (Implemented no crs approach for non-georeferenced images)
 
 ## License
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) License.

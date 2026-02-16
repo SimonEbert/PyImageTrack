@@ -9,6 +9,8 @@ import csv
 import os
 from pathlib import Path
 
+
+
 try:
     import tomllib
 except ModuleNotFoundError as exc:
@@ -27,8 +29,8 @@ from .Parameters.AlignmentParameters import AlignmentParameters
 from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
-    collect_pairs, ensure_dir, abbr_alignment,
-    abbr_tracking, abbr_filter, parse_date, make_effective_extents_from_deltas,
+    collect_pairs, ensure_dir, abbr_alignment, 
+    abbr_tracking, abbr_filter, parse_date,
 )
 
 from .Cache import (
@@ -132,6 +134,28 @@ def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
     return image_crs
 
 
+def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
+    """
+    Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
+    by adding half the template size per side and scaling deltas by years_between.
+
+    deltas: (dx+, dx-, dy+, dy-) meaning *extra* pixels beyond half the template per year.
+    cell_size: movement_cell_size or control_cell_size
+    years_between: time span in years between the two images
+    cap_per_side: optional int to clamp each side (to keep windows bounded)
+
+    Returns (posx, negx, posy, negy) as ints >= half.
+    """
+    half = int(cell_size) // 2
+    def one(v):
+        eff = half + int(round(float(v) * float(years_between)))
+        if cap_per_side is not None:
+            eff = min(int(cap_per_side), eff)
+        return max(half, eff)
+    px, nx, py, ny = deltas
+    return (one(px), one(nx), one(py), one(ny))
+
+
 def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     points = getattr(image_pair, "level_of_detection_points", None)
     if points is None or len(points) == 0:
@@ -146,10 +170,12 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     return True
 
 
+
 def run_from_config(config_path: str):
     # ==============================
     # CONFIG (TOML)
     # ==============================
+
 
     config_path = _resolve_config_path(config_path)
     cfg = _load_config(config_path)
@@ -180,11 +206,10 @@ def run_from_config(config_path: str):
             camera_intrinsics_matrix = None
             camera_distortion_coefficients = None
         if convert_to_3d_displacement:
-
-            camera_to_3d_coordinates_transform = _as_optional_value(
-                _get(cfg, "no_georef", "camera_to_3d_coordinates_transform", None))
-            if camera_to_3d_coordinates_transform is not None:
-                camera_to_3d_coordinates_transform = np.array(camera_to_3d_coordinates_transform)
+            camera_to_3d_coordinates_transform = np.array(_as_optional_value(_get(cfg,
+                                                                                  "no_georef",
+                                                                                  "camera_to_3d_coordinates_transform",
+                                                                                  None)))
         else:
             camera_to_3d_coordinates_transform = None
     else:
@@ -211,8 +236,7 @@ def run_from_config(config_path: str):
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
     force_recompute_lod = bool(_get(cfg, "cache", "force_recompute_lod", False))
 
-    image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
-    unit_name = _as_optional_value(_get(cfg, "image", "unit_name", None))
+    write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
     # adaptive tracking window options
     use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
@@ -231,6 +255,7 @@ def run_from_config(config_path: str):
     })
 
     tracking_params = TrackingParameters({
+        "image_bands": _require(cfg, "tracking", "image_bands"),
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
@@ -249,23 +274,14 @@ def run_from_config(config_path: str):
         "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
         "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
         "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
-        "difference_movement_bearing_moving_window_size": _require(cfg, "filter",
-                                                                   "difference_movement_bearing_moving_window_size"),
-        "standard_deviation_movement_bearing_threshold": _require(cfg, "filter",
-                                                                  "standard_deviation_movement_bearing_threshold"),
-        "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter",
-                                                                           "standard_deviation_movement_bearing_moving_window_size"),
+        "difference_movement_bearing_moving_window_size": _require(cfg, "filter", "difference_movement_bearing_moving_window_size"),
+        "standard_deviation_movement_bearing_threshold": _require(cfg, "filter", "standard_deviation_movement_bearing_threshold"),
+        "standard_deviation_movement_bearing_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_bearing_moving_window_size"),
         "difference_movement_rate_threshold": _require(cfg, "filter", "difference_movement_rate_threshold"),
-        "difference_movement_rate_moving_window_size": _require(cfg, "filter",
-                                                                "difference_movement_rate_moving_window_size"),
-        "standard_deviation_movement_rate_threshold": _require(cfg, "filter",
-                                                               "standard_deviation_movement_rate_threshold"),
-        "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter",
-                                                                        "standard_deviation_movement_rate_moving_window_size"),
-        "maximal_fraction_depth_change_of_3d_displacement": _as_optional_value(_get(cfg, "filter","maximal_fraction_depth_change_of_3d_displacement"))
+        "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
+        "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
+        "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
     })
-
-    downsample_tracking_results_resolution = _as_optional_value(_get(cfg, "filter", "downsample_tracking_results_resolution"),)
 
     # ==============================
     # SAVE OPTIONS (final outputs)
@@ -308,6 +324,7 @@ def run_from_config(config_path: str):
         )
     polygons_crs = polygon_outside_crs
 
+    align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
 
     successes, skipped = [], []
@@ -340,19 +357,65 @@ def run_from_config(config_path: str):
         print(f"   File 1: {filename_1}")
         print(f"   File 2: {filename_2}")
 
-        try:
+        if True: #try:
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
+            # compute years_between (hour-precise)
+            delta_hours = (dt2 - dt1).total_seconds() / 3600.0
+            years_between = delta_hours / (24.0 * 365.25)
 
-            alignment_params_dict = alignment_params.to_dict()
-            align_code = abbr_alignment(alignment_params_dict)
-            track_code = abbr_tracking(tracking_params)
+
+            # alignment: convert user-entered deltas -> effective extents
+            base_align_deltas = alignment_params.control_search_extent_px
+            effective_align_extents = make_effective_extents_from_deltas(
+                deltas=base_align_deltas,
+                cell_size=alignment_params.control_cell_size,
+                years_between=1.0,
+                cap_per_side=None
+            )
+
+            # use deltas for folder code (so names reflect what user typed)
+            pair_alignment_config_for_code = {
+                "number_of_control_points": alignment_params.number_of_control_points,
+                "control_cell_size": alignment_params.control_cell_size,
+                "cross_correlation_threshold_alignment": alignment_params.cross_correlation_threshold_alignment,
+                "control_search_extent_px": base_align_deltas,
+            }
+            align_code = abbr_alignment(pair_alignment_config_for_code)
+
+            # movement: convert user-entered deltas -> effective extents
+            base_track_deltas = tracking_params.search_extent_px
+            adaptive_extents = make_effective_extents_from_deltas(
+                deltas=base_track_deltas,
+                cell_size=tracking_params.movement_cell_size,
+                years_between=years_between if use_adaptive_tracking_window else 1.0,
+                cap_per_side=None
+            )
+
+            pair_tracking_config_for_code = {
+                "image_bands": tracking_params.image_bands,
+                "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
+                "movement_cell_size": tracking_params.movement_cell_size,
+                "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
+                "search_extent_px": base_track_deltas,  # user-entered deltas for folder code
+            }
+
+            pair_tracking_config = {
+                "image_bands": tracking_params.image_bands,
+                "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
+                "movement_cell_size": tracking_params.movement_cell_size,
+                "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
+                "search_extent_deltas": base_track_deltas,
+                "search_extent_px_effective": adaptive_extents,
+            }
+            
+            track_code  = abbr_tracking(pair_tracking_config_for_code)
             filter_code = abbr_filter(filter_params)
 
             # Directories
             base_pair_dir = os.path.join(output_folder, f"{year1}_{year2}")
-            align_dir = os.path.join(base_pair_dir, align_code)
-            track_dir = os.path.join(align_dir, track_code)
-            filter_dir = os.path.join(track_dir, filter_code)
+            align_dir  = os.path.join(base_pair_dir, align_code)
+            track_dir  = os.path.join(align_dir,     track_code)
+            filter_dir = os.path.join(track_dir,     filter_code)
             for d in (align_dir, track_dir, filter_dir):
                 ensure_dir(d)
 
@@ -363,26 +426,29 @@ def run_from_config(config_path: str):
             param_dict.update(alignment_params.to_dict())
             param_dict.update(tracking_params.to_dict())
 
-            param_dict["use_no_georeferencing"] = bool(use_no_georeferencing)
-            param_dict["fake_pixel_size"] = float(fake_pixel_size)
-            param_dict["downsample_factor"] = int(downsample_factor)
-            param_dict["use_adaptive_tracking_window"] = use_adaptive_tracking_window
-            param_dict["undistort_image"] = undistort_image
-            param_dict["camera_intrinsics_matrix"] = camera_intrinsics_matrix
-            param_dict["camera_distortion_coefficients"] = camera_distortion_coefficients
-            param_dict["convert_to_3d_displacement"] = convert_to_3d_displacement
-            param_dict["camera_to_3d_coordinates_transform"] = camera_to_3d_coordinates_transform
-            param_dict["image_bands"] = image_bands
-            param_dict["unit_name"] = unit_name
-            param_dict["crs"] = image_crs
-            param_dict["downsample_tracking_results_resolution"] = downsample_tracking_results_resolution
+            param_dict["control_search_extent_px"]          = effective_align_extents   # used by code
+            param_dict["control_search_extent_deltas"]      = base_align_deltas         # user input (for logs)
+            param_dict["search_extent_px"]                  = adaptive_extents          # used by code
+            param_dict["search_extent_deltas"]              = base_track_deltas         # user input (for logs)
+            param_dict["use_no_georeferencing"]             = bool(use_no_georeferencing)
+            if fake_pixel_size is not None:
+                param_dict["fake_pixel_size"] = float(fake_pixel_size)
+            param_dict["downsample_factor"]                 = int(downsample_factor)
+            param_dict["undistort_image"]                   = undistort_image
+            param_dict["camera_intrinsics_matrix"]          = camera_intrinsics_matrix
+            param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
+            param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
+            param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
 
+            param_dict["crs"]                               = image_crs
+ 
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
                 filename_1=filename_1,
                 observation_date_1=date_1,
                 filename_2=filename_2,
                 observation_date_2=date_2,
+                selected_channels=tracking_params.image_bands
             )
 
             # optional image enhancement (CLAHE) before alignment/tracking
@@ -409,6 +475,7 @@ def run_from_config(config_path: str):
                             align_params=alignment_params.__dict__,
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
+                            save_truecolor_aligned=write_truecolor_aligned,
                         )
                         print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
 
@@ -416,6 +483,7 @@ def run_from_config(config_path: str):
                 image_pair.valid_alignment_possible = True
                 image_pair.images_aligned = False
                 used_cache_alignment = False
+
 
             # ==============================
             # TRACKING (optional)
@@ -432,15 +500,12 @@ def run_from_config(config_path: str):
                         else:
                             print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
 
+
                 if not used_cache_tracking:
-                    if getattr(image_pair, "images_aligned", False) or not used_cache_alignment:
-                        tracked_points = image_pair.track_points(tracking_area=polygon_inside)
-                        image_pair.tracking_results = tracked_points
-                    else:
-                        image_pair.perform_point_tracking(
-                            reference_area=polygon_outside,
-                            tracking_area=polygon_inside
-                        )
+                    # Track points regardless of alignment status
+                    # If images are not aligned, track_points() will issue a warning
+                    tracked_points = image_pair.track_points(tracking_area=polygon_inside)
+                    image_pair.tracking_results = tracked_points
 
                     if use_tracking_cache:
                         save_tracking_cache(
@@ -448,13 +513,14 @@ def run_from_config(config_path: str):
                             track_dir,
                             year1,
                             year2,
-                            track_params=tracking_params.to_dict(),
+                            track_params=pair_tracking_config,
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
                         )
                         print(f"[CACHE] Tracking saved to:   {track_dir}  (pair {year1}->{year2})")
             else:
                 print("Tracking is disabled (alignment-only run).")
+
 
             # ==============================
             # FILTERING + PLOTS + SAVING (optional)
@@ -467,8 +533,7 @@ def run_from_config(config_path: str):
                     if use_lod_cache and not force_recompute_lod:
                         used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
                         if used_cache_lod:
-                            if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs",
-                                                                 None) is not None:
+                            if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs", None) is not None:
                                 used_cache_lod = False
                                 image_pair.level_of_detection_points = None
                                 print("[CACHE] LoD cache CRS not compatible with no-georef; recomputing.")
@@ -476,8 +541,11 @@ def run_from_config(config_path: str):
                                 print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
 
                     if not used_cache_lod:
-
-                        image_pair.calculate_lod(polygon_outside, filter_parameters=filter_params)
+                        lod_points = random_points_on_polygon_by_number(
+                            polygon_outside,
+                            filter_params.number_of_points_for_level_of_detection
+                        )
+                        image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                         if use_lod_cache:
                             save_lod_cache(
                                 image_pair,
@@ -490,8 +558,11 @@ def run_from_config(config_path: str):
                             print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
                     else:
                         if not _recompute_lod_from_points(image_pair, filter_params):
-
-                            image_pair.calculate_lod(polygon_outside, filter_parameters=filter_params)
+                            lod_points = random_points_on_polygon_by_number(
+                                polygon_outside,
+                                filter_params.number_of_points_for_level_of_detection
+                            )
+                            image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                             if use_lod_cache:
                                 save_lod_cache(
                                     image_pair,
@@ -504,6 +575,7 @@ def run_from_config(config_path: str):
                                 print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
 
                     image_pair.filter_lod_points()
+
                 if do_plotting:
                     image_pair.plot_tracking_results_with_valid_mask()
 
@@ -526,11 +598,11 @@ def run_from_config(config_path: str):
                 # - aligned_image_<year2>.tif
                 # - alignment_control_points_<year1>_<year2>.geojson
                 # - alignment_meta_<year1>_<year2>.json
-                # Mark this pair as successfully processed
+                        # Mark this pair as successfully processed
 
             successes.append((year1, year2))
 
-        except Exception as e:
+        else: #except Exception as e:
             skipped.append((year1, year2, f"Error: {str(e)}"))
 
     print("\nSummary:")

@@ -33,7 +33,7 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
-                            save_path: str = None, show_arrows: bool = True, unit_name: str = None):
+                            save_path: str = None, show_arrows: bool = True):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -65,8 +65,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         saved.
     show_arrows: bool = True
         Wether to show direction arrows on the resulting image
-    unit_name: str = None
-        Name of the unit to display in the plot
     Returns
     ----------
     None
@@ -97,19 +95,15 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     if "3d_displacement_distance_per_year" in list(point_movement.columns):
         displacement_column_name = "3d_displacement_distance_per_year"
-        legend_title_part = "Point velocity in "
     else:
         displacement_column_name = "movement_distance_per_year"
-        legend_title_part = "Point velocity in "
-
-    if unit_name is None:
-        unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
-
 
     if point_color is None:
         try:
             point_movement.plot(ax=ax, column=displacement_column_name, legend=True, markersize=point_size, marker=".",
-                                    alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"}
+                                    alpha=1.0,
+                                    # missing_kwds={'color': 'gray'}
+                                    # vmin=0, vmax=3.5,
                                     )
 
 
@@ -118,8 +112,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                              "Provide a dataframe with either one of these columns for movement plotting.")
 
     else:
-        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0,
-                            )
+        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)
 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
@@ -166,6 +159,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                 zorder=5
             )
 
+    unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
+
     if displacement_column_name == "3d_displacement_distance_per_year":
         plt.title("3d-displacement distance per year")
     else:
@@ -179,8 +174,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
 def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_transform,
                                             point_movement: gpd.GeoDataFrame,
-                                            save_path: str = None,
-                                            unit_name: str = None,):
+                                            save_path: str = None):
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
     colour scale, while the movement direction is shown with arrows for selected pixels.
@@ -198,8 +192,6 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     save_path : str = None
         The file location, where the created plot is stored. When no path is given (the default), the figure is not
         saved.
-    unit_name : str = None
-        The unit name to label the colorbar of displacement values
     Returns
     ----------
     None
@@ -210,8 +202,7 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
 
     plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray",
                             show_arrows=False, fig=fig, ax=ax)
-    plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None,
-                            unit_name=unit_name)
+    plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None)
 
     if save_path is None:
         fig.show()
