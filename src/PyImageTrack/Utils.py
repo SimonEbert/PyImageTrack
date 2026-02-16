@@ -404,10 +404,6 @@ def _get(obj, name, default="NA"):
 def abbr_alignment(ap):
     """Short code for alignment parameters; supports objects or dicts."""
     parts = []
-    image_bands = _get(ap, 'image_bands', None)
-    if image_bands is not None:
-        parts.append(f"IB{image_bands}".replace(" ",""))
-
     # control extents (posx,negx,posy,negy) if provided
     ext = _get(ap, "control_search_extent_px", None)
     if ext:
@@ -415,8 +411,6 @@ def abbr_alignment(ap):
             parts.append(f"AS{int(ext[0])}_{int(ext[1])}_{int(ext[2])}_{int(ext[3])}")
         except Exception:
             parts.append(f"AS{ext}")  # fallback
-
-
 
     parts += [
         f"CP{_get(ap, 'number_of_control_points')}",
@@ -446,6 +440,7 @@ def abbr_tracking(tp):
             parts.append(f"TS{ext}")  # fallback
 
     parts += [
+        f"IB{_get(tp, 'image_bands')}",
         f"DP{_get(tp, 'distance_of_tracked_points_px')}",
         f"MC{_get(tp, 'movement_cell_size')}",
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
@@ -474,25 +469,3 @@ def abbr_filter(fp) -> str:
         f"sdRw{fc(fp.standard_deviation_movement_rate_moving_window_size)}",
     ]
     return "F_" + "_".join(parts)
-
-
-def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
-    """
-    Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
-    by adding half the template size per side and scaling deltas by years_between.
-
-    deltas: (dx+, dx-, dy+, dy-) meaning *extra* pixels beyond half the template per year.
-    cell_size: movement_cell_size or control_cell_size
-    years_between: time span in years between the two images
-    cap_per_side: optional int to clamp each side (to keep windows bounded)
-
-    Returns (posx, negx, posy, negy) as ints >= half.
-    """
-    half = int(cell_size) // 2
-    def one(v):
-        eff = half + int(round(float(v) * float(years_between)))
-        if cap_per_side is not None:
-            eff = min(int(cap_per_side), eff)
-        return max(half, eff)
-    px, nx, py, ny = deltas
-    return (one(px), one(nx), one(py), one(ny))

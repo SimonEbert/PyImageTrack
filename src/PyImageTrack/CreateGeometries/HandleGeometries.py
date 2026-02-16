@@ -26,9 +26,18 @@ def get_submatrix_symmetric(central_index, shape, matrix):
     ----------
     submatrix: A numpy array of the specified shape.
     """
-    submatrix = matrix[...,
-            max(0,int(central_index[0] - np.ceil(shape[0] / 2)) + 1):max(0,int(central_index[0] + np.ceil(shape[0] / 2))),
-            max(0,int(central_index[1] - np.ceil(shape[1] / 2)) + 1):max(0,int(central_index[1] + np.ceil(shape[1] / 2)))]
+    # central_index = central_index.astype(float)#  np.array([float(central_index[0]), float(central_index[1])]
+    # matrix is three-dimensional if there are several channels
+    if len(matrix.shape) == 3:
+        submatrix = matrix[
+            :,
+            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
+            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
+    else:
+
+        submatrix = matrix[
+            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
+            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
     return submatrix
 
 
@@ -61,7 +70,7 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
             points.append(shapely.geometry.Point(x, y))
 
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
-    points = points[points.intersects(polygon.geometry[0])]
+    points = points[points.intersects(polygon.loc[0, "geometry"])]
 
     if polygon.crs is not None:
         unit_name = points.crs.axis_info[0].unit_name
@@ -93,7 +102,7 @@ def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_poin
         y = np.random.uniform(miny, maxy, 2 * number_of_points).tolist()
         # create DataFrame with the new points
         new_points = gpd.GeoDataFrame(crs=polygon.crs, geometry=gpd.points_from_xy(x, y))
-        points = pd.concat([points, new_points[new_points.intersects(polygon.geometry[0])]])
+        points = pd.concat([points, new_points[new_points.intersects(polygon.loc[0, "geometry"])]])
     points = points.head(number_of_points)
     points.set_index(np.arange(number_of_points), inplace=True)
     return points
@@ -184,6 +193,11 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         coordinate reference system and one geometry column.
     """
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
+    # georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
+    #                                                 ["row", "column", "movement_row_direction",
+    #                                                  "movement_column_direction",
+    #                                                  "movement_distance_pixels", "movement_bearing_pixels"]],
+    #                                                 geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels, geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
         [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,

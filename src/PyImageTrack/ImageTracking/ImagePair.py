@@ -6,8 +6,13 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.plot
+from matplotlib import image as mpimg
+from rasterio.crs import CRS
+from geocube.api.core import make_geocube
+from scipy.sparse.csgraph import depth_first_tree
 from shapely.geometry import box
-from pathlib import Path
+import scipy
+import sklearn
 
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
@@ -28,12 +33,10 @@ from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_
 from ..DataProcessing.DataPostprocessing import (
     filter_lod_points,
     filter_outliers_full,
-    downsample_tracking_results
 )
-
 # DataPreProcessing
-from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image, undistort_polygon
-from .AlignImages import align_images_lsm_scarce, move_image_matrix_from_transformation
+from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image
+from .AlignImages import align_images_lsm_scarce
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
@@ -41,8 +44,6 @@ from ..Plots.MakePlots import (
 )
 # Date Handling
 from ..Utils import parse_date
-# Effective search extent calculation
-from ..Utils import make_effective_extents_from_deltas
 
 
 class ImagePair:
@@ -58,13 +59,12 @@ class ImagePair:
         self.image2_matrix = None
         self.image2_transform = None
         self.image2_observation_date = None
-        self.years_between_observations = None
-        self.safe_image_bounds_tracking = None
-        self.safe_image_bounds_alignment = None
+        self.image_bounds = None
 
         # Optional: store original (true-color) matrices for writing aligned products
         self.image1_matrix_original = None
         self.image2_matrix_original = None
+        self.image2_matrix_truecolor = None
 
         # Optional: Store position images corresponding to non-georeferenced images for 3d displacement calculation
         self.depth_image1 = None
@@ -84,10 +84,6 @@ class ImagePair:
 
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
-        self.image_bands = parameter_dict.get("image_bands", None)
-        self.coordinate_system_unit_name = parameter_dict.get("unit_name", None)
-        self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
-        self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -124,18 +120,14 @@ class ImagePair:
         return transform * Affine.scale(factor, factor)
 
     def select_image_channels(self, selected_channels: int = None):
-        if self.image1_matrix.ndim == 2:
-            return
-        if self.image1_matrix.ndim != self.image2_matrix.ndim:
-            raise ValueError("Got matrices with a different number of dimensions, signifying possibly a single-channel "
-                             "vs. multi-channel mismatch between the images.")
         if selected_channels is None:
             selected_channels = [0, 1, 2]
         if len(self.image1_matrix.shape) == 3:
             self.image1_matrix = self.image1_matrix[selected_channels, :, :]
             self.image2_matrix = self.image2_matrix[selected_channels, :, :]
 
-    def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,NA_value: float = None):
+    def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
+                              selected_channels: int = None, NA_value: float = None):
         """
         Loads two image files from the respective file paths. The order of the provided image paths is expected to
         align with the observation order, that is the first image is assumed to be the earlier observation. The two
@@ -152,11 +144,14 @@ class ImagePair:
             The filename of the second image
         observation_date_2: str
             The observation date of the second image in format %d-%m-%Y
+        selected_channels: list[int]
+            The image channels to be selected. Defaults to [0,1,2]
         Returns
         -------
         """
         file1 = rasterio.open(filename_1, 'r')
         file2 = rasterio.open(filename_2, 'r')
+
         # Choose path: true georef vs fake georef
         no_crs_either = (file1.crs is None) or (file2.crs is None)
         force_fake = self.use_no_georeferencing or no_crs_either
@@ -173,7 +168,6 @@ class ImagePair:
                 raise ValueError(
                     "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
                     str(file1.crs))
-            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -182,10 +176,6 @@ class ImagePair:
 
             ([self.image1_matrix, self.image1_transform],
              [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
-
-            # Store original matrices before any preprocessing (e.g. undistorting, channel selection, CLAHE)
-            self.image1_matrix_original = self.image1_matrix.copy()
-            self.image2_matrix_original = self.image2_matrix.copy()
 
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
@@ -218,14 +208,6 @@ class ImagePair:
             arr1 = squeeze(arr1)
             arr2 = squeeze(arr2)
 
-            # Store original matrices before any preprocessing (e.g. undistorting, channel selection, CLAHE)
-            self.image1_matrix_original = arr1.copy()
-            self.image2_matrix_original = arr2.copy()
-
-            # Adjust unit name if we are working in the non-georeferenced setting and the name has not been set
-            if self.coordinate_system_unit_name is None:
-                self.coordinate_system_unit_name = "pixel"
-
             if self.undistort_image:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
                 arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
@@ -255,8 +237,11 @@ class ImagePair:
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])
             w = min(self.image1_matrix.shape[-1], self.image2_matrix.shape[-1])
-            self.image1_matrix = self.image1_matrix[..., :h, :w]
-            self.image2_matrix = self.image2_matrix[..., :h, :w]
+            self.image1_matrix = self.image1_matrix[..., :h, :w] if self.image1_matrix.ndim == 3 else \
+                self.image1_matrix[:h, :w]
+            self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
+                self.image2_matrix[:h, :w]
+
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
@@ -295,10 +280,7 @@ class ImagePair:
                 + getattr(self.alignment_parameters, "control_cell_size", None)/2)
 
         self.image1_observation_date = parse_date(observation_date_1)
-        self.image2_observation_date = parse_date(observation_date_2)#
-        # compute years_between (hour-precise)
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        self.years_between_observations = delta_hours / (24.0 * 365.25)
+        self.image2_observation_date = parse_date(observation_date_2)
 
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
@@ -389,7 +371,7 @@ class ImagePair:
         # set correct geometry column
         image_bounds = image_bounds.rename(columns={0: "geometry"})
         image_bounds.set_geometry("geometry", inplace=True)
-        self.safe_image_bounds_tracking = image_bounds
+        self.image_bounds = image_bounds
 
     def align_images(self, reference_area: gpd.GeoDataFrame) -> None:
         """
@@ -439,9 +421,6 @@ class ImagePair:
                                         reference_area=reference_area_safe_bounds,
                                         alignment_parameters=self.alignment_parameters))
 
-        self.image2_matrix = new_image2_matrix
-        self.image2_transform = self.image1_transform
-
         self.valid_alignment_possible = True
 
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
@@ -452,9 +431,101 @@ class ImagePair:
                                                                   self.crs,
                                                                   years_between_observations)
 
+        self.image2_matrix = new_image2_matrix
+        self.image2_transform = self.image1_transform
 
         self.images_aligned = True
 
+        # Optionally derive a true-color aligned image (if original data are available)
+        try:
+            self.compute_truecolor_aligned_from_control_points()
+        except Exception as e:
+            logging.warning(f"Could not compute true-color aligned image: {e}")
+
+    def compute_truecolor_aligned_from_control_points(self):
+        """rebuild a true-color aligned version of image2 using the alignment control points.
+
+        this uses the same least-squares affine model + spline resampling approach
+        as in alignimages.align_images_lsm_scarce, but applies it to the original
+        (potentially multi-band) second image.
+        """
+        if self.tracked_control_points is None or len(self.tracked_control_points) == 0:
+            raise ValueError("no tracked control points available – cannot compute true-color alignment.")
+
+        if self.image2_matrix_original is None:
+            raise ValueError("no original second image stored – cannot compute true-color alignment.")
+
+        df = self.tracked_control_points
+
+        required_cols = ["row", "column", "movement_row_direction", "movement_column_direction"]
+        if not all(col in df.columns for col in required_cols):
+            raise ValueError("tracked control points are missing required pixel columns for reconstruction.")
+
+        # input: original pixel positions (row, column)
+        linear_model_input = np.column_stack([df["row"].values, df["column"].values])
+
+        # output: new positions after shift (row + drow, col + dcol)
+        linear_model_output = np.column_stack([
+            df["row"].values + df["movement_row_direction"].values,
+            df["column"].values + df["movement_column_direction"].values,
+        ])
+
+        # fit affine transform (same approach as in alignimages.align_images_lsm_scarce)
+        transformation_linear_model = sklearn.linear_model.LinearRegression()
+        transformation_linear_model.fit(linear_model_input, linear_model_output)
+
+        sampling_transformation_matrix = np.array([
+            [transformation_linear_model.coef_[0, 0],
+             transformation_linear_model.coef_[0, 1],
+             transformation_linear_model.intercept_[0]],
+            [transformation_linear_model.coef_[1, 0],
+             transformation_linear_model.coef_[1, 1],
+             transformation_linear_model.intercept_[1]],
+        ])
+
+        # build output index grid (rows, cols) in the aligned image grid
+        # use the shape of self.image1_matrix (reference image)
+        if self.image1_matrix is None:
+            raise ValueError("image1_matrix is not set – cannot infer output grid size.")
+
+        if self.image1_matrix.ndim == 2:
+            out_rows, out_cols = self.image1_matrix.shape
+        else:
+            # assume (bands, rows, cols)
+            out_rows = self.image1_matrix.shape[-2]
+            out_cols = self.image1_matrix.shape[-1]
+
+        indices = np.array(
+            np.meshgrid(np.arange(0, out_rows), np.arange(0, out_cols))
+        ).T.reshape(-1, 2).T
+
+        # move indices according to the affine transform
+        moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
+
+        # warp the original second image (can be single- or multi-band)
+        src = self.image2_matrix_original
+
+        if src.ndim == 2:
+            src_rows = np.arange(0, src.shape[0])
+            src_cols = np.arange(0, src.shape[1])
+            spline = scipy.interpolate.RectBivariateSpline(src_rows, src_cols, src.astype(float))
+            moved = spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(out_rows, out_cols)
+        else:
+            bands, src_rows_n, src_cols_n = src.shape
+            src_rows = np.arange(0, src_rows_n)
+            src_cols = np.arange(0, src_cols_n)
+            moved = np.zeros((bands, out_rows, out_cols), dtype=float)
+            for b in range(bands):
+                spline = scipy.interpolate.RectBivariateSpline(
+                    src_rows,
+                    src_cols,
+                    src[b, :, :].astype(float),
+                )
+                moved[b, :, :] = spline.ev(
+                    moved_indices[0, :], moved_indices[1, :]
+                ).reshape(out_rows, out_cols)
+
+        self.image2_matrix_truecolor = moved
 
     def track_points(self, tracking_area: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
@@ -475,11 +546,6 @@ class ImagePair:
             raise ValueError("Got tracking area with crs " + str(tracking_area.crs) + " and images with crs "
                              + str(self.crs) + ". Tracking area and images are supposed to have the same crs.")
 
-        if self.undistort_image:
-            tracking_area = undistort_polygon(tracking_area, self.image1_matrix_original.shape[-2:],
-                                               self.camera_intrinsics_matrix,
-                                               self.camera_distortion_coefficients)
-
         if not self.images_aligned:
             logging.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
 
@@ -494,7 +560,7 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
-        image_bounds_values = self.safe_image_bounds_tracking.bounds.iloc[0]
+        image_bounds_values = self.image_bounds.bounds.iloc[0]
         within_image_mask = ((image_bounds_values.minx <= points_to_be_tracked.geometry.x) &
                             (image_bounds_values.maxx >= points_to_be_tracked.geometry.x) &
                             (image_bounds_values.miny <= points_to_be_tracked.geometry.y) &
@@ -518,8 +584,6 @@ class ImagePair:
                 depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
                 years_between_observations=years_between_observations)
-            if self.coordinate_system_unit_name == "pixel":
-                self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
@@ -569,8 +633,7 @@ class ImagePair:
         None
         """
         if self.tracking_results is not None:
-            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results,
-                                    unit_name=self.coordinate_system_unit_name)
+            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results)
         else:
             logging.warning("No results calculated yet. Plot not provided")
 
@@ -582,8 +645,7 @@ class ImagePair:
         -------
         """
         if self.tracking_results is not None:
-            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
-                                                    unit_name=self.coordinate_system_unit_name)
+            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
         else:
             logging.warning("No results calculated yet. Plot not provided")
 
@@ -623,17 +685,14 @@ class ImagePair:
             The tracked points which can be used for calculating the LoD.
         """
         points = points_for_lod_calculation
-        tracking_parameters = self.tracking_parameters
-        if tracking_parameters.initial_shift_values is not None:
-            tracking_parameters.initial_shift_values = [0,0]
-
         tracked_points = track_movement_lsm(
             image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix, image_transform=self.image1_transform,
-            points_to_be_tracked=points, tracking_parameters=tracking_parameters, alignment_tracking=False,
+            points_to_be_tracked=points, tracking_parameters=self.tracking_parameters, alignment_tracking=False,
             save_columns=["movement_row_direction",
                           "movement_column_direction",
                           "movement_distance_pixels",
                           "movement_bearing_pixels",
+                          "correlation_coefficient",
                           ],
             task_label="Tracking points for LoD"
         )
@@ -662,7 +721,7 @@ class ImagePair:
 
         return tracked_points
 
-    def calculate_lod(self, reference_area: gpd.GeoDataFrame,
+    def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame,
                       filter_parameters: FilterParameters = None) -> None:
         """
         Calculates the Level of Detection of a matching between two images. For calculating the LoD a specified number
@@ -673,21 +732,13 @@ class ImagePair:
         Parameters
         ----------
         points_for_lod_calculation: gpd.GeoDataFrame
-            The area on which the randomly distributed points will be created (assumed to be stable)
+            The points in the area (no motion assumed) for calculating the level of detection. Since for image alignment an evenly spaced grid is used and here, a random distribution of
+            points is advisable, such that it is possible to use the same reference area for both tasks.
         filter_parameters
         Returns
         -------
         None
         """
-        if self.undistort_image:
-            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
-                                               self.camera_intrinsics_matrix,
-                                               self.camera_distortion_coefficients)
-
-        points_for_lod_calculation = random_points_on_polygon_by_number(
-            polygon=reference_area,
-            number_of_points=filter_parameters.number_of_points_for_level_of_detection
-        )
 
         # Set used filter parameters if given as a variable, also set them as correct object for ImagePair
         if filter_parameters is None:
@@ -699,7 +750,7 @@ class ImagePair:
             self.filter_parameters = filter_parameters
 
         points_for_lod_calculation = gpd.GeoDataFrame(
-            points_for_lod_calculation.intersection(self.safe_image_bounds_tracking.geometry[0]))
+            points_for_lod_calculation.intersection(self.image_bounds.geometry[0]))
         points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
         points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
@@ -723,8 +774,6 @@ class ImagePair:
 
         if points_for_lod_calculation.crs is not None:
             unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
-        elif self.coordinate_system_unit_name is not None:
-            unit_name = self.coordinate_system_unit_name
         else:
             unit_name = "pixel"
         print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
@@ -745,12 +794,6 @@ class ImagePair:
                                                   self.displacement_column_name)
 
     def full_filter(self, reference_area, filter_parameters: FilterParameters):
-
-        if self.undistort_image:
-            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
-                                               self.camera_intrinsics_matrix,
-                                               self.camera_distortion_coefficients)
-
         points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
                                                                         filter_parameters.number_of_points_for_level_of_detection)
         self.filter_outliers(filter_parameters)
@@ -790,7 +833,6 @@ class ImagePair:
             - "LoD_points_geojson", "control_points_geojson"
             - "statistical_parameters_txt"
         """
-
         os.makedirs(folder_path, exist_ok=True)
 
         # --- Always save the full tracking results GeoJSON ---
@@ -799,21 +841,6 @@ class ImagePair:
             f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
             driver="FlatGeobuf"
         )
-
-        if self.downsample_tracking_results_resolution is not None:
-            downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
-                                                                       point_distance=self.downsample_tracking_results_resolution)
-            downsampled_tracking_results.to_file(
-                Path(f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb"),
-                driver="FlatGeobuf"
-            )
-            plot_movement_of_points(
-                self.image1_matrix,
-                self.image1_transform,
-                downsampled_tracking_results,
-                save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
-            )
 
         # --- Prepare common subsets and guards ---
         tr_all = self.tracking_results
@@ -889,27 +916,20 @@ class ImagePair:
                 dtype = "uint8"
             else:
                 dtype = "float32"
-            if raster.ndim == 2:
-                raster_to_write = raster[np.newaxis, ...]
-                count = 1
-            elif raster.ndim == 3:
-                raster_to_write = raster
-                count = raster.shape[0]
-            else:
-                raise ValueError("Expecting raster to be 2D or 3D, but supplied raster with shape" + str(raster.shape))
+
             with rasterio.open(
                     path,
                     "w",
                     driver=driver,
-                    height=raster_to_write.shape[-2],
-                    width=raster_to_write.shape[-1],
+                    height=raster.shape[0],
+                    width=raster.shape[1],
                     transform=transform,
                     crs=crs,
-                    count=count,
+                    count=1,
                     nodata=np.nan,
                     dtype=dtype
             ) as dst:
-                dst.write(raster_to_write)
+                dst.write(raster, 1)
 
                 # --- Save input images if requested ---
 
@@ -929,23 +949,6 @@ class ImagePair:
                 transform=self.image1_transform,
                 crs=self.crs,
                 driver="JPEG"
-            )
-        if "first_image_depth_matrix" in save_files:
-            _save_raster_as_tif(
-                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
-                raster=self.depth_image1.astype(np.uint8),
-                transform=self.image1_transform,
-                crs=self.crs,
-                driver="GTiff"
-            )
-
-        if "second_image_depth_matrix" in save_files:
-            _save_raster_as_tif(
-                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
-                raster=self.depth_image2.astype(np.uint8),
-                transform=self.image1_transform,
-                crs=self.crs,
-                driver="GTiff"
             )
 
         # Grids for various subsets
@@ -1234,7 +1237,6 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
             )
         else:
             plot_movement_of_points(
@@ -1242,6 +1244,14 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
             )
 
+    def load_results(self, file_path, reference_area):
+        saved_tracking_results = gpd.read_file(file_path)
+        saved_tracking_results = saved_tracking_results.loc[
+            :, ["row", "column", "movement_row_direction", "movement_column_direction",
+                "movement_distance_pixels", "movement_bearing_pixels", "movement_distance",
+                self.displacement_column_name, "geometry"]]
+        saved_tracking_results["valid"] = True
+        self.align_images(reference_area)
+        self.tracking_results = saved_tracking_results
