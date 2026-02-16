@@ -7,8 +7,8 @@ date_csv_path = "/path/to/input/hillshades/image_dates.csv"
 pairs_csv_path = "/path/to/input/hillshades/image_pairs.csv"
 
 [polygons]
-outside_filename = "stable_area.shp"
-inside_filename = "moving_area.shp"
+stable_area_filename = "stable_area.shp"
+moving_area_filename = "moving_area.shp"
 
 [pairing]
 # options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
