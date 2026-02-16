@@ -51,7 +51,7 @@ Install Git:
 
 Download the repository:
 ```powershell
-cd %USERPROFILE%\Documents
+cd "$env:USERPROFILE\Documents"
 git clone https://github.com/lisasophie/PyImageTrack.git
 cd PyImageTrack
 ```
