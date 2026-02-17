@@ -227,6 +227,7 @@ def run_from_config(config_path: str):
         "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
         "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
         "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
+        "image_bands": image_bands
     })
 
     tracking_params = TrackingParameters({

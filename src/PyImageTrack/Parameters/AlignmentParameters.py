@@ -11,6 +11,7 @@ class AlignmentParameters:
             "image_alignment_control_cell_size")
         self.cross_correlation_threshold_alignment = parameter_dict.get("cross_correlation_threshold_alignment")
         self.maximal_alignment_movement = parameter_dict.get("maximal_alignment_movement")
+        self.image_bands = parameter_dict.get("image_bands")
 
     def __str__(self):
         return (
@@ -21,6 +22,7 @@ class AlignmentParameters:
             f"\tcell size: {self.control_cell_size}\n"
             f"\tCC threshold (alignment): {self.cross_correlation_threshold_alignment}\n"
             f"\tmax movement (px): {self.maximal_alignment_movement}\n"
+            f"\timage bands: {self.image_bands}\n"
         )
 
     def to_dict(self) -> dict:
@@ -31,5 +33,6 @@ class AlignmentParameters:
             "cross_correlation_threshold_alignment": self.cross_correlation_threshold_alignment,
             "maximal_alignment_movement": self.maximal_alignment_movement,
             "control_search_extent_px": self.control_search_extent_px,
-            "control_search_extent_full_cell": self.control_search_extent_full_cell
+            "control_search_extent_full_cell": self.control_search_extent_full_cell,
+            "image_bands": self.image_bands
         }
