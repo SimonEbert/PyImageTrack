@@ -377,7 +377,7 @@ class ImagePair:
         image_bounds.set_geometry("geometry", inplace=True)
         self.image_bounds = image_bounds
 
-    def align_images(self, reference_area: gpd.GeoDataFrame) -> None:
+    def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
         Aligns the two images based on matching the given reference area. The number of tracked points created in the
         reference area is determined by the tracking parameters. Assumes the image transform of the first matrix is
@@ -385,11 +385,32 @@ class ImagePair:
         and image2_transform are updated by this function.
         Parameters
         ----------
-        reference_area: gpd.GeoDataFrame
+        reference_area: gpd.GeoDataFrame or None
             A one-element GeoDataFrame containing the area in which the points are defined to align the two images.
+            If None, will use image_bounds minus polygon_inside as the stable area.
+        polygon_inside: gpd.GeoDataFrame, optional
+            The moving area polygon. Required when reference_area is None.
         Returns
         -------
         """
+        # Handle fallback mode when reference_area is None
+        if reference_area is None:
+            if polygon_inside is None:
+                raise ValueError(
+                    "polygon_inside must be provided when reference_area is None."
+                )
+            reference_area = gpd.GeoDataFrame(
+                geometry=self.image_bounds.difference(polygon_inside),
+                crs=self.crs
+            )
+            reference_area = reference_area.rename(columns={0: 'geometry'})
+            reference_area.set_geometry('geometry', inplace=True)
+            logging.warning(
+                "[FALLBACK] Using image_bounds minus moving_area as stable area. "
+                "This may result in slightly lower alignment quality. "
+                "Consider increasing number_of_control_points to compensate."
+            )
+        
         if reference_area.crs != self.crs:
             raise ValueError("Got reference area with crs " + str(reference_area.crs) + " and images with crs "
                              + str(self.crs) + ". Reference area and images are supposed to have the same crs.")
@@ -403,6 +424,13 @@ class ImagePair:
         reference_area_safe_bounds = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
         reference_area_safe_bounds.rename(columns={0: 'geometry'}, inplace=True)
         reference_area_safe_bounds.set_geometry('geometry', inplace=True)
+        
+        # Check if reference_area is empty after intersection
+        if len(reference_area) == 0 or reference_area.geometry.iloc[0].is_empty:
+            raise ValueError(
+                "Reference area is empty after intersection with image bounds. "
+                "This may happen if the moving area covers the entire image."
+            )
 
         if self.depth_image1 is not None:
             if self.depth_image2 is None:

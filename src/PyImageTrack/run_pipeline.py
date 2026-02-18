@@ -187,7 +187,7 @@ def run_from_config(config_path: str):
     date_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "date_csv_path")), config_dir)
     pairs_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_path")), config_dir)
 
-    poly_outside_filename = _require(cfg, "polygons", "stable_area_filename")
+    poly_outside_filename = _get(cfg, "polygons", "stable_area_filename", "none")
     poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
 
     pairing_mode = _require(cfg, "pairing", "mode")
@@ -311,28 +311,45 @@ def run_from_config(config_path: str):
 
     print(f"Image pairs to process ({pairing_mode}): {len(year_pairs)}")
 
-    polygon_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename))
+    # Load polygons
+    poly_outside = None
+    poly_outside_filename_resolved = _as_optional_value(poly_outside_filename)
+    if poly_outside_filename_resolved is not None:
+        try:
+            poly_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename_resolved))
+            if use_no_georeferencing:
+                poly_outside = poly_outside.set_crs(None, allow_override=True)
+        except Exception as e:
+            print(f"Warning: Could not load stable area file '{poly_outside_filename_resolved}': {e}")
+            print("Using fallback mode (image_bounds minus moving_area as stable area).")
+            poly_outside = None
+    
     polygon_inside = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
     if use_no_georeferencing:
-        polygon_outside = polygon_outside.set_crs(None, allow_override=True)
         polygon_inside = polygon_inside.set_crs(None, allow_override=True)
-    polygon_outside_crs = polygon_outside.crs
-    polygon_inside_crs = polygon_inside.crs
-    if (polygon_outside_crs is None) != (polygon_inside_crs is None):
-        raise ValueError(
-            "Polygon CRS mismatch: outside has "
-            + _crs_label(polygon_outside_crs)
-            + ", inside has "
-            + _crs_label(polygon_inside_crs)
-        )
-    if polygon_outside_crs is not None and _normalize_crs(polygon_outside_crs) != _normalize_crs(polygon_inside_crs):
-        raise ValueError(
-            "Polygon CRS mismatch: outside has "
-            + _crs_label(polygon_outside_crs)
-            + ", inside has "
-            + _crs_label(polygon_inside_crs)
-        )
-    polygons_crs = polygon_outside_crs
+    
+    # CRS validation
+    if poly_outside is not None:
+        poly_outside_crs = poly_outside.crs
+        polygon_inside_crs = polygon_inside.crs
+        if (poly_outside_crs is None) != (polygon_inside_crs is None):
+            raise ValueError(
+                "Polygon CRS mismatch: outside has "
+                + _crs_label(poly_outside_crs)
+                + ", inside has "
+                + _crs_label(polygon_inside_crs)
+            )
+        if poly_outside_crs is not None and _normalize_crs(poly_outside_crs) != _normalize_crs(polygon_inside_crs):
+            raise ValueError(
+                "Polygon CRS mismatch: outside has "
+                + _crs_label(poly_outside_crs)
+                + ", inside has "
+                + _crs_label(polygon_inside_crs)
+            )
+        polygons_crs = poly_outside_crs
+    else:
+        # When poly_outside is None, use polygon_inside CRS
+        polygons_crs = polygon_inside.crs
 
     align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
@@ -499,7 +516,8 @@ def run_from_config(config_path: str):
 
                 if not used_cache_alignment:
                     print("Starting image alignment.")
-                    image_pair.align_images(polygon_outside)
+                    # When poly_outside is None, align_images will use image_bounds minus polygon_inside
+                    image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue
@@ -575,10 +593,23 @@ def run_from_config(config_path: str):
                                 print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
 
                     if not used_cache_lod:
-                        lod_points = random_points_on_polygon_by_number(
-                            polygon_outside,
-                            filter_params.number_of_points_for_level_of_detection
-                        )
+                        if poly_outside is not None:
+                            lod_points = random_points_on_polygon_by_number(
+                                poly_outside,
+                                filter_params.number_of_points_for_level_of_detection
+                            )
+                        else:
+                            # Use image_bounds minus moving_area for LoD calculation
+                            lod_polygon = gpd.GeoDataFrame(
+                                geometry=image_pair.image_bounds.difference(polygon_inside),
+                                crs=image_pair.crs
+                            )
+                            lod_polygon = lod_polygon.rename(columns={0: 'geometry'})
+                            lod_polygon.set_geometry('geometry', inplace=True)
+                            lod_points = random_points_on_polygon_by_number(
+                                lod_polygon,
+                                filter_params.number_of_points_for_level_of_detection
+                            )
                         image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                         if use_lod_cache:
                             save_lod_cache(
@@ -592,10 +623,23 @@ def run_from_config(config_path: str):
                             print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
                     else:
                         if not _recompute_lod_from_points(image_pair, filter_params):
-                            lod_points = random_points_on_polygon_by_number(
-                                polygon_outside,
-                                filter_params.number_of_points_for_level_of_detection
-                            )
+                            if poly_outside is not None:
+                                lod_points = random_points_on_polygon_by_number(
+                                    poly_outside,
+                                    filter_params.number_of_points_for_level_of_detection
+                                )
+                            else:
+                                # Use image_bounds minus moving_area for LoD calculation
+                                lod_polygon = gpd.GeoDataFrame(
+                                    geometry=image_pair.image_bounds.difference(polygon_inside),
+                                    crs=image_pair.crs
+                                )
+                                lod_polygon = lod_polygon.rename(columns={0: 'geometry'})
+                                lod_polygon.set_geometry('geometry', inplace=True)
+                                lod_points = random_points_on_polygon_by_number(
+                                    lod_polygon,
+                                    filter_params.number_of_points_for_level_of_detection
+                                )
                             image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                             if use_lod_cache:
                                 save_lod_cache(

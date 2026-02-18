@@ -109,6 +109,7 @@ Check and update these entries:
 - `paths.date_csv_path`: CSV file with image dates (or `"none"` if not used)
 - `paths.pairs_csv_path`: CSV file with image pairs (or `"none"` if not used)
 - `polygons.moving_area_filename` and `polygons.stable_area_filename`: these are just filenames, so the shapefiles must live inside `paths.input_folder`
+- **Optional fallback**: If `stable_area_filename` is set to `"none"` or the file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable. Alignment quality may be slightly lower but can be improved by increasing `number_of_control_points`.
 
 Example (from `configs/example_config.toml`):
 ```toml
