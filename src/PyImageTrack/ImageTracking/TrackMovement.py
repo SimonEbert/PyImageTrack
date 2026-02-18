@@ -6,8 +6,6 @@ from multiprocessing import shared_memory
 import geopandas as gpd
 import numpy as np
 import pandas as pd
-import scipy
-import sklearn
 import tqdm
 from skimage.feature import match_template
 
@@ -207,7 +205,7 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
     )
 
 
-def move_indices_from_transformation_matrix(transformation_matrix: np.array, indices: np.array):
+def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, indices: np.ndarray):
     """
     Given a list of n indices (as an np.array with shape (2,n)), calculates the position of these indices after applying
     the given extended transformation matrix, which is a (2,3)-shaped np.array.
