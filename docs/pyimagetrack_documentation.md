@@ -1,5 +1,7 @@
 # PyImageTrack Documentation
-2026-01-26
+
+Version: 0.2
+Date: 2026-02-18
 
 ## Overview
 PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and plotting.
@@ -7,7 +9,7 @@ The main entry point is the CLI command `pyimagetrack-run`, configured via TOML 
 
 ## Running The Pipeline
 ```
-pyimagetrack-run --config configs/drone_hs.toml
+pyimagetrack-run --config configs/example_config.toml
 ```
 Config paths are resolved relative to the repo root.
 The CLI invokes `PyImageTrack.run_pipeline:main` under the hood.
@@ -28,10 +30,7 @@ This is due to the tracking routine making use of the multiprocessing package fo
 safety measure, the tracking routine will be called several times with identical parameters.
 
 ## Configuration Files (TOML)
-Configs are TOML files and share the same structure. Use these as templates:
-- `configs/drone_hs.toml`
-- `configs/smoketest_drone_hs.toml`
-- `configs/timelapse_fake_ortho.toml`
+Configs are TOML files and share the same structure. Use `configs/example_config.toml` as a template.
 
 ### Key Sections
 - `[paths]`: input/output folders, optional CSVs for dates/pairs.
@@ -43,16 +42,9 @@ Configs are TOML files and share the same structure. Use these as templates:
 - `[image_enhancement]`: optional image enhancement (CLAHE) configuration.
 - `[cache]`: caching and recompute flags.
 - `[output]`: optional outputs such as true-color alignment.
-- `[adaptive_tracking_window]`: search extent scales by time span when enabled.
+- `[adaptive_tracking_window]`: when enabled, search extent scales by time span between images. The `search_extent_px` parameter then represents the expected movement per year, and the actual search window is calculated as `search_extent_px * years_between_observations`.
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
-
-### Downsampling
-```
-[downsampling]
-downsample_factor = 4
-```
-Set `downsample_factor = 1` to keep full resolution. If `downsample_factor > 1`, the pipeline will decimate image arrays by an integer factor.
 
 ### [no_georef] options and depth-image settings
 If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are handled and how optional 3D displacement calculation from depth images is performed.
@@ -91,14 +83,6 @@ Notes and requirements:
 - `camera_intrinsics_matrix` and `camera_distortion_coefficients` are required if `undistort_image = true` or when computing image→camera coordinate transforms.
 - `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix in standard row-major layout: [[R (3×3), t (3×1)], [0 0 0, 1]]. The pipeline applies this matrix directly (no internal transpose) when transforming points.
 - Arrays in TOML are parsed into lists and converted to numpy arrays by the pipeline — use numeric literals (no strings).
-
-
-### Downsampling
-```
-[downsampling]
-downsample_factor = 4
-```
-Set `downsample_factor = 1` to keep full resolution.
 
 ## Module: run_pipeline.py
 ### _load_config(path: str) -> dict
@@ -420,6 +404,62 @@ Returns paths for aligned raster, control points, and metadata JSON.
 ``aligned_tif``, ``control_pts``, ``meta_json`` : tuple
     Output paths.
 
+### lod_cache_paths(track_dir, year1, year2)
+Returns paths for LoD points GeoJSON and metadata JSON.
+
+#### Parameters
+``track_dir`` : str
+    Tracking folder.
+
+``year1``, ``year2`` : str
+    Pair identifiers.
+
+#### Returns
+``lod_geojson``, ``meta_json`` : tuple
+    Output paths.
+
+### save_lod_cache(image_pair, track_dir, year1, year2, filenames, dates, version="v1")
+Writes LoD points GeoJSON and metadata JSON.
+
+#### Parameters
+``image_pair`` : ImagePair
+    Pair object with LoD points.
+
+``track_dir`` : str
+    Tracking folder.
+
+``year1``, ``year2`` : str
+    Pair identifiers.
+
+``filenames`` : dict
+    Mapping id -> path.
+
+``dates`` : dict
+    Mapping id -> date.
+
+``version`` : str
+    Metadata version.
+
+#### Returns
+``None``
+
+### load_lod_cache(image_pair, track_dir, year1, year2) -> bool
+Loads LoD points into an ImagePair.
+
+#### Parameters
+``image_pair`` : ImagePair
+    Target object.
+
+``track_dir`` : str
+    Tracking folder.
+
+``year1``, ``year2`` : str
+    Pair identifiers.
+
+#### Returns
+``success`` : bool
+    True if cache was loaded.
+
 ### save_alignment_cache(image_pair, align_dir, year1, year2, align_params, filenames, dates, version="v1", save_truecolor_aligned=False)
 Writes aligned raster (and optional true-color raster), control points, and metadata JSON.
 
@@ -713,6 +753,96 @@ Computes circular standard deviation (degrees).
 ``std_deg`` : float
     Circular standard deviation.
 
+### grid_points_on_polygon_by_distance(polygon, distance_of_points=10, distance_px=None, pixel_size=None)
+Creates an evenly spaced grid of points inside a polygon at a given spacing.
+
+#### Parameters
+``polygon`` : gpd.GeoDataFrame
+    Single-polygon GeoDataFrame.
+
+``distance_of_points`` : float
+    Desired spacing in CRS units.
+
+``distance_px`` : float or None
+    Optional pixel spacing for logging.
+
+``pixel_size`` : float or None
+    Pixel size in CRS units (for logging).
+
+#### Returns
+``points`` : gpd.GeoDataFrame
+    Grid points inside the polygon.
+
+### random_points_on_polygon_by_number(polygon, number_of_points)
+Creates randomly distributed points inside a polygon.
+
+#### Parameters
+``polygon`` : gpd.GeoDataFrame
+    Single-polygon GeoDataFrame.
+
+``number_of_points`` : int
+    Number of points to generate.
+
+#### Returns
+``points`` : gpd.GeoDataFrame
+    Random points inside the polygon.
+
+### get_raster_indices_from_points(points, raster_matrix_transform)
+Converts point coordinates to raster row/column indices.
+
+#### Parameters
+``points`` : gpd.GeoDataFrame
+    Points in CRS coordinates.
+
+``raster_matrix_transform`` : Affine
+    Raster transform.
+
+#### Returns
+``rows``, ``cols`` : list
+    Row/column indices for points.
+
+### crop_images_to_intersection(file1, file2)
+Crops two rasters to their spatial intersection and returns arrays + transforms.
+
+#### Parameters
+``file1``, ``file2``
+    Rasterio-opened datasets.
+
+#### Returns
+[``array_file1``, ``array_file1_transform``], [``array_file2``, ``array_file2_transform``]
+    Cropped arrays and transforms.
+
+### georeference_tracked_points(tracked_pixels, raster_transform, crs, years_between_observations=1)
+Converts tracked pixel offsets into georeferenced movement vectors and yearly rates.
+
+#### Parameters
+``tracked_pixels`` : pd.DataFrame
+    Must include row/column and movement direction fields.
+
+``raster_transform`` : Affine
+    Raster transform.
+
+``crs`` : any
+    CRS identifier.
+
+``years_between_observations`` : float
+    Time span between images.
+
+#### Returns
+``georeferenced_tracked_pixels`` : gpd.GeoDataFrame
+    GeoDataFrame with movement distance and movement per year.
+
+### circular_std_deg(angles_deg)
+Computes circular standard deviation (degrees).
+
+#### Parameters
+``angles_deg`` : array-like
+    Angles in degrees.
+
+#### Returns
+``std_deg`` : float
+    Circular standard deviation.
+
 ### get_submatrix_rect_from_extents(central_index, extents, matrix)
 Extracts an asymmetric rectangular window given extents (posx, negx, posy, negy).
 
@@ -811,25 +941,45 @@ if provided, otherwise in camera coordinates
 ### class TrackingResults
 Represents the result of tracking a single point/cell.
 
+#### __init__(movement_rows, movement_cols, tracking_method, transformation_matrix=None, cross_correlation_coefficient=None, tracking_success=False)
+
 #### Parameters
 ``movement_rows`` : float
+    Movement in row direction.
 
 ``movement_cols`` : float
+    Movement in column direction.
 
 ``tracking_method`` : str
+    Tracking method used (e.g., "lsm", "cc").
 
 ``transformation_matrix`` : np.ndarray or None
+    Affine transformation matrix (LSM only).
 
 ``cross_correlation_coefficient`` : float or None
+    Cross-correlation coefficient.
 
 ``tracking_success`` : bool
+    Whether tracking was successful.
 
 #### Fields
-``movement_rows``, ``movement_cols``
-``tracking_method``
-``transformation_matrix`` (LSM only)
-``cross_correlation_coefficient``
-``tracking_success``
+``movement_rows`` : float
+    Movement in row direction.
+
+``movement_cols`` : float
+    Movement in column direction.
+
+``tracking_method`` : str
+    Tracking method used.
+
+``transformation_matrix`` : np.ndarray or None
+    Affine transformation matrix (LSM only).
+
+``cross_correlation_coefficient`` : float or None
+    Cross-correlation coefficient.
+
+``tracking_success`` : bool
+    Whether tracking was successful.
 
 ## Module: ImageTracking/TrackMovement.py
 ### track_cell_cc(tracked_cell_matrix, search_cell_matrix, search_center=None)
@@ -883,12 +1033,36 @@ Least-squares tracking for a single cell with optional initial shift.
 ``tracking_results`` : TrackingResults
     Shift estimates and correlation coefficient; invalid results return NaNs.
 
-### track_cell_lsm_parallelized(central_index)
-Multiprocessing helper that tracks a single cell using shared memory for the full image matrices and parameters
+### track_cell_lsm_parallelized(central_index, shm1_name, shm2_name, shape1, shape2, dtype, tracked_cell_size, control_search_extents=None, search_extents=None)
+Multiprocessing helper that tracks a single cell using shared memory for the full image matrices and parameters.
 
 #### Parameters
 ``central_index`` : np.ndarray
     Central index to track.
+
+``shm1_name`` : str
+    Shared memory name for image1.
+
+``shm2_name`` : str
+    Shared memory name for image2.
+
+``shape1`` : tuple
+    Shape of image1.
+
+``shape2`` : tuple
+    Shape of image2.
+
+``dtype`` : type
+    Data type of images.
+
+``tracked_cell_size`` : int
+    Size of the tracked cell.
+
+``control_search_extents`` : tuple or None
+    Control search extents (for alignment tracking).
+
+``search_extents`` : tuple or None
+    Search extents (for movement tracking).
 
 #### Returns
 ``tracking_results`` : TrackingResults
@@ -969,6 +1143,9 @@ Parameters are read from `parameter_dict`. Common keys:
 - ``camera_intrinsics_matrix``        # 3x3 matrix (if undistortion or 3D conversion is enabled)
 - ``camera_distortion_coefficients``  # 2- or 4-element array (OpenCV format)
 - ``camera_to_3d_coordinates_transform``  # optional 4x4 homogeneous transform for output coordinates
+- ``enhancement_type``                # image enhancement type ("clahe", "none")
+- ``enhancement_kernel_size``         # kernel size for CLAHE
+- ``enhancement_clip_limit``          # clip limit for CLAHE
 
 #### _effective_pixel_size() -> float
 Returns CRS units per pixel (assumes square pixels).
@@ -981,6 +1158,13 @@ Scales an affine transform by `factor` for downsampling.
 
 #### select_image_channels(selected_channels=None)
 Selects bands for tracking. Default uses first three channels.
+
+#### Parameters
+``selected_channels`` : list[int] or int or None
+    Channels to use for tracking. If None, uses [0, 1, 2].
+
+#### Returns
+``None``
 
 #### load_images_from_file(filename_1, observation_date_1, filename_2, observation_date_2, selected_channels=None, NA_value=None)
 Loads and crops images to the intersection, handles fake georeferencing and downsampling, and sets bounds. When operating with fake georeferencing and `convert_to_3d_displacement` enabled, the function will attempt to read corresponding depth rasters using the naming convention described above.
@@ -1006,14 +1190,19 @@ Loads pre-supplied matrices with a shared transform and CRS.
 
 #### Parameters
 ``image1_matrix``, ``image2_matrix`` : np.ndarray
+    Image matrices.
 
 ``observation_date_1``, ``observation_date_2`` : str
+    Observation dates.
 
 ``image_transform`` : Affine
+    Shared transform for both matrices.
 
 ``crs`` : any
+    Coordinate reference system.
 
 ``selected_channels`` : list[int] or int or None
+    Channels to use for tracking.
 
 #### Returns
 ``None``
@@ -1033,6 +1222,7 @@ Builds a true-color aligned version of image2 using alignment control points.
 
 #### Returns
 ``None``
+    Sets `self.image2_matrix_truecolor` with the true-color aligned image.
 
 #### track_points(tracking_area)
 Creates a grid of points within the tracking area and tracks movement.
@@ -1073,16 +1263,33 @@ Applies outlier filtering using FilterParameters.
 #### Returns
 ``None``
 
+#### track_lod_points(points_for_lod_calculation, years_between_observations)
+Tracks random points in a stable area for LoD calculation.
+
+#### Parameters
+``points_for_lod_calculation`` : gpd.GeoDataFrame
+    Points for LoD calculation.
+
+``years_between_observations`` : float
+    Time span between observations in years.
+
+#### Returns
+``tracked_points`` : gpd.GeoDataFrame
+    Tracked points for LoD.
+
 #### calculate_lod(points_for_lod_calculation, filter_parameters=None)
 Computes the level of detection (LoD) from random points in a stable area.
 
 #### Parameters
 ``points_for_lod_calculation`` : gpd.GeoDataFrame
+    Points for LoD calculation.
 
 ``filter_parameters`` : FilterParameters or None
+    Filter parameters for LoD calculation.
 
 #### Returns
 ``None``
+    Sets `self.level_of_detection` with the computed LoD value.
 
 #### filter_lod_points()
 Marks points below LoD as invalid.
@@ -1134,23 +1341,48 @@ Loads saved tracking results and aligns images to a reference area.
 
 #### Parameters
 ``file_path`` : str
+    Path to the saved tracking results GeoJSON file.
 
 ``reference_area`` : gpd.GeoDataFrame
+    Reference area polygon for alignment.
 
 #### Returns
 ``None``
+    Loads tracking results into `self.tracking_results` and aligns images if needed.
 
 ## Module: DataProcessing/ImagePreprocessing.py
-### equalize_adapthist_images(image_matrix, kernel_size)
+### undistort_camera_image(image_matrix, camera_intrinsic_matrix, distortion_coefficients)
+Undistorts a camera image using OpenCV and returns the undistorted image cropped to a rectangular shape containing only valid pixels.
+
+#### Parameters
+``image_matrix`` : np.ndarray
+    The array representing the distorted image.
+
+``camera_intrinsic_matrix`` : np.ndarray
+    The intrinsic matrix of the camera. Format: [[f_x, s, c_x], [0, f_y, c_y], [0, 0, 1]].
+
+``distortion_coefficients`` : np.ndarray
+    Distortion coefficients of the camera as a one-dimensional array. Format: [k1, k2] (radial) or [k1, k2, p1, p2] (radial + tangential).
+
+#### Returns
+``image_matrix_undistorted`` : np.ndarray
+    The undistorted image matrix, cropped to a rectangular shape where all pixels are valid.
+### equalize_adapthist_images(image_matrix, kernel_size, clip_limit)
 Applies CLAHE (adaptive histogram equalization) using scikit-image.
 
 #### Parameters
 ``image_matrix`` : np.ndarray
+    Input image matrix.
 
 ``kernel_size`` : int
+    Size of the grid for histogram equalization.
+
+``clip_limit`` : float
+    Contrast limiting threshold.
 
 #### Returns
 ``equalized_image`` : np.ndarray
+    Equalized image.
 
 ## Module: DataProcessing/DataPostprocessing.py
 ### calculate_lod_points(image1_matrix, image2_matrix, image_transform, points_for_lod_calculation,tracking_parameters, crs, years_between_observations)
@@ -1184,31 +1416,101 @@ Ensures a boolean column exists (internal helper).
 #### Returns
 ``col_values`` : np.ndarray
 
-### filter_lod_points(tracking_results, level_of_detection)
+### filter_lod_points(tracking_results, level_of_detection, displacement_column_name)
 Marks points below the LoD as invalid.
 
 #### Parameters
 ``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
 
 ``level_of_detection`` : float
+    Level of detection threshold.
+
+``displacement_column_name`` : str
+    Name of the displacement column ('movement_distance_per_year' for georeferenced images, '3d_displacement_distance_per_year' for non-georeferenced images with 3D displacements).
 
 #### Returns
 ``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with points below LoD marked as invalid.
 
 ### filter_outliers_movement_bearing_difference(tracking_results, filter_parameters)
 Removes outliers based on bearing difference vs local neighborhood.
 
+#### Parameters
+``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
+
+``filter_parameters`` : FilterParameters
+    Filter parameters containing threshold and window size.
+
+#### Returns
+``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with outliers marked as invalid.
+
 ### filter_outliers_movement_bearing_standard_deviation(tracking_results, filter_parameters)
 Removes outliers based on bearing standard deviation in a neighborhood.
 
-### filter_outliers_movement_rate_difference(tracking_results, filter_parameters)
+#### Parameters
+``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
+
+``filter_parameters`` : FilterParameters
+    Filter parameters containing threshold and window size.
+
+#### Returns
+``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with outliers marked as invalid.
+
+### filter_outliers_movement_rate_difference(tracking_results, filter_parameters, displacement_column_name)
 Removes outliers based on movement rate difference vs local neighborhood.
 
-### filter_outliers_movement_rate_standard_deviation(tracking_results, filter_parameters)
+#### Parameters
+``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
+
+``filter_parameters`` : FilterParameters
+    Filter parameters containing threshold and window size.
+
+``displacement_column_name`` : str
+    Name of the displacement column ('movement_distance_per_year' for georeferenced images, '3d_displacement_distance_per_year' for non-georeferenced images with 3D displacements).
+
+#### Returns
+``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with outliers marked as invalid.
+
+### filter_outliers_movement_rate_standard_deviation(tracking_results, filter_parameters, displacement_column_name)
 Removes outliers based on movement rate standard deviation in a neighborhood.
 
-### filter_outliers_full(tracking_results, filter_parameters)
+#### Parameters
+``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
+
+``filter_parameters`` : FilterParameters
+    Filter parameters containing threshold and window size.
+
+``displacement_column_name`` : str
+    Name of the displacement column ('movement_distance_per_year' for georeferenced images, '3d_displacement_distance_per_year' for non-georeferenced images with 3D displacements).
+
+#### Returns
+``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with outliers marked as invalid.
+
+### filter_outliers_full(tracking_results, filter_parameters, displacement_column_name)
 Applies all outlier filters in sequence.
+
+#### Parameters
+``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
+
+``filter_parameters`` : FilterParameters
+    Filter parameters.
+
+``displacement_column_name`` : str
+    Name of the displacement column ('movement_distance_per_year' for georeferenced images, '3d_displacement_distance_per_year' for non-georeferenced images with 3D displacements).
+
+#### Returns
+``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with all outlier filters applied.
 
 ## Module: Plots/MakePlots.py
 ### plot_raster_and_geometry(raster_matrix, raster_transform, geometry, alpha=0.6)
