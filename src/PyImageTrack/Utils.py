@@ -469,3 +469,40 @@ def abbr_filter(fp) -> str:
         f"sdRw{fc(fp.standard_deviation_movement_rate_moving_window_size)}",
     ]
     return "F_" + "_".join(parts)
+
+
+def abbr_enhancement(ep) -> str:
+    """Short code for image enhancement parameters; supports objects or dicts."""
+    fc = float_compact
+    enhancement_type = _get(ep, "type", "none")
+    
+    if enhancement_type == "none" or not enhancement_type:
+        return "E_none"
+    
+    parts = []
+    
+    if enhancement_type == "clahe":
+        kernel_size = _get(ep, "kernel_size", 50)
+        clip_limit = _get(ep, "clip_limit", 0.9)
+        parts.append(f"clahe")
+        parts.append(f"K{kernel_size}")
+        parts.append(f"C{fc(clip_limit)}")
+    elif enhancement_type == "gamma":
+        gamma = _get(ep, "gamma", 1.0)
+        parts.append(f"gamma")
+        parts.append(f"G{fc(gamma)}")
+    elif enhancement_type == "histeq":
+        parts.append(f"histeq")
+    elif enhancement_type == "denoise":
+        denoise_type = _get(ep, "denoise_type", "gaussian")
+        strength = _get(ep, "strength", 1.0)
+        parts.append(f"denoise")
+        parts.append(f"D{denoise_type}")
+        parts.append(f"S{fc(strength)}")
+    else:
+        # Unknown enhancement type - just use the type name
+        parts.append(enhancement_type)
+    
+    # Drop empty/None/NA fragments
+    parts = [p for p in parts if p not in (None, "", "NA")]
+    return "E_" + "_".join(parts)

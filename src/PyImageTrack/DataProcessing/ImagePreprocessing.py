@@ -1,9 +1,9 @@
 import skimage
 import numpy as np
 
-def equalize_adapthist_images(image_matrix, kernel_size):
+def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
     equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix.astype(int), kernel_size=kernel_size,
-                                                          clip_limit=0.9)
+                                                          clip_limit=clip_limit)
     return equalized_image
 
 # image1_matrix = skimage.exposure.equalize_adapthist(image=image1_matrix.astype(int),
