@@ -471,6 +471,16 @@ def abbr_filter(fp) -> str:
     return "F_" + "_".join(parts)
 
 
+def abbr_output_units(mode: str) -> str:
+    """Short code for output units mode."""
+    if mode == "per_year":
+        return "U_per_year"
+    elif mode == "total":
+        return "U_total"
+    else:
+        return f"U_{mode}"
+
+
 def abbr_enhancement(ep) -> str:
     """Short code for image enhancement parameters; supports objects or dicts."""
     fc = float_compact

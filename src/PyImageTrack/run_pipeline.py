@@ -30,7 +30,7 @@ from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
     collect_pairs, ensure_dir, abbr_alignment,
-    abbr_tracking, abbr_filter, abbr_enhancement, parse_date,
+    abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units, parse_date,
 )
 
 from .Cache import (
@@ -161,12 +161,17 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     if points is None or len(points) == 0:
         return False
     quantile = filter_params.level_of_detection_quantile
-    if quantile is None or "movement_distance_per_year" not in points.columns:
+    
+    # Determine the displacement column name based on output_units_mode
+    displacement_column_name = image_pair.displacement_column_name
+    
+    if quantile is None or displacement_column_name not in points.columns:
         return False
-    image_pair.level_of_detection = np.nanquantile(points["movement_distance_per_year"], quantile)
+    image_pair.level_of_detection = np.nanquantile(points[displacement_column_name], quantile)
     unit_name = points.crs.axis_info[0].unit_name if points.crs is not None else "pixel"
+    unit_suffix = "/year" if "per_year" in displacement_column_name else ""
     print("Found level of detection with quantile " + str(quantile) + " as "
-          + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + "/year")
+          + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + unit_suffix)
     return True
 
 
@@ -238,6 +243,14 @@ def run_from_config(config_path: str):
 
     write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
+    # output units mode (required)
+    output_units_mode = _require(cfg, "output_units", "mode")
+    if output_units_mode not in ("per_year", "total"):
+        raise ValueError(
+            f"Invalid output_units.mode: '{output_units_mode}'. "
+            "Must be either 'per_year' or 'total'."
+        )
+
     # adaptive tracking window options
     use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
 
@@ -292,6 +305,10 @@ def run_from_config(config_path: str):
         "clip_limit": _get(cfg, "image_enhancement", "clip_limit"),
     }
     enhancement_code = abbr_enhancement(enhancement_params)
+    
+    # Output units code (combined with enhancement for cache key)
+    output_units_code = abbr_output_units(output_units_mode)
+    enhancement_code = enhancement_code + "_" + output_units_code
 
     # ==============================
     # SAVE OPTIONS (final outputs)
@@ -490,6 +507,8 @@ def run_from_config(config_path: str):
             param_dict["enhancement_type"]                 = enhancement_params.get("type", "none")
             param_dict["enhancement_kernel_size"]           = enhancement_params.get("kernel_size", 50)
             param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
+            # Output units mode
+            param_dict["output_units_mode"]                = output_units_mode
 
             param_dict["crs"]                               = image_crs
  

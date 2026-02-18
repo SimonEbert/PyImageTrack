@@ -97,10 +97,18 @@ class ImagePair:
         self.enhancement_type = parameter_dict.get("enhancement_type", "none")
         self.enhancement_kernel_size = parameter_dict.get("enhancement_kernel_size", 50)
         self.enhancement_clip_limit = parameter_dict.get("enhancement_clip_limit", 0.9)
+        # Output units mode
+        self.output_units_mode = parameter_dict.get("output_units_mode", "per_year")
         if self.convert_to_3d_displacement:
-            self.displacement_column_name = "3d_displacement_distance_per_year"
+            if self.output_units_mode == "total":
+                self.displacement_column_name = "3d_displacement_distance_total"
+            else:
+                self.displacement_column_name = "3d_displacement_distance_per_year"
         else:
-            self.displacement_column_name = "movement_distance_per_year"
+            if self.output_units_mode == "total":
+                self.displacement_column_name = "movement_distance_total"
+            else:
+                self.displacement_column_name = "movement_distance_per_year"
 
     def _effective_pixel_size(self) -> float:
         """CRS units per pixel (assumes square pixels)."""
@@ -461,7 +469,8 @@ class ImagePair:
         self.tracked_control_points = georeference_tracked_points(tracked_control_points,
                                                                   self.image1_transform,
                                                                   self.crs,
-                                                                  years_between_observations)
+                                                                  years_between_observations,
+                                                                  self.output_units_mode)
 
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
@@ -615,11 +624,13 @@ class ImagePair:
                 tracked_points, depth_image_time1=self.depth_image1,
                 depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
-                years_between_observations=years_between_observations)
+                years_between_observations=years_between_observations,
+                output_unit_mode=self.output_units_mode)
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
-                years_between_observations=years_between_observations)
+                years_between_observations=years_between_observations,
+                output_unit_mode=self.output_units_mode)
 
         return georeferenced_tracked_points
 
@@ -744,12 +755,14 @@ class ImagePair:
                 tracked_control_pixels_valid,self.depth_image1,self.depth_image2,
                 camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
-                years_between_observations=years_between_observations)
+                years_between_observations=years_between_observations,
+                output_unit_mode=self.output_units_mode)
         else:
             tracked_points = georeference_tracked_points(tracked_control_pixels_valid,
                                                          self.image1_transform,
                                                          crs=self.crs,
-                                                         years_between_observations=years_between_observations)
+                                                         years_between_observations=years_between_observations,
+                                                         output_unit_mode=self.output_units_mode)
 
         return tracked_points
 
@@ -1131,6 +1144,9 @@ class ImagePair:
                 except Exception:
                     return np.nan
 
+            # Determine unit label for statistics
+            unit_label = "per year" if "per_year" in self.displacement_column_name else "total"
+            
             with (open(
                     f"{folder_path}/statistical_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
                     "w",
@@ -1192,7 +1208,7 @@ class ImagePair:
 
                 ref_df1 = tr_without_outliers if not tr_without_outliers.empty else tr_all
                 statistics_file.write(
-                    "Movement rate with points below LoD:\n"
+                    f"Movement ({unit_label}) with points below LoD:\n"
                     + f"\tMean: {_fmt(np.nanmean(ref_df1[self.displacement_column_name]))}\n"
                     + f"\tMedian: {_fmt(np.nanmedian(ref_df1[self.displacement_column_name]))}\n"
                     + f"\tStandard deviation: {_fmt(np.nanstd(ref_df1[self.displacement_column_name]))}\n"
@@ -1202,7 +1218,7 @@ class ImagePair:
 
                 ref_df2 = tr_valid if not tr_valid.empty else tr_above_lod
                 statistics_file.write(
-                    "Movement rate without points below LoD:\n"
+                    f"Movement ({unit_label}) without points below LoD:\n"
                     + f"\tMean: {_fmt(np.nanmean(ref_df2[self.displacement_column_name]))}\n"
                     + f"\tMedian: {_fmt(np.nanmedian(ref_df2[self.displacement_column_name]))}\n"
                     + f"\tStandard deviation: {_fmt(np.nanstd(ref_df2[self.displacement_column_name]))}\n"
@@ -1213,7 +1229,7 @@ class ImagePair:
                 if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None
                 ) and len(self.level_of_detection_points) > 0:
                     statistics_file.write(
-                        "Movement rate of LoD points:\n"
+                        f"Movement ({unit_label}) of LoD points:\n"
                         + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points[self.displacement_column_name]))}\n"
                         + f"\tMedian: {_fmt(np.nanmedian(self.level_of_detection_points[self.displacement_column_name]))}\n"
                         + f"\tStandard deviation: {_fmt(np.nanstd(self.level_of_detection_points[self.displacement_column_name]))}\n"
