@@ -168,9 +168,10 @@ def crop_images_to_intersection(file1, file2):
 
 
 def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs,
-                                years_between_observations: float=1) -> gpd.GeoDataFrame:
+                                years_between_observations: float=1,
+                                output_unit_mode: str="per_year") -> gpd.GeoDataFrame:
     """
-    Georeferences a DataFrame with tracked points and calculates their movement (absolute and per year) in the unit
+    Georeferences a DataFrame with tracked points and calculates their movement in the unit
     specified by the coordinate reference system.
     Parameters
     ----------
@@ -185,12 +186,14 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         An identifier for a coordinate reference system to which the resulting GeoDataFrame will be projected.
     years_between_observations: float = 1
         A float representing the number of years between the two images for calculating average yearly movement rates.
+    output_unit_mode: str = "per_year"
+        Either "per_year" (normalize to per-year values) or "total" (raw displacement without normalization).
     Returns
     ----------
     georeferenced_tracked_pixels:
         A GeoDataFrame containing the tracked pixels with the previously mentioned columns, as well as the columns
-        "movement_distance" and "movement_distance_per_year", specifying the movement in the unit of the given
-        coordinate reference system and one geometry column.
+        "movement_distance" and either "movement_distance_per_year" or "movement_distance_total" depending on mode,
+        specifying the movement in the unit of the given coordinate reference system and one geometry column.
     """
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
     # georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
@@ -202,12 +205,18 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
     georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
         [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
          raster_transform[0] * georeferenced_tracked_pixels.loc[:, "movement_column_direction"].values], axis=0)
-    georeferenced_tracked_pixels["movement_distance_per_year"] = (georeferenced_tracked_pixels["movement_distance"]
-                                                                  / years_between_observations)
+    
+    if output_unit_mode == "total":
+        georeferenced_tracked_pixels["movement_distance_total"] = georeferenced_tracked_pixels["movement_distance"]
+        displacement_column_name = "movement_distance_total"
+    else:  # per_year
+        georeferenced_tracked_pixels["movement_distance_per_year"] = (georeferenced_tracked_pixels["movement_distance"]
+                                                                       / years_between_observations)
+        displacement_column_name = "movement_distance_per_year"
 
     georeferenced_tracked_pixels["valid"] = True
     georeferenced_tracked_pixels.loc[
-        np.isnan(georeferenced_tracked_pixels["movement_distance_per_year"]),
+        np.isnan(georeferenced_tracked_pixels[displacement_column_name]),
         "valid"] = False
 
     return georeferenced_tracked_pixels

@@ -56,6 +56,12 @@ force_recompute_lod = false
 # if true: additionally write a true-color aligned image
 write_truecolor_aligned = false
 
+[output_units]
+# Options: "per_year" or "total"
+# "per_year": movement rates are normalized to per-year values (default for time-series analysis)
+# "total": raw displacement values without dividing by years_between (for one-time events like landslides)
+mode = "per_year"
+
 [adaptive_tracking_window]
 # If true, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
 use_adaptive_tracking_window = false

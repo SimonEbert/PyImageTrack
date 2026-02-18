@@ -42,6 +42,7 @@ Configs are TOML files and share the same structure. Use `configs/example_config
 - `[image_enhancement]`: optional image enhancement (CLAHE) configuration.
 - `[cache]`: caching and recompute flags.
 - `[output]`: optional outputs such as true-color alignment.
+- `[output_units]`: **required** - specifies whether movement values are normalized per year or reported as total displacement.
 - `[adaptive_tracking_window]`: when enabled, search extent scales by time span between images. The `search_extent_px` parameter then represents the expected movement per year, and the actual search window is calculated as `search_extent_px * years_between_observations`.
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
@@ -88,6 +89,15 @@ Notes and requirements:
 - `camera_intrinsics_matrix` and `camera_distortion_coefficients` are required if `undistort_image = true` or when computing image→camera coordinate transforms.
 - `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix in standard row-major layout: [[R (3×3), t (3×1)], [0 0 0, 1]]. The pipeline applies this matrix directly (no internal transpose) when transforming points.
 - Arrays in TOML are parsed into lists and converted to numpy arrays by the pipeline — use numeric literals (no strings).
+
+### [output_units] - Movement Units
+The `[output_units]` section is **required** and specifies how movement values are calculated and reported.
+
+**Important Notes:**
+- When using `"total"` mode, all filter thresholds in the `[filter]` section are interpreted as raw displacement values (e.g., meters) rather than per-year rates.
+- The output TIF files (`movement_rate_*.tif`) will show either per-year or total displacement depending on the mode.
+- The statistical parameters output file will indicate the units used (e.g., "Movement (per year)" vs "Movement (total)").
+- The cache key includes the output units mode to prevent mixing cached results from different modes.
 
 ## Module: run_pipeline.py
 ### _load_config(path: str) -> dict

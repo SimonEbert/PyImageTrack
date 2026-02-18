@@ -93,10 +93,18 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     point_size = np.clip((median_spacing ** 2) * 0.04, 2, 30)
 
-    if "3d_displacement_distance_per_year" in list(point_movement.columns):
-        displacement_column_name = "3d_displacement_distance_per_year"
-    else:
-        displacement_column_name = "movement_distance_per_year"
+    # Determine displacement column name (supports both per_year and total modes)
+    displacement_column_name = None
+    for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_year",
+                "movement_distance_total", "movement_distance_per_year"]:
+        if col in list(point_movement.columns):
+            displacement_column_name = col
+            break
+    
+    if displacement_column_name is None:
+        raise ValueError("Could not find any displacement column. "
+                         "Expected one of: 'movement_distance_per_year', 'movement_distance_total', "
+                         "'3d_displacement_distance_per_year', or '3d_displacement_distance_total'.")
 
     if point_color is None:
         try:
@@ -105,11 +113,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                                     # missing_kwds={'color': 'gray'}
                                     # vmin=0, vmax=3.5,
                                     )
-
-
-        except:
-            raise ValueError("Could not find columns 'movement_distance_per_year' or '3d_displacement_distance_per_year'."
-                             "Provide a dataframe with either one of these columns for movement plotting.")
+        except Exception as e:
+            raise ValueError(f"Could not plot using column '{displacement_column_name}': {e}")
 
     else:
         point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)
