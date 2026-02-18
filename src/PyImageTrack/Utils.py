@@ -38,6 +38,12 @@ def parse_date(s: str) -> datetime:
         y, mo, d, H, M, S = map(int, m.groups())
         return _round_to_nearest_hour(datetime(y, mo, d, H, M, S))
 
+    # YYYY-MM-DD_HH-mm-SS
+    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})[-_](\d{2})-(\d{2})-(\d{2})', name)
+    if m:
+        y, mo, d, H, M, S = map(int, m.groups())
+        return _round_to_nearest_hour(datetime(y, mo, d, H, M, S))
+
     # YYYYMMDD (no time)
     m = re.match(r'^(\d{4})(\d{2})(\d{2})', name)
     if m:
@@ -128,6 +134,14 @@ def collect_pairs(input_folder: str,
             id_ = lead
             id_to_file[id_] = path
             id_to_date[id_] = dt.strftime("%Y-%m-%d %H:00:00")
+            id_hastime_from_filename[id_] = True
+
+        # Case: YYYY-MM-DD_HH-mm-SS
+        elif re.match(r'^\d{4}-\d{2}-\d{2}[-_]\d{2}-\d{2}-\d{2}', lead):
+            dt = parse_date(lead)
+            id_ = dt.strftime("%Y-%m-%d_%H-%M-%S")
+            id_to_file[id_] = path
+            id_to_date[id_] = dt.strftime("%Y-%m-%d_%H-%M-%S")
             id_hastime_from_filename[id_] = True
 
         # Case: DD-MM-YYYY at start (e.g., 02-09-1953_*.tif)
@@ -390,9 +404,7 @@ def _get(obj, name, default="NA"):
 def abbr_alignment(ap):
     """Short code for alignment parameters; supports objects or dicts."""
     parts = []
-    print(ap)
     image_bands = _get(ap, 'image_bands', None)
-    print(image_bands)
     if image_bands is not None:
         parts.append(f"IB{image_bands}".replace(" ",""))
 

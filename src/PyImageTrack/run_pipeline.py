@@ -324,6 +324,7 @@ def run_from_config(config_path: str):
         dt1 = parse_date(date_1)
         dt2 = parse_date(date_2)
 
+
         def _fmt_label(id_key, dt):
             return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
                 else dt.strftime("%Y-%m-%d")

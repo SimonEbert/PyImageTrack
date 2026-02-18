@@ -159,6 +159,7 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
         angular_difference = min(difference, 360 - difference)
         if angular_difference > rotation_threshold:
             tracking_results.loc[i, "is_bearing_difference_outlier"] = True
+            tracking_results.loc[i, "is_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
@@ -229,6 +230,7 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
         standard_deviation = circular_std_deg(valid_movement_bearings)
         if standard_deviation > standard_deviation_threshold:
             tracking_results.loc[i, "is_bearing_standard_deviation_outlier"] = True
+            tracking_results.loc[i, "is_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
@@ -303,6 +305,7 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
         if np.abs(average_movement_rate - tracking_results.loc[
             i, displacement_column_name]) > movement_rate_threshold:
             tracking_results.loc[i, "is_movement_rate_difference_outlier"] = True
+            tracking_results.loc[i, "is_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
@@ -377,6 +380,7 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
         if (np.abs(standard_deviation_movement_rate - tracking_results.loc[i, displacement_column_name]) >
                 movement_rate_threshold):
             tracking_results.loc[i, "is_movement_rate_standard_deviation_outlier"] = True
+            tracking_results.loc[i, "is_outlier"] = True
             tracking_results.loc[i, "valid"] = False
     return tracking_results
 
