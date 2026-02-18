@@ -42,8 +42,9 @@ pyimagetrack-run --config configs/your_config.toml
 ## Windows (PowerShell)
 
 Install Python:
-- Download Python 3.11 (64-bit) from https://www.python.org/downloads/windows/ # make sure it is really the correct version of Python and not the latest release!
+- Download Python 3.11 (64-bit) from https://www.python.org/downloads/windows/. Make sure it is really the correct version of Python and not the latest release!
 - During installation, check **"Add python.exe to PATH"**
+- After successful installation, check **"Disable path length limit"**
 
 Install Git:
 - Download from https://git-scm.com/download/win
@@ -107,7 +108,7 @@ Check and update these entries:
 - `paths.input_folder`: folder that contains the input images
 - `paths.date_csv_path`: CSV file with image dates (or `"none"` if not used)
 - `paths.pairs_csv_path`: CSV file with image pairs (or `"none"` if not used)
-- `polygons.inside_filename` and `polygons.outside_filename`: these are just filenames, so the shapefiles must live inside `paths.input_folder`
+- `polygons.moving_area_filename` and `polygons.stable_area_filename`: these are just filenames, so the shapefiles must live inside `paths.input_folder`
 
 Example (from `configs/example_config.toml`):
 ```toml
@@ -117,6 +118,6 @@ date_csv_path = "../input/hillshades/image_dates.csv"
 pairs_csv_path = "../input/hillshades/image_pairs.csv"
 
 [polygons]
-outside_filename = "stable_area.shp"
-inside_filename = "moving_area.shp"
+stable_area_filename = "stable_area.shp"
+moving_area_filename = "moving_area.shp"
 ```

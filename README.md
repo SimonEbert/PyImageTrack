@@ -54,11 +54,7 @@ Follow the steps for your platform.
    ```
 
 Notes:
-- The package uses `pyproject.toml` (modern packaging standard) at the repo root.
-- Editable install means code changes in `src/PyImageTrack/` take effect immediately.
-- Use `pip install .` (no `-e`) if you want a fixed install from this repo.
-- Dependencies are installed automatically when you use `pip install -e .` or `pip install .`.
-- Use `[downsampling]` in your config to speed up smoke tests (`downsample_factor = 4`).
+- Performance of PyImageTrack is better on Linux than Windows.
 - Input filenames must start with the date token (e.g., `YYYY-MM-DD`, `YYYYMMDD`, or `YYYYMMDD-HHMMSS`).
 
 ## Project layout
@@ -67,19 +63,10 @@ Notes:
   and keeps project files (docs/configs) clearly separated from Python package code.
 
 ## Acknowledgment
-<<<<<<< HEAD
 The code in this respository is written by Lisa Rehn and Simon Ebert and maintained by Lisa Rehn. Its first version is
 based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example
 of the Kaiserberg Rock Glacier" by Simon Ebert.
 
-=======
-The code in this respository is written and maintained by Lisa Rehn and Simon Ebert. Its first version is based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example of the Kaiserberg Rock Glacier" by Simon Ebert.
-## Installation
-To install PyImageTrack, follow these steps:
-1. Clone the repository: `git clone https://github.com/SimonEbert/PyImageTrack.git`
-2. Navigate to the project directory: `cd PyImageTrack`
-3. Install the package: `pip install .`
->>>>>>> 39a8e67 (Implemented no crs approach for non-georeferenced images)
 
 ## License
 This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) License.
