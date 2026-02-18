@@ -7,6 +7,9 @@ date_csv_path = "/path/to/input/hillshades/image_dates.csv"
 pairs_csv_path = "/path/to/input/hillshades/image_pairs.csv"
 
 [polygons]
+# can be set to "none" to use image_bounds minus moving_area as stable area
+# (this assumes all areas outside the moving area are stable; alignment quality may be
+#  slightly lower but can be improved by increasing number_of_control_points)
 stable_area_filename = "stable_area.shp"
 moving_area_filename = "moving_area.shp"
 

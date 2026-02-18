@@ -46,6 +46,11 @@ Configs are TOML files and share the same structure. Use `configs/example_config
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
 
+### Stable Area Fallback Mode
+The `[polygons]` section supports an optional fallback mode for defining the stable area. If `stable_area_filename` is set to `"none"` or the specified file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable.
+
+**Note**: This fallback mode may result in slightly lower alignment quality compared to using a properly defined stable area polygon. To compensate, consider increasing the `number_of_control_points` parameter in the `[alignment]` section.
+
 ### [no_georef] options and depth-image settings
 If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are handled and how optional 3D displacement calculation from depth images is performed.
 

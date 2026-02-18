@@ -41,8 +41,11 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     """
 
     if len(reference_area) == 0:
-        raise ValueError("No polygon provided in the reference area GeoDataFrame. Please provide a GeoDataFrame with "
-                         "exactly one element.")
+        raise ValueError(
+            "No polygon provided in the reference area GeoDataFrame. "
+            "Please provide a GeoDataFrame with exactly one element, or set stable_area_filename to 'none' "
+            "to use image_bounds minus moving_area as the stable area."
+        )
 
     number_of_control_points = alignment_parameters.number_of_control_points
     maximal_alignment_movement = alignment_parameters.maximal_alignment_movement
