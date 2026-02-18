@@ -187,8 +187,8 @@ def run_from_config(config_path: str):
     date_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "date_csv_path")), config_dir)
     pairs_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_path")), config_dir)
 
-    poly_outside_filename = _require(cfg, "polygons", "outside_filename")
-    poly_inside_filename = _require(cfg, "polygons", "inside_filename")
+    poly_outside_filename = _require(cfg, "polygons", "stable_area_filename")
+    poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
 
     pairing_mode = _require(cfg, "pairing", "mode")
 
