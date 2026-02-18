@@ -40,6 +40,7 @@ Configs are TOML files and share the same structure. Use these as templates:
 - `[no_georef]`: enable for non-ortho images (e.g., JPGs) and configure fake georeferencing and depth-image options.
 - `[downsampling]`: optional downsampling for fast smoke tests.
 - `[flags]`: alignment/tracking/filtering/plotting toggles.
+- `[image_enhancement]`: optional image enhancement (CLAHE) configuration.
 - `[cache]`: caching and recompute flags.
 - `[output]`: optional outputs such as true-color alignment.
 - `[adaptive_tracking_window]`: search extent scales by time span when enabled.
@@ -324,6 +325,74 @@ Builds a short filter code for output folders.
 #### Returns
 ``code`` : str
     Folder code.
+
+### abbr_enhancement(ep)
+Builds a short enhancement code for output folders.
+
+#### Parameters
+``ep`` : object or dict
+    Enhancement parameters.
+
+#### Returns
+``code`` : str
+    Folder code (e.g., "E_none", "E_clahe_K50_C0.9").
+
+## Image Enhancement Configuration
+
+The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations.
+
+### Configuration Section
+
+`[image_enhancement]` section in the TOML config:
+
+```toml
+[flags]
+do_image_enhancement = true
+
+[image_enhancement]
+# Enhancement type: "clahe", "none", or future types
+type = "clahe"
+# CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
+kernel_size = 50
+clip_limit = 0.9
+```
+
+### Enhancement Types
+
+#### CLAHE (Contrast Limited Adaptive Histogram Equalization)
+- `type = "clahe"`
+- `kernel_size`: Size of the grid for histogram equalization
+- `clip_limit`: Contrast limiting threshold
+
+#### None (no enhancement)
+- `type = "none"` or omit the section
+
+### Output Path Structure
+
+The output path structure includes codes for each processing step:
+
+```
+output_folder / year1_year2 / enhancement_code / align_code / track_code / filter_code
+```
+
+### Path Codes
+
+Each processing step generates a code that appears in the output path:
+
+- **Enhancement**: `E_none` (disabled) or `E_clahe_K50_C0.9` (with parameters)
+- **Alignment**: `A_none` (disabled) or `A_CP2000_CC5_CCa0.8` (with parameters)
+- **Tracking**: Always uses tracking parameters (e.g., `T_IB3_DP3_MC20_CC0.5`)
+- **Filtering**: `F_none` (disabled) or `F_LoDq0.5_N1000_...` (with parameters)
+
+### Special "none" Codes
+
+When certain processing steps are disabled and not loaded from cache, the output path uses special "none" codes:
+
+- **Enhancement**: If `do_image_enhancement = false`, the path uses `E_none`
+- **Alignment**: If `do_alignment = false`, the path uses `A_none`
+- **Filtering**: If `do_filtering = false`, the path uses `F_none`
+- **Tracking**: No "none" code is used for tracking, as tracking is required for meaningful output
+
 
 ## Module: Cache.py
 ### _sha256(path: str) -> str

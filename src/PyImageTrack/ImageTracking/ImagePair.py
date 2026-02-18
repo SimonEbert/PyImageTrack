@@ -93,6 +93,10 @@ class ImagePair:
         self.camera_intrinsics_matrix = parameter_dict.get("camera_intrinsics_matrix", None)
         self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
         self.camera_to_3d_coordinates_transform = parameter_dict.get("camera_to_3d_coordinates_transform", None)
+        # Image enhancement parameters
+        self.enhancement_type = parameter_dict.get("enhancement_type", "none")
+        self.enhancement_kernel_size = parameter_dict.get("enhancement_kernel_size", 50)
+        self.enhancement_clip_limit = parameter_dict.get("enhancement_clip_limit", 0.9)
         if self.convert_to_3d_displacement:
             self.displacement_column_name = "3d_displacement_distance_per_year"
         else:
@@ -802,9 +806,11 @@ class ImagePair:
 
     def equalize_adapthist_images(self):
         self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
-                                                       kernel_size=50)
+                                                       kernel_size=self.enhancement_kernel_size,
+                                                       clip_limit=self.enhancement_clip_limit)
         self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
-                                                       kernel_size=50)
+                                                       kernel_size=self.enhancement_kernel_size,
+                                                       clip_limit=self.enhancement_clip_limit)
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """

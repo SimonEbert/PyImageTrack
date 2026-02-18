@@ -34,6 +34,13 @@ do_plotting = true
 # optional image enhancement via CLAHE
 do_image_enhancement = false
 
+[image_enhancement]
+# Enhancement type: "clahe", "none", or future types
+type = "clahe"
+# CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
+kernel_size = 50
+clip_limit = 0.9
+
 [cache]
 use_alignment_cache = true
 use_tracking_cache = true

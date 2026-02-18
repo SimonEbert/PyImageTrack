@@ -29,8 +29,8 @@ from .Parameters.AlignmentParameters import AlignmentParameters
 from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
-    collect_pairs, ensure_dir, abbr_alignment, 
-    abbr_tracking, abbr_filter, parse_date,
+    collect_pairs, ensure_dir, abbr_alignment,
+    abbr_tracking, abbr_filter, abbr_enhancement, parse_date,
 )
 
 from .Cache import (
@@ -284,6 +284,16 @@ def run_from_config(config_path: str):
     })
 
     # ==============================
+    # IMAGE ENHANCEMENT PARAMETERS
+    # ==============================
+    enhancement_params = {
+        "type": _get(cfg, "image_enhancement", "type", "none"),
+        "kernel_size": _get(cfg, "image_enhancement", "kernel_size"),
+        "clip_limit": _get(cfg, "image_enhancement", "clip_limit"),
+    }
+    enhancement_code = abbr_enhancement(enhancement_params)
+
+    # ==============================
     # SAVE OPTIONS (final outputs)
     # ==============================
     save_files = list(_require(cfg, "save", "files"))
@@ -411,12 +421,32 @@ def run_from_config(config_path: str):
             track_code  = abbr_tracking(pair_tracking_config_for_code)
             filter_code = abbr_filter(filter_params)
 
+            # Determine if alignment will be performed or loaded from cache
+            will_do_alignment = do_alignment
+            will_load_alignment_cache = False
+            if do_alignment and use_alignment_cache and not force_recompute_alignment:
+                # We'll try to load from cache, but we don't know yet if it exists
+                # For directory structure, we assume alignment will be done
+                will_load_alignment_cache = True
+            
+            # Determine if filtering will be performed
+            will_do_filtering = do_filtering
+
+            # Set alignment code to "A_none" if alignment is disabled and not loaded from cache
+            if not will_do_alignment:
+                align_code = "A_none"
+            
+            # Set filter code to "F_none" if filtering is disabled
+            if not will_do_filtering:
+                filter_code = "F_none"
+
             # Directories
             base_pair_dir = os.path.join(output_folder, f"{year1}_{year2}")
-            align_dir  = os.path.join(base_pair_dir, align_code)
+            enhancement_dir = os.path.join(base_pair_dir, enhancement_code)
+            align_dir  = os.path.join(enhancement_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
             filter_dir = os.path.join(track_dir,     filter_code)
-            for d in (align_dir, track_dir, filter_dir):
+            for d in (enhancement_dir, align_dir, track_dir, filter_dir):
                 ensure_dir(d)
 
             # Params for ImagePair:
@@ -439,6 +469,10 @@ def run_from_config(config_path: str):
             param_dict["camera_distortion_coefficients"]    = camera_distortion_coefficients
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
+            # Image enhancement parameters
+            param_dict["enhancement_type"]                 = enhancement_params.get("type", "none")
+            param_dict["enhancement_kernel_size"]           = enhancement_params.get("kernel_size", 50)
+            param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
 
             param_dict["crs"]                               = image_crs
  
