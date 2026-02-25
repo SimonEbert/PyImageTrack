@@ -275,10 +275,10 @@ class ImagePair:
             from rasterio.transform import array_bounds
             bounds_poly = box(*array_bounds(h, w, tform))
 
-            def make_safe_bounds_from_search_extents(extents):
-                if not extents:
+            def make_safe_bounds_from_buffer(buffer):
+                if not buffer:
                     raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
-                buffer_len = px * max(extents)
+                buffer_len = px * buffer
 
                 image_bounds = gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs).buffer(-buffer_len)
                 image_bounds = gpd.GeoDataFrame(geometry=image_bounds, crs=self.crs)
@@ -286,8 +286,13 @@ class ImagePair:
                 image_bounds.set_geometry("geometry", inplace=True)
                 return image_bounds
 
-            self.safe_image_bounds_tracking = make_safe_bounds_from_search_extents(getattr(self.tracking_parameters, "search_extent_px", None))
-            self.safe_image_bounds_alignment = make_safe_bounds_from_search_extents(getattr(self.alignment_parameters, "control_search_extent_px", None))
+            self.safe_image_bounds_tracking = make_safe_bounds_from_buffer(
+                max(getattr(self.tracking_parameters, "search_extent_px", None))
+                + getattr(self.tracking_parameters, "movement_cell_size", None)/2)
+
+            self.safe_image_bounds_alignment = make_safe_bounds_from_buffer(
+                max(getattr(self.alignment_parameters, "control_search_extent_px", None))
+                + getattr(self.alignment_parameters, "control_cell_size", None)/2)
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)#
@@ -300,7 +305,7 @@ class ImagePair:
             self.image2_matrix[self.image2_matrix == NA_value] = 0
 
 
-        # Compute effective extents if needed
+        # Compute effective buffer if needed
         if ((self.tracking_parameters.search_extent_px is not None) &
                 (self.tracking_parameters.search_extent_full_cell is None)):
             self.tracking_parameters.search_extent_full_cell = (
@@ -408,9 +413,15 @@ class ImagePair:
                                                self.camera_intrinsics_matrix,
                                                self.camera_distortion_coefficients)
 
-        reference_area = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
-        reference_area.rename(columns={0: 'geometry'}, inplace=True)
-        reference_area.set_geometry('geometry', inplace=True)
+        import matplotlib.pyplot as plt
+        reference_area.plot()
+        plt.show()
+
+        reference_area_safe_bounds = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
+        reference_area_safe_bounds.rename(columns={0: 'geometry'}, inplace=True)
+        reference_area_safe_bounds.set_geometry('geometry', inplace=True)
+        reference_area_safe_bounds.plot()
+        plt.show()
 
         if self.depth_image1 is not None:
             if self.depth_image2 is None:
@@ -420,7 +431,7 @@ class ImagePair:
                 align_images_lsm_scarce(image1_matrix=self.image1_matrix,
                                         image2_matrix=self.image2_matrix,
                                         image_transform=self.image1_transform,
-                                        reference_area=reference_area,
+                                        reference_area=reference_area_safe_bounds,
                                         alignment_parameters=self.alignment_parameters,
                                         return_alignment_transformation_matrix=True))
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
@@ -430,7 +441,7 @@ class ImagePair:
                 align_images_lsm_scarce(image1_matrix=self.image1_matrix,
                                         image2_matrix=self.image2_matrix,
                                         image_transform=self.image1_transform,
-                                        reference_area=reference_area,
+                                        reference_area=reference_area_safe_bounds,
                                         alignment_parameters=self.alignment_parameters))
 
         self.image2_matrix = new_image2_matrix
