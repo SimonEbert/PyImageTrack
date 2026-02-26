@@ -602,9 +602,11 @@ class ImagePair:
         if not self.valid_alignment_possible:
             return
         print("Filtering outliers. This may take a moment.")
+
         self.filter_parameters = filter_parameters
         self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
                                                      self.displacement_column_name)
+
 
     def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame,
                          years_between_observations) -> gpd.GeoDataFrame:
@@ -1135,6 +1137,10 @@ class ImagePair:
                     statistics_file.write(
                         "\t\t" + str(int(tr_all[
                                              "is_movement_rate_standard_deviation_outlier"].sum())) + " movement rate standard deviation outliers\n"
+                    )
+                if getattr(self.filter_parameters,"maximal_fraction_depth_change_of_3d_displacement"):
+                    statistics_file.write(
+                        "\t\t" + str(int(tr_all["is_depth_fraction_outlier"].sum())) + " depth fraction outliers\n"
                     )
 
                 statistics_file.write(
