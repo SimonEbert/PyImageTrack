@@ -413,15 +413,10 @@ class ImagePair:
                                                self.camera_intrinsics_matrix,
                                                self.camera_distortion_coefficients)
 
-        import matplotlib.pyplot as plt
-        reference_area.plot()
-        plt.show()
 
         reference_area_safe_bounds = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
         reference_area_safe_bounds.rename(columns={0: 'geometry'}, inplace=True)
         reference_area_safe_bounds.set_geometry('geometry', inplace=True)
-        reference_area_safe_bounds.plot()
-        plt.show()
 
         if self.depth_image1 is not None:
             if self.depth_image2 is None:
