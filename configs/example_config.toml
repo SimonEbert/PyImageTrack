@@ -1,110 +1,282 @@
+# ==============================================================================
+# PyImageTrack Configuration File
+# ==============================================================================
+# This configuration file controls all parameters for the image tracking pipeline.
+# Sections are organized in the order of the processing workflow.
+#
+# Workflow Overview:
+# 1. Input Setup (paths, polygons, pairing)
+# 2. Preprocessing (georeferencing, downsampling, image enhancement)
+# 3. Alignment (co-registration of image pairs)
+# 4. Tracking (movement detection)
+# 5. Filtering (outlier removal)
+# 6. Output (file saving options)
+# ==============================================================================
+
+# ==============================================================================
+# SECTION 1: INPUT SETUP
+# ==============================================================================
+# Define input/output paths and how images are paired for processing.
+
 [paths]
+# Directory containing input hillshade images
 input_folder = "/path/to/input/hillshades"
+
+# Directory where all output files will be saved
 output_folder = "/path/to/output/hillshades"
-# can be set to "none" if the day is reflected in the filename
+
+# Path to CSV file mapping abbreviated dates from image names to YYYY-MM-DD dates
+# Format: year;date (e.g., "2018;2018-01-01")
+# Can be set to "none" if the date is reflected in the filename
 date_csv_path = "/path/to/input/hillshades/image_dates.csv"
-# can be set to "none" if all or successive pairing mode is selected below
+
+# Path to CSV file defining custom image pairs
+# Format: date_earlier;date_later (e.g., "2024_07;2025_06")
+# Can be set to "none" if "all" or "successive" pairing mode is selected below
 pairs_csv_path = "/path/to/input/hillshades/image_pairs.csv"
 
 [polygons]
-# can be set to "none" to use image_bounds minus moving_area as stable area
+# Shapefile defining the stable area (no expected movement)
+# Used for image alignment - stable areas provide reliable control points
+# Can be set to "none" to use image_bounds minus moving_area as stable area
 # (this assumes all areas outside the moving area are stable; alignment quality may be
 #  slightly lower but can be improved by increasing number_of_control_points)
 stable_area_filename = "stable_area.shp"
+
+# Shapefile defining the moving area (where movement is expected)
+# Used to define the region of interest for tracking
 moving_area_filename = "moving_area.shp"
 
 [pairing]
-# options: "all", "first_to_all", "successive", "custom" (=from image_pairs.csv)
+# Strategy for pairing images for tracking:
+# - "all": Pair each image with every other image (combinatorial)
+# - "first_to_all": Pair the first image with all subsequent images
+# - "successive": Pair consecutive images (1-2, 2-3, 3-4, ...)
+# - "custom": Use pairs defined in image_pairs.csv
 mode = "custom"
 
+# ==============================================================================
+# SECTION 2: PREPROCESSING
+# ==============================================================================
+# Settings for image preprocessing and enhancement.
+
 [no_georef]
-# set true only when processing non-ortho JPGs
+# Set to true ONLY when processing non-georeferenced images (e.g., JPG photos)
+# For orthorectified images (GeoTIFF), keep this false
 use_no_georeferencing = false
-# 1 px = 1 unit
+
+# Pixel size in CRS units when use_no_georeferencing = true
+# Example: 1.0 means 1 pixel = 1 unit (meter/foot depending on CRS)
 fake_pixel_size = 1.0
-# set true for applying an undistortion step to camera images before tracking
+
+# Set to true to apply camera lens undistortion before tracking
+# Requires camera calibration parameters
 undistort_image = false
 
 [downsampling]
-# downsample input images by this integer factor to speed up runs
+# Downsample input images by this integer factor to speed up processing
+# Higher values = faster processing but lower spatial resolution
+# Recommended: 1 (no downsampling) for best accuracy, 2-4 for faster runs
 downsample_factor = 1
 
 [flags]
-do_alignment = true
-do_tracking = true
-do_filtering = true
-do_plotting = true
-# optional image enhancement via CLAHE
+# Enable/disable processing steps
+do_alignment = true      # Co-register image pairs
+do_tracking = true       # Detect movement between images
+do_filtering = true      # Remove outliers from tracking results
+do_plotting = true       # Generate diagnostic plots
+
+# Optional image enhancement via CLAHE (Contrast Limited Adaptive Histogram Equalization)
+# Improves contrast in areas with low contrast (e.g., shadows)
 do_image_enhancement = false
 
 [image_enhancement]
 # Enhancement type: "clahe", "none", or future types
 type = "clahe"
+
 # CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
+# kernel_size: Size of the grid for histogram equalization (larger = more global contrast)
+# clip_limit: Contrast enhancement limit (higher = more contrast, but may amplify noise)
 kernel_size = 50
 clip_limit = 0.9
 
-[cache]
-use_alignment_cache = true
-use_tracking_cache = true
-use_lod_cache = false
+# ==============================================================================
+# SECTION 3: ALIGNMENT
+# ==============================================================================
+# Parameters for co-registering image pairs (removing misalignment between images).
+# This step ensures that apparent movement is due to actual ground movement,
+# not camera/sensor misalignment.
+
+[alignment]
+# Number of control points to use for alignment
+# More points = better alignment but slower processing
+number_of_control_points = 50
+
+# Search extent around each control point for finding the best match
+# Format: [right, left, down, up] in pixels
+# Example: [2, 2, 2, 2] searches 2 pixels in each direction
+control_search_extent_px = [2, 2, 2, 2]
+
+# Size of the control cell (template) for cross-correlation
+# This value represents the side length of a square cell in pixels.
+# Example: control_cell_size = 20 creates a 20x20 pixel cell (400 pixels total)
+# Larger cells are more robust to noise but less sensitive to small displacements
+control_cell_size = 50
+
+# Minimum cross-correlation threshold for accepting a control point match
+# Range: 0.0 to 1.0, higher = stricter matching
+cross_correlation_threshold_alignment = 0.3
+
+# Maximum allowed alignment displacement in pixels
+# Used to filter out spurious control points
+# Set to "none" to disable this filter
+maximal_alignment_movement = "none"
+
+# ==============================================================================
+# SECTION 4: TRACKING
+# ==============================================================================
+# Parameters for detecting movement between aligned image pairs.
+
+[tracking]
+# Image band(s) to use for tracking (0 = first band, typically grayscale)
+# For RGB images: 0=red, 1=green, 2=blue
+image_bands = 0
+
+# Distance between tracked points in pixels (grid spacing)
+# Smaller values = more points but slower processing
+distance_of_tracked_points_px = 100
+
+# Size of the tracking cell (template) for cross-correlation
+# Larger cells are more robust to noise but less sensitive to small movements
+movement_cell_size = 100
+
+# Minimum cross-correlation threshold for accepting a movement match
+# Range: 0.0 to 1.0, lower = more permissive
+cross_correlation_threshold_movement = 0.1
+
+# Search extent around each tracked point for finding the best match
+# Format: [right, left, down, up] in pixels
+# This defines the maximum expected displacement between images
+# Example: [5, 5, 5, 5] searches 5 pixels in each direction
+search_extent_px = [5, 5, 5, 5]
+
+# ==============================================================================
+# SECTION 5: ADAPTIVE TRACKING WINDOW
+# ==============================================================================
+# Optional: Adjust search window based on expected movement rate.
+# Useful when processing image pairs with different time intervals.
+
+[adaptive_tracking_window]
+# If true, the "search_extent_px" in tracking parameters relates to expected movement PER YEAR
+# The actual search window is scaled by the number of years between images
+# Example: If search_extent_px = [5, 5, 5, 5] and years_between = 2, the effective search window is [10, 10, 10, 10]
+use_adaptive_tracking_window = false
+
+# ==============================================================================
+# SECTION 6: FILTERING
+# ==============================================================================
+# Parameters for removing outliers from tracking results.
+# Multiple filters are applied sequentially.
+
+[filter]
+# Level of Detection (LoD) - minimum detectable movement threshold
+# Quantile of movement magnitudes used to define the LoD
+# Lower values = more conservative (fewer points pass)
+level_of_detection_quantile = 0.5
+
+# Number of points used to calculate the LoD
+# Higher values = more robust but may miss small movements
+number_of_points_for_level_of_detection = 50
+
+# --- Movement Bearing Filters ---
+
+# Maximum allowed difference in movement bearing between neighboring points
+# Used to detect outliers with inconsistent direction
+# Range: 0-360 degrees, 360 = disabled
+difference_movement_bearing_threshold = 360
+
+# Window size for bearing difference filter (CRS units)
+# Defines the neighborhood size for comparison
+difference_movement_bearing_moving_window_size = 500
+
+# Maximum allowed standard deviation of movement bearing in a window
+# Used to detect areas with inconsistent movement directions
+# Range: 0-360 degrees, 360 = disabled
+standard_deviation_movement_bearing_threshold = 360
+
+# Window size for bearing standard deviation filter (CRS units)
+standard_deviation_movement_bearing_moving_window_size = 500
+
+# --- Movement Rate Filters ---
+
+# Maximum allowed difference in movement rate between neighboring points
+# Used to detect outliers with inconsistent speed
+# Units: CRS units per year
+difference_movement_rate_threshold = 10
+
+# Window size for rate difference filter (CRS units)
+difference_movement_rate_moving_window_size = 10
+
+# Maximum allowed standard deviation of movement rate in a window
+# Used to detect areas with inconsistent movement speeds
+# Units: CRS units per year
+standard_deviation_movement_rate_threshold = 10
+
+# Window size for rate standard deviation filter (CRS units)
+standard_deviation_movement_rate_moving_window_size = 50
+
+# ==============================================================================
+# SECTION 7: OUTPUT SETTINGS
+# ==============================================================================
+# Control what outputs are generated and how they are formatted.
 
 [output]
-# if true: additionally write a true-color aligned image
+# If true: additionally write a true-color aligned image
+# Useful for visual inspection of alignment quality
 write_truecolor_aligned = false
 
 [output_units]
-# Options: "per_year" or "total"
-# "per_year": movement rates are normalized to per-year values (default for time-series analysis)
-# "total": raw displacement values without dividing by years_between (for one-time events like landslides)
+# How movement rates are calculated:
+# - "per_year": Movement rates normalized to per-year values (default for time-series)
+# - "total": Raw displacement values without dividing by years between images
+#   (useful for one-time events like landslides or single event monitoring)
 mode = "per_year"
 
-[adaptive_tracking_window]
-# If true, the "search_extent_px" in the tracking parameters relates to the expected movement PER YEAR
-use_adaptive_tracking_window = false
-# pixels_per_metre = 1.0
-# maximal_assumed_movement_rate = 3.5
-
-[alignment]
-number_of_control_points = 50
-# search extent tuple: (right, left, down, up) in pixels around the control cell
-control_search_extent_px = [2, 2, 2, 2]
-# px
-control_cell_size = 50
-cross_correlation_threshold_alignment = 0.3
-# px, can be set to "none"
-maximal_alignment_movement = "none"
-
-[tracking]
-image_bands = 0
-# px
-distance_of_tracked_points_px = 100
-# px
-movement_cell_size = 100
-cross_correlation_threshold_movement = 0.1
-# search extent tuple: (right, left, down, up) in pixels around the movement cell
-# usually this refers to the offset in px between the images,
-# but if the adaptive mode is used, this means the expected offset in px per year
-search_extent_px = [5, 5, 5, 5]
-
-[filter]
-level_of_detection_quantile = 0.5
-number_of_points_for_level_of_detection = 50
-difference_movement_bearing_threshold = 360 # degrees
-difference_movement_bearing_moving_window_size = 500 # CRS units
-standard_deviation_movement_bearing_threshold = 360 # degrees
-standard_deviation_movement_bearing_moving_window_size = 500 # CRS units
-difference_movement_rate_threshold = 10 # CRS units / year
-difference_movement_rate_moving_window_size = 10 # CRS units
-standard_deviation_movement_rate_threshold = 10 # CRS units / year
-standard_deviation_movement_rate_moving_window_size = 50 # CRS units
+[cache]
+# Enable caching to speed up re-runs with modified parameters
+# Cache files are stored in the output folder
+use_alignment_cache = true   # Cache alignment results
+use_tracking_cache = true    # Cache tracking results
+use_lod_cache = false        # Cache Level of Detection calculations
 
 [save]
-# optional outputs:
-# "first_image_matrix"
-# "second_image_matrix"
-# "LoD_points_geojson"
-# "control_points_geojson"
+# List of output files to generate. Available options:
+#
+# Movement results:
+#   "movement_bearing_valid_tif"           - Movement direction (valid points only)
+#   "movement_rate_valid_tif"              - Movement speed (valid points only)
+#   "movement_bearing_outlier_filtered_tif" - After outlier removal
+#   "movement_rate_outlier_filtered_tif"    - After outlier removal
+#   "movement_bearing_LoD_filtered_tif"     - After LoD filtering
+#   "movement_rate_LoD_filtered_tif"        - After LoD filtering
+#   "movement_bearing_all_tif"              - All points (including filtered)
+#   "movement_rate_all_tif"                 - All points (including filtered)
+#
+# Masks (show which points passed/failed each filter):
+#   "mask_invalid_tif"          - Invalid points (failed cross-correlation)
+#   "mask_LoD_tif"              - Points below Level of Detection
+#   "mask_outlier_md_tif"       - Outliers by mean difference filter
+#   "mask_outlier_msd_tif"      - Outliers by mean standard deviation filter
+#   "mask_outlier_bd_tif"       - Outliers by bearing difference filter
+#   "mask_outlier_bsd_tif"      - Outliers by bearing standard deviation filter
+#
+# Diagnostic outputs:
+#   "statistical_parameters_txt" - Summary statistics of tracking results
+#   "first_image_matrix"        - Raw first image matrix (debugging)
+#   "second_image_matrix"       - Raw second image matrix (debugging)
+#   "LoD_points_geojson"        - Level of Detection points (debugging)
+#   "control_points_geojson"    - Alignment control points (debugging)
+#
 files = [
   "movement_bearing_valid_tif",
   "movement_rate_valid_tif",
