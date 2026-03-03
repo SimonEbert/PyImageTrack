@@ -48,9 +48,6 @@ clip_limit = 0.9
 use_alignment_cache = true
 use_tracking_cache = true
 use_lod_cache = false
-force_recompute_alignment = false
-force_recompute_tracking = false
-force_recompute_lod = false
 
 [output]
 # if true: additionally write a true-color aligned image
