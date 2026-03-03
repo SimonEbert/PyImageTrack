@@ -301,6 +301,9 @@ def run_from_config(config_path: str):
         "kernel_size": _get(cfg, "image_enhancement", "kernel_size"),
         "clip_limit": _get(cfg, "image_enhancement", "clip_limit"),
     }
+    # If enhancement is disabled, force type to "none" for correct folder naming
+    if not do_image_enhancement:
+        enhancement_params["type"] = "none"
     enhancement_code = abbr_enhancement(enhancement_params)
     
     # Output units code (combined with enhancement for cache key)
