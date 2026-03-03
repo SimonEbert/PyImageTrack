@@ -236,10 +236,7 @@ def run_from_config(config_path: str):
 
     use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
     use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
-    force_recompute_alignment = bool(_get(cfg, "cache", "force_recompute_alignment", False))
-    force_recompute_tracking = bool(_get(cfg, "cache", "force_recompute_tracking", False))
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
-    force_recompute_lod = bool(_get(cfg, "cache", "force_recompute_lod", False))
 
     write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
@@ -528,7 +525,7 @@ def run_from_config(config_path: str):
             # alignment with cache
             if do_alignment:
                 used_cache_alignment = False
-                if use_alignment_cache and not force_recompute_alignment:
+                if use_alignment_cache:
                     used_cache_alignment = load_alignment_cache(image_pair, align_dir, year1, year2)
                     if used_cache_alignment:
                         print(f"[CACHE] Alignment loaded from: {align_dir}  (pair {year1}->{year2})")
@@ -540,15 +537,16 @@ def run_from_config(config_path: str):
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue
-                    if use_alignment_cache:
-                        save_alignment_cache(
-                            image_pair, align_dir, year1, year2,
-                            align_params=alignment_params.__dict__,
-                            filenames={year1: filename_1, year2: filename_2},
-                            dates={year1: date_1, year2: date_2},
-                            save_truecolor_aligned=write_truecolor_aligned,
-                        )
-                        print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+                
+                # Always save alignment results (regardless of cache flag)
+                save_alignment_cache(
+                    image_pair, align_dir, year1, year2,
+                    align_params=alignment_params.__dict__,
+                    filenames={year1: filename_1, year2: filename_2},
+                    dates={year1: date_1, year2: date_2},
+                    save_truecolor_aligned=write_truecolor_aligned,
+                )
+                print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
 
             else:
                 image_pair.valid_alignment_possible = True
@@ -561,7 +559,7 @@ def run_from_config(config_path: str):
             # ==============================
             used_cache_tracking = False
             if do_tracking:
-                if use_tracking_cache and not force_recompute_tracking:
+                if use_tracking_cache:
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
                     if used_cache_tracking:
                         if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
@@ -577,18 +575,18 @@ def run_from_config(config_path: str):
                     # If images are not aligned, track_points() will issue a warning
                     tracked_points = image_pair.track_points(tracking_area=polygon_inside)
                     image_pair.tracking_results = tracked_points
-
-                    if use_tracking_cache:
-                        save_tracking_cache(
-                            image_pair,
-                            track_dir,
-                            year1,
-                            year2,
-                            track_params=pair_tracking_config,
-                            filenames={year1: filename_1, year2: filename_2},
-                            dates={year1: date_1, year2: date_2},
-                        )
-                        print(f"[CACHE] Tracking saved to:   {track_dir}  (pair {year1}->{year2})")
+                
+                # Always save tracking results (regardless of cache flag)
+                save_tracking_cache(
+                    image_pair,
+                    track_dir,
+                    year1,
+                    year2,
+                    track_params=pair_tracking_config,
+                    filenames={year1: filename_1, year2: filename_2},
+                    dates={year1: date_1, year2: date_2},
+                )
+                print(f"[CACHE] Tracking saved to:   {track_dir}  (pair {year1}->{year2})")
             else:
                 print("Tracking is disabled (alignment-only run).")
 
@@ -601,7 +599,7 @@ def run_from_config(config_path: str):
                     image_pair.filter_outliers(filter_parameters=filter_params)
 
                     used_cache_lod = False
-                    if use_lod_cache and not force_recompute_lod:
+                    if use_lod_cache:
                         used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
                         if used_cache_lod:
                             if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs", None) is not None:
@@ -630,46 +628,17 @@ def run_from_config(config_path: str):
                                 filter_params.number_of_points_for_level_of_detection
                             )
                         image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
-                        if use_lod_cache:
-                            save_lod_cache(
-                                image_pair,
-                                track_dir,
-                                year1,
-                                year2,
-                                filenames={year1: filename_1, year2: filename_2},
-                                dates={year1: date_1, year2: date_2},
-                            )
-                            print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
-                    else:
-                        if not _recompute_lod_from_points(image_pair, filter_params):
-                            if poly_outside is not None:
-                                lod_points = random_points_on_polygon_by_number(
-                                    poly_outside,
-                                    filter_params.number_of_points_for_level_of_detection
-                                )
-                            else:
-                                # Use image_bounds minus moving_area for LoD calculation
-                                lod_polygon = gpd.GeoDataFrame(
-                                    geometry=image_pair.image_bounds.difference(polygon_inside),
-                                    crs=image_pair.crs
-                                )
-                                lod_polygon = lod_polygon.rename(columns={0: 'geometry'})
-                                lod_polygon.set_geometry('geometry', inplace=True)
-                                lod_points = random_points_on_polygon_by_number(
-                                    lod_polygon,
-                                    filter_params.number_of_points_for_level_of_detection
-                                )
-                            image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
-                            if use_lod_cache:
-                                save_lod_cache(
-                                    image_pair,
-                                    track_dir,
-                                    year1,
-                                    year2,
-                                    filenames={year1: filename_1, year2: filename_2},
-                                    dates={year1: date_1, year2: date_2},
-                                )
-                                print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
+                    
+                    # Always save LoD results (regardless of cache flag)
+                    save_lod_cache(
+                        image_pair,
+                        track_dir,
+                        year1,
+                        year2,
+                        filenames={year1: filename_1, year2: filename_2},
+                        dates={year1: date_1, year2: date_2},
+                    )
+                    print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
 
                     image_pair.filter_lod_points()
 
