@@ -132,4 +132,30 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
 
+    # Validate the aligned image - check for empty or invalid results
+    if np.all(np.isnan(moved_image2_matrix)):
+        raise ValueError(
+            "Alignment produced an image with all NaN values. "
+            "This may indicate that the transformation matrix is invalid or the control points are insufficient. "
+            "Try adjusting alignment parameters: reduce control_cell_size, lower cross_correlation_threshold_alignment, "
+            "or provide a proper stable_area polygon."
+        )
+    
+    if np.all(moved_image2_matrix == 0):
+        raise ValueError(
+            "Alignment produced an image with all zero values. "
+            "This may indicate that the transformation matrix is invalid or the control points are insufficient. "
+            "Try adjusting alignment parameters: reduce control_cell_size, lower cross_correlation_threshold_alignment, "
+            "or provide a proper stable_area polygon."
+        )
+    
+    # Check if the aligned image has reasonable variance (not constant values)
+    if np.var(moved_image2_matrix) < 1e-10:
+        raise ValueError(
+            "Alignment produced an image with nearly constant values (very low variance). "
+            "This may indicate that the transformation matrix is invalid or the control points are insufficient. "
+            "Try adjusting alignment parameters: reduce control_cell_size, lower cross_correlation_threshold_alignment, "
+            "or provide a proper stable_area polygon."
+        )
+
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]

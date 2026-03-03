@@ -536,7 +536,14 @@ def run_from_config(config_path: str):
                 if not used_cache_alignment:
                     print("Starting image alignment.")
                     # When poly_outside is None, align_images will use image_bounds minus polygon_inside
-                    image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
+                    try:
+                        image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
+                    except ValueError as e:
+                        print(f"[ERROR] Alignment failed for pair {year1} -> {year2}: {e}")
+                        print(f"[ERROR] Skipping this pair. Please check your alignment parameters or input data.")
+                        skipped.append((year1, year2, f"Alignment failed: {str(e)}"))
+                        continue
+                    
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue

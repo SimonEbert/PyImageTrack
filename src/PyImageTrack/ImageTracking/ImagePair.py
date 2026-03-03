@@ -35,7 +35,7 @@ from ..DataProcessing.DataPostprocessing import (
     filter_outliers_full,
 )
 # DataPreProcessing
-from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image
+from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image, convert_float_to_uint
 from .AlignImages import align_images_lsm_scarce
 # Plotting
 from ..Plots.MakePlots import (
@@ -189,6 +189,10 @@ class ImagePair:
             ([self.image1_matrix, self.image1_transform],
              [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
+            # Automatically convert float images to uint16 for better alignment
+            self.image1_matrix = convert_float_to_uint(self.image1_matrix)
+            self.image2_matrix = convert_float_to_uint(self.image2_matrix)
+
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
@@ -223,6 +227,10 @@ class ImagePair:
             if self.undistort_image:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
                 arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
+
+            # Automatically convert float images to uint16 for better alignment
+            arr1 = convert_float_to_uint(arr1)
+            arr2 = convert_float_to_uint(arr2)
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2

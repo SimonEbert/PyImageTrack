@@ -31,6 +31,26 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
             crs = int(crs.strip())
         crs = RioCRS.from_user_input(crs)
 
+    # Validate the aligned image before saving
+    import numpy as np
+    if np.all(np.isnan(image_pair.image2_matrix)):
+        raise ValueError(
+            f"Cannot save alignment cache for pair {year1}->{year2}: "
+            "Aligned image contains all NaN values. Alignment failed."
+        )
+    
+    if np.all(image_pair.image2_matrix == 0):
+        raise ValueError(
+            f"Cannot save alignment cache for pair {year1}->{year2}: "
+            "Aligned image contains all zero values. Alignment failed."
+        )
+    
+    if np.var(image_pair.image2_matrix) < 1e-10:
+        raise ValueError(
+            f"Cannot save alignment cache for pair {year1}->{year2}: "
+            "Aligned image has nearly constant values (very low variance). Alignment failed."
+        )
+
     # write main aligned image (working image used for tracking)
     profile = {
         "driver": "GTiff",
