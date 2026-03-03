@@ -9,6 +9,7 @@ from ..CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distan
 from .TrackMovement import move_indices_from_transformation_matrix
 from .TrackMovement import track_movement_lsm
 from ..Parameters.AlignmentParameters import AlignmentParameters
+from ..ConsoleOutput import get_console
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
@@ -85,7 +86,11 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
             list(tracked_control_pixels[
                      "correlation_coefficient"])) + "\n(None-values may signify problems during tracking).")
 
-    print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for alignment.")
+    console = get_console()
+    total_points = len(tracked_control_pixels)
+    valid_points = len(tracked_control_pixels_valid)
+    percentage = (valid_points / total_points * 100) if total_points > 0 else 0
+    console.success(f"Used {valid_points} pixels for alignment ({percentage:.1f}% of {total_points} points passed threshold).")
     tracked_control_pixels_valid["new_row"] = (tracked_control_pixels_valid["row"]
                                                + tracked_control_pixels_valid["movement_row_direction"])
     tracked_control_pixels_valid["new_column"] = (tracked_control_pixels_valid["column"]
@@ -127,8 +132,9 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     image2_matrix_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, image2_matrix.shape[0]),
                                                                  np.arange(0, image2_matrix.shape[1]),
                                                                  image2_matrix)
-    print("Resampling the second image matrix with transformation matrix\n" + str(sampling_transformation_matrix) +
-          "\nThis may take some time.")
+    console.info("Resampling second image with transformation matrix:")
+    console.info(str(sampling_transformation_matrix))
+    console.info("This may take some time...")
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
 
