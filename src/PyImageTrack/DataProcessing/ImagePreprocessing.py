@@ -78,7 +78,7 @@ def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, di
     return image_matrix_undistorted
 
 
-def convert_float_to_uint(image_matrix: np.ndarray, scale_method: str = 'percentile') -> np.ndarray:
+def convert_float_to_uint(image_matrix: np.ndarray) -> np.ndarray:
     """
     Automatically converts float32 or float64 images to uint16 for better alignment results.
     Float images can cause numerical precision issues in cross-correlation based alignment algorithms.
@@ -87,11 +87,6 @@ def convert_float_to_uint(image_matrix: np.ndarray, scale_method: str = 'percent
     ----------
     image_matrix : np.ndarray
         The image matrix to convert. Can be single-band (2D) or multi-band (3D).
-    scale_method : str, optional
-        Method for scaling float values to uint16 range:
-        - 'percentile': Scale using 2nd and 98th percentiles (robust to outliers) - default
-        - 'minmax': Scale from min-max to 0-65535 (preserves relative contrast)
-        - 'fixed': Scale assuming 0-1 range to 0-65535
     
     Returns
     -------
@@ -102,48 +97,22 @@ def convert_float_to_uint(image_matrix: np.ndarray, scale_method: str = 'percent
     if image_matrix.dtype not in ['float32', 'float64']:
         return image_matrix
     
-    original_dtype = str(image_matrix.dtype)
+    print(f"Converting image from {image_matrix.dtype} to uint16 for alignment.")
     
-    # Handle NaN values by replacing them with a small value
+    # Handle NaN values by replacing them with 0
     nan_mask = np.isnan(image_matrix)
     if np.any(nan_mask):
         logging.warning(f"Found {np.sum(nan_mask)} NaN values in float image. Replacing with 0.")
         image_matrix = np.where(nan_mask, 0, image_matrix)
     
-    # Get statistics for scaling
+    # Scale from min-max to 0-65535
     data_min = np.min(image_matrix)
     data_max = np.max(image_matrix)
     
-    # Scale to uint16 range (0-65535)
-    if scale_method == 'minmax':
-        # Scale from min-max to 0-65535
-        if data_max > data_min:
-            data_scaled = ((image_matrix - data_min) / (data_max - data_min) * 65535).astype(np.uint16)
-        else:
-            # All values are the same
-            data_scaled = np.zeros_like(image_matrix, dtype=np.uint16)
-            
-    elif scale_method == 'percentile':
-        # Scale using percentiles (robust to outliers)
-        p2 = np.percentile(image_matrix, 2)
-        p98 = np.percentile(image_matrix, 98)
-        
-        if p98 > p2:
-            data_scaled = ((image_matrix - p2) / (p98 - p2) * 65535).astype(np.uint16)
-            # Clip values outside the range
-            data_scaled = np.clip(data_scaled, 0, 65535)
-        else:
-            data_scaled = np.zeros_like(image_matrix, dtype=np.uint16)
-            
-    elif scale_method == 'fixed':
-        # Assume 0-1 range, scale to 0-65535
-        data_scaled = (image_matrix * 65535).astype(np.uint16)
-        data_scaled = np.clip(data_scaled, 0, 65535)
+    if data_max > data_min:
+        data_scaled = ((image_matrix - data_min) / (data_max - data_min) * 65535).astype(np.uint16)
     else:
-        raise ValueError(f"Unknown scale method: {scale_method}")
-    
-    logging.info(f"Converted image from {original_dtype} to uint16 using '{scale_method}' scaling method.")
-    logging.info(f"  Original range: {data_min:.4f} to {data_max:.4f}")
-    logging.info(f"  Output range: {np.min(data_scaled)} to {np.max(data_scaled)}")
+        # All values are the same
+        data_scaled = np.zeros_like(image_matrix, dtype=np.uint16)
     
     return data_scaled
