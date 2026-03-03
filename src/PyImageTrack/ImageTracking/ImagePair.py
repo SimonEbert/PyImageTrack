@@ -44,6 +44,7 @@ from ..Plots.MakePlots import (
 )
 # Date Handling
 from ..Utils import parse_date
+from ..ConsoleOutput import get_console
 
 
 class ImagePair:
@@ -590,7 +591,8 @@ class ImagePair:
         -------
         georeferenced_tracked_points: gpd.GeoDataFrame
         """
-        print("Starting point tracking.")
+        console = get_console()
+        console.processing("Starting point tracking.")
         if tracking_area.crs != self.crs:
             raise ValueError("Got tracking area with crs " + str(tracking_area.crs) + " and images with crs "
                              + str(self.crs) + ". Tracking area and images are supposed to have the same crs.")

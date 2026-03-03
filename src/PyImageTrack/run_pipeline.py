@@ -7,6 +7,8 @@ Orchestrator: align, track, filter, plot, save with caching.
 import argparse
 import csv
 import os
+import time
+from datetime import datetime
 from pathlib import Path
 
 
@@ -39,6 +41,7 @@ from .Cache import (
     load_lod_cache, save_lod_cache,
 )
 from .CreateGeometries.HandleGeometries import random_points_on_polygon_by_number
+from .ConsoleOutput import ConsoleOutput, get_console, reset_console
 
 
 def _resolve_config_path(path: str) -> Path:
@@ -176,18 +179,36 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
 
 
 
-def run_from_config(config_path: str):
+def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False,
+                    use_colors: bool = True, log_file: str = None):
     # ==============================
     # CONFIG (TOML)
     # ==============================
 
-
+    # Initialize console output
     config_path = _resolve_config_path(config_path)
     cfg = _load_config(config_path)
     config_dir = config_path.parent
 
     input_folder = _resolve_path(_require(cfg, "paths", "input_folder"), config_dir)
     output_folder = _resolve_path(_require(cfg, "paths", "output_folder"), config_dir)
+
+    # Setup log file path
+    if log_file is None or log_file == "auto":
+        log_file_path = Path(output_folder) / f"pyimagetrack_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    else:
+        log_file_path = Path(log_file)
+
+    console = ConsoleOutput(
+        verbose=verbose,
+        quiet=quiet,
+        use_colors=use_colors,
+        log_file=log_file_path
+    )
+
+    # Show banner
+    console.show_banner()
+    console.config_info("Loading configuration from", config_path)
 
     date_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "date_csv_path")), config_dir)
     pairs_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_path")), config_dir)
@@ -373,39 +394,42 @@ def run_from_config(config_path: str):
 
     successes, skipped = [], []
 
-    for year1, year2 in year_pairs:
-        if year1 not in id_to_date or year2 not in id_to_date:
-            skipped.append((year1, year2, "Date missing in CSV"))
-            continue
-        if year1 not in id_to_file or year2 not in id_to_file:
-            skipped.append((year1, year2, "Input image missing"))
-            continue
+    # Start overall timer
+    with console.timer("Total processing", verbose=True):
+        for year1, year2 in year_pairs:
+            if year1 not in id_to_date or year2 not in id_to_date:
+                skipped.append((year1, year2, "Date missing in CSV"))
+                continue
+            if year1 not in id_to_file or year2 not in id_to_file:
+                skipped.append((year1, year2, "Input image missing"))
+                continue
 
-        filename_1 = id_to_file[year1]
-        filename_2 = id_to_file[year2]
-        date_1 = id_to_date[year1]
-        date_2 = id_to_date[year2]
+            filename_1 = id_to_file[year1]
+            filename_2 = id_to_file[year2]
+            date_1 = id_to_date[year1]
+            date_2 = id_to_date[year2]
 
-        dt1 = parse_date(date_1)
-        dt2 = parse_date(date_2)
+            dt1 = parse_date(date_1)
+            dt2 = parse_date(date_2)
 
+            def _fmt_label(id_key, dt):
+                return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
+                    else dt.strftime("%Y-%m-%d")
 
-        def _fmt_label(id_key, dt):
-            return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
-                else dt.strftime("%Y-%m-%d")
+            label_1 = _fmt_label(year1, dt1)
+            label_2 = _fmt_label(year2, dt2)
+            
+            # Image pair header
+            console.section_header("Processing Image Pair", "", f"{year1} ({label_1}) → {year2} ({label_2})", level=1)
+            console.info(f"File 1: {filename_1}")
+            console.info(f"File 2: {filename_2}")
 
-        label_1 = _fmt_label(year1, dt1)
-        label_2 = _fmt_label(year2, dt2)
-        print(f"\nProcessed image pair: {year1} ({label_1}) → {year2} ({label_2})")
-
-        print(f"   File 1: {filename_1}")
-        print(f"   File 2: {filename_2}")
-
-        if True: #try:
-            image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
-            # compute years_between (hour-precise)
-            delta_hours = (dt2 - dt1).total_seconds() / 3600.0
-            years_between = delta_hours / (24.0 * 365.25)
+            if True: #try:
+                image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
+                # compute years_between (hour-precise)
+                delta_hours = (dt2 - dt1).total_seconds() / 3600.0
+                years_between = delta_hours / (24.0 * 365.25)
+                console.info(f"Time between observations: {delta_hours:.1f} hours ({years_between:.3f} years)")
 
 
             # alignment: convert user-entered deltas -> effective extents
@@ -531,16 +555,25 @@ def run_from_config(config_path: str):
                 if use_alignment_cache:
                     used_cache_alignment = load_alignment_cache(image_pair, align_dir, year1, year2)
                     if used_cache_alignment:
-                        print(f"[CACHE] Alignment loaded from: {align_dir}  (pair {year1}->{year2})")
+                        console.cache_info("loaded from", align_dir, f"{year1}->{year2}")
 
                 if not used_cache_alignment:
-                    print("Starting image alignment.")
+                    console.section_header("ALIGNMENT", "", "Co-registering image pairs", level=2)
+                    console.parameter_summary({
+                        "Number of control points": alignment_params.number_of_control_points,
+                        "Control cell size": f"{alignment_params.control_cell_size} px",
+                        "Search extent": f"{alignment_params.control_search_extent_px} px",
+                        "Cross-correlation threshold": alignment_params.cross_correlation_threshold_alignment,
+                        "Maximal alignment movement": alignment_params.maximal_alignment_movement
+                    })
+                    
                     # When poly_outside is None, align_images will use image_bounds minus polygon_inside
                     try:
-                        image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
+                        with console.timer("Alignment", verbose=True):
+                            image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
                     except ValueError as e:
-                        print(f"[ERROR] Alignment failed for pair {year1} -> {year2}: {e}")
-                        print(f"[ERROR] Skipping this pair. Please check your alignment parameters or input data.")
+                        console.error(f"Alignment failed for pair {year1} -> {year2}: {e}")
+                        console.error("Skipping this pair. Please check your alignment parameters or input data.")
                         skipped.append((year1, year2, f"Alignment failed: {str(e)}"))
                         continue
                     
@@ -556,7 +589,7 @@ def run_from_config(config_path: str):
                     dates={year1: date_1, year2: date_2},
                     save_truecolor_aligned=write_truecolor_aligned,
                 )
-                print(f"[CACHE] Alignment saved to:   {align_dir}  (pair {year1}->{year2})")
+                console.cache_info("saved to", align_dir, f"{year1}->{year2}")
 
             else:
                 image_pair.valid_alignment_possible = True
@@ -575,15 +608,28 @@ def run_from_config(config_path: str):
                         if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
                             used_cache_tracking = False
                             image_pair.tracking_results = None
-                            print("[CACHE] Tracking cache CRS not compatible with no-georef; recomputing.")
+                            console.cache_info("CRS not compatible with no-georef; recomputing.", track_dir)
                         else:
-                            print(f"[CACHE] Tracking loaded from:  {track_dir}  (pair {year1}->{year2})")
+                            console.cache_info("loaded from", track_dir, f"{year1}->{year2}")
 
 
                 if not used_cache_tracking:
+                    console.section_header("TRACKING", "", "Detecting movement between images", level=2)
+                    
+                    adaptive_info = f" (scaled by {years_between:.3f} years)" if use_adaptive_tracking_window else " (disabled)"
+                    console.parameter_summary({
+                        "Image bands": tracking_params.image_bands,
+                        "Distance of tracked points": f"{tracking_params.distance_of_tracked_points_px} px",
+                        "Movement cell size": f"{tracking_params.movement_cell_size} px",
+                        "Search extent": f"{tracking_params.search_extent_px} px",
+                        "Cross-correlation threshold": tracking_params.cross_correlation_threshold_movement,
+                        "Adaptive tracking window": f"enabled{adaptive_info}"
+                    })
+                    
                     # Track points regardless of alignment status
                     # If images are not aligned, track_points() will issue a warning
-                    tracked_points = image_pair.track_points(tracking_area=polygon_inside)
+                    with console.timer("Tracking", verbose=True):
+                        tracked_points = image_pair.track_points(tracking_area=polygon_inside)
                     image_pair.tracking_results = tracked_points
                 
                 # Always save tracking results (regardless of cache flag)
@@ -596,9 +642,9 @@ def run_from_config(config_path: str):
                     filenames={year1: filename_1, year2: filename_2},
                     dates={year1: date_1, year2: date_2},
                 )
-                print(f"[CACHE] Tracking saved to:   {track_dir}  (pair {year1}->{year2})")
+                console.cache_info("saved to", track_dir, f"{year1}->{year2}")
             else:
-                print("Tracking is disabled (alignment-only run).")
+                console.info("Tracking is disabled (alignment-only run).")
 
 
             # ==============================
@@ -615,9 +661,9 @@ def run_from_config(config_path: str):
                             if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs", None) is not None:
                                 used_cache_lod = False
                                 image_pair.level_of_detection_points = None
-                                print("[CACHE] LoD cache CRS not compatible with no-georef; recomputing.")
+                                console.cache_info("CRS not compatible with no-georef; recomputing.", track_dir)
                             else:
-                                print(f"[CACHE] LoD loaded from:       {track_dir}  (pair {year1}->{year2})")
+                                console.cache_info("loaded from", track_dir, f"{year1}->{year2}")
 
                     if not used_cache_lod:
                         if poly_outside is not None:
@@ -648,12 +694,17 @@ def run_from_config(config_path: str):
                         filenames={year1: filename_1, year2: filename_2},
                         dates={year1: date_1, year2: date_2},
                     )
-                    print(f"[CACHE] LoD saved to:         {track_dir}  (pair {year1}->{year2})")
+                    console.cache_info("saved to", track_dir, f"{year1}->{year2}")
 
                     image_pair.filter_lod_points()
 
                 if do_plotting:
-                    image_pair.plot_tracking_results_with_valid_mask()
+                    console.section_header("PLOTTING", "", "Generating diagnostic plots", level=2)
+                    with console.timer("Plotting", verbose=True):
+                        image_pair.plot_tracking_results_with_valid_mask()
+                else:
+                    console.section_header("PLOTTING", "", "Generating diagnostic plots", level=2)
+                    console.info("Plotting is disabled (skipping this step).")
 
                 # write a small CSV with valid fraction
                 try:
@@ -667,9 +718,19 @@ def run_from_config(config_path: str):
                     w.writerow([f"{year1}_{year2}", valid_fraction if valid_fraction is not None else "NA"])
 
                 # final results go to the filter level
+                console.section_header("OUTPUT", "", "Saving results", level=2)
+                if save_files:
+                    console.info(f"Saving files: {', '.join(save_files)}")
+                else:
+                    console.info("No output files configured (skipping this step).")
                 image_pair.save_full_results(filter_dir, save_files=save_files)
             else:
-                print("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
+                console.section_header("FILTERING", "", "Removing outliers from tracking results", level=2)
+                console.info("Filtering is disabled (skipping this step).")
+                console.section_header("PLOTTING", "", "Generating diagnostic plots", level=2)
+                console.info("Plotting is disabled (skipping this step).")
+                console.section_header("OUTPUT", "", "Saving results", level=2)
+                console.info("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
                 # Alignment-only outputs exist in align_dir:
                 # - aligned_image_<year2>.tif
                 # - alignment_control_points_<year1>_<year2>.geojson
@@ -678,16 +739,8 @@ def run_from_config(config_path: str):
 
             successes.append((year1, year2))
 
-        else: #except Exception as e:
-            skipped.append((year1, year2, f"Error: {str(e)}"))
-
-    print("\nSummary:")
-    print(f"Successfully processed: {len(successes)} pairs")
-    for s in successes:
-        print(f"   - {s[0]} → {s[1]}")
-    print(f"\nSkipped: {len(skipped)} pairs")
-    for s in skipped:
-        print(f"   - {s[0]} → {s[1]} | Reason: {s[2]}")
+    # Print summary
+    console.print_summary(successes, skipped)
 
 
 # CLI entry point
@@ -697,8 +750,14 @@ def run_from_config(config_path: str):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
     parser.add_argument("--config", required=True, help="Path to TOML config file")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
+    parser.add_argument("--quiet", action="store_true", help="Enable quiet mode (minimal output)")
+    parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    parser.add_argument("--log-file", type=str, default=None,
+                       help="Path to log file (default: auto-generated in output folder)")
     args = parser.parse_args()
-    run_from_config(args.config)
+    run_from_config(args.config, verbose=args.verbose, quiet=args.quiet,
+                    use_colors=not args.no_color, log_file=args.log_file)
 
 
 if __name__ == "__main__":

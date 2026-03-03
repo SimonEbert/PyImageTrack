@@ -2,6 +2,8 @@ import logging
 import skimage
 import numpy as np
 
+from ..ConsoleOutput import get_console
+
 def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
     equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix.astype(int), kernel_size=kernel_size,
                                                           clip_limit=clip_limit)
@@ -97,12 +99,13 @@ def convert_float_to_uint(image_matrix: np.ndarray) -> np.ndarray:
     if image_matrix.dtype not in ['float32', 'float64']:
         return image_matrix
     
-    print(f"Converting image from {image_matrix.dtype} to uint16 for alignment.")
-    
+    console = get_console()
+    console.success(f"Converted image from {image_matrix.dtype} to uint16 for alignment.")
+
     # Handle NaN values by replacing them with 0
     nan_mask = np.isnan(image_matrix)
     if np.any(nan_mask):
-        logging.warning(f"Found {np.sum(nan_mask)} NaN values in float image. Replacing with 0.")
+        console.warning(f"Found {np.sum(nan_mask)} NaN values in float image. Replaced with 0.")
         image_matrix = np.where(nan_mask, 0, image_matrix)
     
     # Scale from min-max to 0-65535

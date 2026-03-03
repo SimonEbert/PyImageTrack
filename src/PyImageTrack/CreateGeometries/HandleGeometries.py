@@ -6,6 +6,8 @@ import rasterio.mask
 import rasterio.transform
 import shapely
 
+from ..ConsoleOutput import get_console
+
 
 def get_submatrix_symmetric(central_index, shape, matrix):
     """
@@ -72,17 +74,18 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
     points = points[points.intersects(polygon.loc[0, "geometry"])]
 
+    console = get_console()
     if polygon.crs is not None:
         unit_name = points.crs.axis_info[0].unit_name
     else:
         unit_name = "pixel"
     if distance_px is None:
-        print(
+        console.success(
             f"Created {len(points)} points on the polygon "
             f"with distance {distance_of_points:.1f} {unit_name}."
         )
     else:
-        print(
+        console.success(
             f"Created {len(points)} points on the polygon "
             f"with distance {distance_of_points:.1f} {unit_name} "
             f"({distance_px:.1f} px)."
