@@ -73,7 +73,7 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                                                               "movement_distance_pixels",
                                                               "movement_bearing_pixels",
                                                               "correlation_coefficient"],
-                                                task_label="Tracking points for alignment"
+                                                task_label="[~] Tracking points for alignment"
                                                 )
     tracked_control_pixels_valid = tracked_control_pixels[tracked_control_pixels["movement_row_direction"].notna()]
 
@@ -111,7 +111,7 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
             raise ValueError("All alignment points contain NaN values. This may indicate tracking issues "
                              "with the image pair. Consider checking image quality or adjusting alignment parameters.")
         
-        logging.warning(f"Filtered out {np.sum(~valid_mask)} points with NaN values from alignment data.")
+        console.warning(f"Filtered out {np.sum(~valid_mask)} points with NaN values from alignment data.")
     
     transformation_linear_model = sklearn.linear_model.LinearRegression()
     transformation_linear_model.fit(linear_model_input, linear_model_output)
@@ -132,11 +132,20 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     image2_matrix_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, image2_matrix.shape[0]),
                                                                  np.arange(0, image2_matrix.shape[1]),
                                                                  image2_matrix)
-    console.info("Resampling second image with transformation matrix:")
-    console.info(str(sampling_transformation_matrix))
-    console.info("This may take some time...")
+    # Show transformation matrix only in verbose mode (before resampling message)
+    if console.verbose:
+        console.info("Transformation matrix:")
+        matrix_str = str(sampling_transformation_matrix)
+        lines = matrix_str.split('\n')
+        # Indent matrix lines to align properly
+        for i in range(len(lines)):
+            lines[i] = '    ' + lines[i]
+        for line in lines:
+            console.print(line, color='dim')
+    console.processing("Resampling second image.")
     moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
         image1_matrix.shape)
+    console.success("Second image resampled.")
 
     # Validate the aligned image - check for empty or invalid results
     if np.all(np.isnan(moved_image2_matrix)):

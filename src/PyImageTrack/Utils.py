@@ -175,15 +175,16 @@ def collect_pairs(input_folder: str,
                 date_str = csv_year_to_date[ym]
             else:
                 date_str = f"{ym}-01"
+                console = get_console()
                 if not csv_year_to_date:
-                    print(
-                        f"[WARN] Only year+month detected in filename '{f}'. "
+                    console.warning(
+                        f"Only year+month detected in filename '{f}'. "
                         f"image_dates.csv not found at: {date_csv_path}. "
                         f"Assuming date '{date_str}'."
                     )
                 else:
-                    print(
-                        f"[WARN] Only year+month detected in filename '{f}'. "
+                    console.warning(
+                        f"Only year+month detected in filename '{f}'. "
                         f"No CSV entry for '{ym}'. Assuming date '{date_str}'."
                     )
             id_ = ym
@@ -198,15 +199,16 @@ def collect_pairs(input_folder: str,
                 date_str = csv_year_to_date[y]
             else:
                 date_str = f"{y}-01-01"
+                console = get_console()
                 if not csv_year_to_date:
-                    print(
-                        f"[WARN] Only year detected in filename '{f}'. "
+                    console.warning(
+                        f"Only year detected in filename '{f}'. "
                         f"image_dates.csv not found at: {date_csv_path}. "
                         f"Assuming date '{date_str}'."
                     )
                 else:
-                    print(
-                        f"[WARN] Only year detected in filename '{f}'. "
+                    console.warning(
+                        f"Only year detected in filename '{f}'. "
                         f"No CSV entry for '{y}'. Assuming date '{date_str}'."
                     )
             id_ = y
@@ -364,14 +366,16 @@ def collect_pairs(input_folder: str,
             left_raw = str(row[left_col]).strip()
             right_raw = str(row[right_col]).strip()
             if not left_raw or not right_raw or left_raw.lower() == "nan" or right_raw.lower() == "nan":
-                print(f"[WARN] Skipping empty pair row: {row.to_dict()}")
+                console = get_console()
+                console.warning(f"Skipping empty pair row: {row.to_dict()}")
                 continue
             try:
                 left_id = _resolve_csv_token_to_id(left_raw)
                 right_id = _resolve_csv_token_to_id(right_raw)
                 pairs.append((left_id, right_id))
             except Exception as e:
-                print(f"[WARN] Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
+                console = get_console()
+                console.warning(f"Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
 
         year_pairs = pairs
 
