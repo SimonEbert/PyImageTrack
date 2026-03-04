@@ -4,8 +4,8 @@
 Console Output Utility Module
 
 Provides consistent, formatted console output for PyImageTrack with:
-- Section headers with config section references
-- Status indicators (success, warning, error, info)
+- Section headers with step names
+- Status indicators ([OK], [!], [X], [i], [~])
 - Timing information
 - Parameter summaries
 - Log file support
@@ -27,7 +27,7 @@ class ConsoleOutput:
     
     Features:
     - Consistent formatting with section headers
-    - Status indicators (✓, ⚠, ✗, ℹ)
+    - Status indicators ([OK], [!], [X], [i], [~])
     - Timing measurements
     - Parameter summaries
     - Log file support
@@ -194,9 +194,9 @@ class ConsoleOutput:
             self.print(f"{step_name} {config_ref} {description or ''}", color='bold')
             self.print(line, color='cyan')
     
-    def status(self, 
-              status_type: str, 
-              message: str, 
+    def status(self,
+              status_type: str,
+              message: str,
               indent: int = 2):
         """
         Print a status message with icon.
@@ -210,7 +210,8 @@ class ConsoleOutput:
         indent : int
             Number of spaces to indent
         """
-        if self.quiet and status_type not in ('error', 'warning'):
+        # In quiet mode, only show success, warning, error, and processing messages
+        if self.quiet and status_type not in ('success', 'warning', 'error', 'processing'):
             return
         
         icon = self.ICONS.get(status_type, '[*]')
@@ -249,7 +250,7 @@ class ConsoleOutput:
     
     def parameter_summary(self, params: Dict[str, Any], indent: int = 2):
         """
-        Print a parameter summary.
+        Print a parameter summary (verbose only).
         
         Parameters
         ----------
@@ -258,11 +259,11 @@ class ConsoleOutput:
         indent : int
             Number of spaces to indent
         """
-        if self.quiet:
+        if self.quiet or not self.verbose:
             return
         
+        self.print("[i] Parameters:", color='white')
         prefix = ' ' * indent
-        self.print(f"{prefix}Parameters:", color='dim')
         for key, value in params.items():
             self.print(f"{prefix}  • {key}: {value}", color='dim')
     
@@ -273,6 +274,13 @@ class ConsoleOutput:
         prefix = ' ' * indent
         self.print(f"{prefix}{key}: {value}", color='white')
     
+    def config_loaded(self, key: str, value: Any, indent: int = 0):
+        """Print a configuration loaded message with success status."""
+        if self.quiet:
+            return
+        prefix = ' ' * indent
+        self.print(f"{prefix}[OK] {key}: {value}", color='green')
+    
     def cache_info(self, action: str, path: str, pair_id: str = None):
         """
         Print cache information.
@@ -280,17 +288,56 @@ class ConsoleOutput:
         Parameters
         ----------
         action : str
-            Action performed (e.g., "saved to", "loaded from")
+            Action performed (e.g., "saved", "loaded")
         path : str
             Path to cache
         pair_id : str
             Optional pair identifier
         """
-        if self.quiet:
+        # Show success message in all modes (normal, verbose, quiet)
+        if action == "saved":
+            self.success("Saved cache.")
+        elif action == "loaded":
+            self.success("Loaded cache.")
+        else:
+            self.success(f"Cache {action}.")
+        
+        # Only show path and pair details in verbose mode
+        if not self.verbose:
             return
         
-        pair_str = f" (pair {pair_id})" if pair_id else ""
-        self.print(f"Cache {action}: {path}{pair_str}", color='dim')
+        prefix = '  '
+        self.print(f"{prefix}Path: {path}", color='dim')
+        if pair_id:
+            self.print(f"{prefix}Pair: {pair_id}", color='dim')
+    
+    def file_list(self, label: str, files: list, indent: int = 2):
+        """
+        Print a list of files as bullet points (verbose only).
+        
+        Parameters
+        ----------
+        label : str
+            Label for the file list
+        files : list
+            List of file names
+        indent : int
+            Number of spaces to indent
+        """
+        if self.quiet or not self.verbose:
+            return
+        
+        prefix = ' ' * indent
+        if label:
+            self.print(f"{prefix}[i] {label}:", color='white')
+        for f in sorted(files):
+            self.print(f"{prefix}  • {f}", color='dim')
+    
+    def info_verbose(self, message: str, indent: int = 0):
+        """Print an info message only in verbose mode."""
+        if self.quiet or not self.verbose:
+            return
+        self.status('info', message, indent)
     
     @contextmanager
     def timer(self, step_name: str, verbose: bool = None):
@@ -316,8 +363,7 @@ class ConsoleOutput:
             elapsed = time.time() - start_time
             self._timing_stack.pop()
             
-            if verbose and not self.quiet:
-                self.success(f"{step_name} completed in {elapsed:.2f}s")
+            # Don't print timer completion message - it will be shown in Summary
     
     def get_elapsed(self, step_name: str = None) -> float:
         """
@@ -341,10 +387,10 @@ class ConsoleOutput:
             return time.time() - self._timing_stack[0]['start']
         return 0.0
     
-    def print_summary(self, 
-                     successes: List, 
-                     skipped: List, 
-                     total_time: float = None):
+    def print_summary(self,
+                     successes: List,
+                     skipped: List,
+                     total_elapsed: float = None):
         """
         Print processing summary.
         
@@ -354,8 +400,8 @@ class ConsoleOutput:
             List of successfully processed pairs
         skipped : list
             List of skipped pairs with reasons
-        total_time : float
-            Total processing time in seconds
+        total_elapsed : float, optional
+            Total elapsed time in seconds. If provided, will be shown in summary.
         """
         if self.quiet:
             return
@@ -363,7 +409,7 @@ class ConsoleOutput:
         line = '═' * 80
         self.print()
         self.print(line, color='cyan')
-        self.print("Summary", color='bold')
+        self.print("SUMMARY", color='bold')
         self.print(line, color='cyan')
         
         self.success(f"Successfully processed: {len(successes)} pair{'s' if len(successes) != 1 else ''}")
@@ -375,9 +421,9 @@ class ConsoleOutput:
             for s in skipped:
                 self.print(f"  • {s[0]} → {s[1]} | Reason: {s[2]}")
         
-        if total_time is not None:
-            self.print()
-            self.info(f"Total processing time: {total_time:.2f}s")
+        # Show total processing time in verbose mode
+        if total_elapsed is not None and self.verbose:
+            self.success(f"Total processing completed in {total_elapsed:.2f}s")
 
 
 # Global instance for backward compatibility

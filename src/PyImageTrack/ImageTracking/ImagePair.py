@@ -592,7 +592,6 @@ class ImagePair:
         georeferenced_tracked_points: gpd.GeoDataFrame
         """
         console = get_console()
-        console.processing("Starting point tracking.")
         if tracking_area.crs != self.crs:
             raise ValueError("Got tracking area with crs " + str(tracking_area.crs) + " and images with crs "
                              + str(self.crs) + ". Tracking area and images are supposed to have the same crs.")
@@ -624,7 +623,7 @@ class ImagePair:
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
                                             alignment_tracking=False,
-                                            task_label="Tracking points for movement tracking")
+                                            task_label="[~] Tracking points for movement tracking")
         # calculate the years between observations from the two given observation dates
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
