@@ -239,6 +239,10 @@ def run_from_config(config_path: str):
         # but if the adaptive mode is used, this means the expected offset in px per year
         "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
         "initial_shift_values": _as_optional_value(_get(cfg, "tracking", "initial_shift_values")),
+        "initial_estimate_mode": _get(cfg, "tracking", "initial_estimate_mode", "count"),
+        "nb_initial_estimate_peaks": _get(cfg, "tracking", "nb_initial_estimate_peaks", 1),
+        "correlation_threshold_initial_estimates": _get(cfg, "tracking", "correlation_threshold_initial_estimates",None),
+        "min_distance_initial_estimates": _get(cfg, "tracking", "min_distance_initial_estimates", 1),
     })
 
     filter_params = FilterParameters({

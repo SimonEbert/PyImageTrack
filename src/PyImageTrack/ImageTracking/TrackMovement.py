@@ -7,7 +7,7 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import tqdm
-from skimage.feature import match_template
+from skimage.feature import match_template, peak_local_max
 
 
 from ..CreateGeometries.HandleGeometries import get_raster_indices_from_points
@@ -130,6 +130,7 @@ from .ImageInterpolator import ImageInterpolator
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray,
                   search_cell_matrix: np.ndarray,
+                  tracking_parameters: TrackingParameters,
                   search_center=None):
     # skimage expects float arrays
     tracked = tracked_cell_matrix.astype(np.float32)
@@ -155,34 +156,26 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
 
             corr_map = np.mean(corrs, axis=0)
     except ValueError:
-        return TrackingResults(
-            movement_rows=np.nan,
-            movement_cols=np.nan,
-            tracking_method="cross-correlation",
-            cross_correlation_coefficient=np.nan,
-            tracking_success=False
-        )
+        return None
 
-    # --- Find best match ---
-    best_idx = np.unravel_index(np.argmax(corr_map), corr_map.shape)
-    best_correlation = float(corr_map[best_idx])
 
-    if best_correlation <= 0:
-        logging.info("Found no matching with positive correlation. Skipping")
-        return TrackingResults(
-            movement_rows=np.nan,
-            movement_cols=np.nan,
-            tracking_method="cross-correlation",
-            cross_correlation_coefficient=np.nan,
-            tracking_success=False
-        )
+    min_distance_initial_estimates = getattr(tracking_parameters, "min_distance_initial_estimates", 1)
+    nb_initial_estimates = getattr(tracking_parameters, "nb_initial_estimate_peaks", 1)
+    if tracking_parameters.initial_estimate_mode == "count":
+       peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
+                              min_distance=min_distance_initial_estimates)
+    elif tracking_parameters.initial_estimate_mode == "threshold":
+        peaks = peak_local_max(corr_map,
+                               threshold_abs=tracking_parameters.correlation_threshold_initial_estimates,
+                               min_distance=min_distance_initial_estimates)
+    else:
+        raise ValueError("Unknown initial estimates mode " + tracking_parameters.initial_estimate_mode)
 
     # --- Convert top-left index to center coordinates ---
     template_center_row = tracked.shape[-2] // 2
     template_center_col = tracked.shape[-1] // 2
 
-    best_row = best_idx[0] + template_center_row
-    best_col = best_idx[1] + template_center_col
+    peaks_centered = peaks + np.array([template_center_row, template_center_col])
 
     # --- Define search center ---
     if search_center is None:
@@ -193,17 +186,15 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
 
     # --- Movement ---
     movement = np.floor(
-        np.array([best_row, best_col]) -
+        peaks_centered -
         np.array([central_row, central_col])
     )
-    return TrackingResults(
-        movement_rows=movement[0],
-        movement_cols=movement[1],
-        tracking_method="cross-correlation",
-        cross_correlation_coefficient=best_correlation,
-        tracking_success=True
-    )
+    # ToDo: Necessary?
+    # Fallback for single initial values (1d) returns from peak_local_max
+    if len(movement.shape) == 1:
+        movement = np.expand_dims(movement, axis=0)
 
+    return movement
 
 def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, indices: np.ndarray):
     """
@@ -229,6 +220,7 @@ def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, i
 
 
 def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray,
+                   tracking_parameters: TrackingParameters,
                    initial_shift_values: list = None, search_center=None) -> TrackingResults:
     """
     Tracks the movement of a given image section ('tracked_cell_matrix') within a given search cell
@@ -273,30 +265,51 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
                        ).T.reshape(-1, 2).T
 
     if initial_shift_values is None:
-        cross_correlation_results = track_cell_cc(
-            tracked_cell_matrix, search_cell_matrix, search_center=search_center
+        initial_shift_values = track_cell_cc(
+            tracked_cell_matrix, search_cell_matrix, search_center=search_center,
+            tracking_parameters=tracking_parameters
         )
-        initial_shift_values = [cross_correlation_results.movement_rows, cross_correlation_results.movement_cols]
-        if np.isnan(initial_shift_values[0]):
+
+        if len(initial_shift_values) == 0:
             logging.info("Cross-correlation did not provide a result. Trying default shift values [0,0].")
-            initial_shift_values = [0, 0]
-            # return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
-            #                        tracking_success=False)
-    if np.isnan(initial_shift_values[0]):
+            initial_shift_values = [[0, 0]]
+    if len(initial_shift_values) == 0:
         logging.info("Going with default shift values [0,0] as initial values")
-        initial_shift_values = [0, 0]
+        initial_shift_values = [[0, 0]]
 
     # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
-    coefficients = [1, 0, initial_shift_values[0], 0, 1, initial_shift_values[1], 0, 1]
-    # calculate transformation matrix form of the coefficients
-    transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
-                                      [coefficients[3], coefficients[4], coefficients[5]]])
+
 
     # Interpolator for the image. If search_cell_matrix.ndim == 2, this is a direct wrapper for
     # scipy.interpolate.RectBivariateSpline (and should behave exactly equivalently)
     # If search_cell_matrix.ndim == 3, it expands the RectBivariateSpline functionality to apply interpolation only in
     # the last two axes, while the first axis is treated as containing several (independent) image channels
     search_cell_spline = ImageInterpolator(search_cell_matrix)
+
+
+    lsm_results = []
+    for initial_shift_value_estimate in initial_shift_values:
+        coefficients = [1, 0, initial_shift_value_estimate[0], 0, 1, initial_shift_value_estimate[1], 0, 1]
+        # calculate transformation matrix form of the coefficients
+        transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
+                                          [coefficients[3], coefficients[4], coefficients[5]]])
+        lsm_tracking_result = perform_lsm_loop(tracked_cell_matrix, search_cell_spline,indices,
+                                               coefficients, transformation_matrix, central_row,
+                                               central_column,)
+        if lsm_tracking_result.tracking_success:
+            lsm_results.append(lsm_tracking_result)
+    if len(lsm_results) == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                               tracking_success=False)
+    best_match_tracking_result = min(lsm_results, key=lambda x: x.rmse)
+    return best_match_tracking_result
+
+
+def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageInterpolator,
+                     indices: np.ndarray,
+                     coefficients: list[float | int],
+                     transformation_matrix: np.ndarray,
+                     central_row,central_column)-> TrackingResults:
 
     iteration = 0
     # Point to check the stopping condition. If the distance between the previous and current central point is smaller
@@ -406,12 +419,13 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
 
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
                                        tracking_method="least-squares", tracking_success=True,
-                                       cross_correlation_coefficient=float(corr))
+                                       cross_correlation_coefficient=float(corr),
+                                       rmse=np.sqrt(np.mean(np.square(residuals))))
     return tracking_results
 
-
 def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name, shape1, shape2, dtype,
-                                tracked_cell_size, search_extents=None, initial_shift_values: list = None):
+                                tracked_cell_size,
+                                tracking_parameters: TrackingParameters, search_extents=None, initial_shift_values: list = None):
     """
     Helper function for letting the least-squares approach run parallelized. It takes only a np.ndarray that represents
     one central index that should be tracked. All the other tracking variables (tracked and search cell sizes and the
@@ -479,7 +493,8 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
         )
     logging.info("Tracking point" + str(central_index))
     tracking_results = track_cell_lsm(track_cell1, search_area2, search_center=search_center,
-                                      initial_shift_values=initial_shift_values)
+                                      initial_shift_values=initial_shift_values,
+                                      tracking_parameters=tracking_parameters)
     return tracking_results
 
 
@@ -600,7 +615,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         dtype=image1_dtype,
         tracked_cell_size=movement_cell_size,
         search_extents=full_cell_shared_search_extents,
-        initial_shift_values=initial_shift_values
+        initial_shift_values=initial_shift_values,
+        tracking_parameters=tracking_parameters
     )
 
 
@@ -620,18 +636,18 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
             )
     except Exception as e:
         logging.warning("Failed to assemble multiprocessing. Error: " + str(e))
-    finally:
-        # Clean-up image matrices from shared memory - always execute, even on error
-        try:
-            shared_memory_image1.close()
-            shared_memory_image1.unlink()
-        except Exception:
-            pass  # Ignore cleanup errors
-        try:
-            shared_memory_image2.close()
-            shared_memory_image2.unlink()
-        except Exception:
-            pass  # Ignore cleanup errors
+    # finally:
+    #     # Clean-up image matrices from shared memory - always execute, even on error
+    #     try:
+    #         shared_memory_image1.close()
+    #         shared_memory_image1.unlink()
+    #     except Exception:
+    #         pass  # Ignore cleanup errors
+    #     try:
+    #         shared_memory_image2.close()
+    #         shared_memory_image2.unlink()
+    #     except Exception:
+    #         pass  # Ignore cleanup errors
 
     # access the respective tracked point coordinates and its movement
     movement_row_direction = [results.movement_rows for results in tracking_results]

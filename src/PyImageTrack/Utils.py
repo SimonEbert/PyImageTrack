@@ -427,6 +427,12 @@ def abbr_alignment(ap):
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "A_" + "_".join(parts)
 
+def _part(prefix: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    return f"{prefix}{str(value)}"
+
 
 def abbr_tracking(tp):
     """Short code for tracking parameters; supports objects or dicts."""
@@ -443,7 +449,12 @@ def abbr_tracking(tp):
         f"DP{_get(tp, 'distance_of_tracked_points_px')}",
         f"MC{_get(tp, 'movement_cell_size')}",
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
+        _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
+        _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
+        _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),
     ]
+
+
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "T_" + "_".join(parts)
 
