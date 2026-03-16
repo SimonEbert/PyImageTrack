@@ -626,7 +626,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
 
     tracking_results = []
-    if True:#try:
+    try:
         procs = max(1, multiprocessing.cpu_count() - 1)
         with multiprocessing.Pool(processes=procs) as pool:
             tracking_results = list(
@@ -639,7 +639,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
                     bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
                 )
             )
-    else:# except Exception as e:
+    except Exception as e:
         logging.warning("Failed to assemble multiprocessing. Error: " + str(e))
     # finally:
     #     # Clean-up image matrices from shared memory - always execute, even on error
