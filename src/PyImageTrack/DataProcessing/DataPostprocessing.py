@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 
+from ..ConsoleOutput import get_console
 from ..CreateGeometries.HandleGeometries import circular_std_deg
 from ..CreateGeometries.HandleGeometries import georeference_tracked_points
 from ..ImageTracking import TrackMovement
@@ -51,7 +52,8 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
                          "threshold. Cross-correlation values were " + cc_values +
                          " (None-values may signify problems during tracking).")
 
-    print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
+    console = get_console()
+    console.info(f"Used {len(tracked_control_pixels_valid)} pixels for LoD calculation.")
 
     tracked_points = georeference_tracked_points(tracked_control_pixels_valid, image_transform, crs=crs,
                                                  years_between_observations=years_between_observations)
