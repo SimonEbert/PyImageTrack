@@ -34,6 +34,7 @@ from .Parameters.TrackingParameters import TrackingParameters
 from .Utils import (
     collect_pairs, ensure_dir, abbr_alignment,
     abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units, parse_date,
+    make_effective_extents_from_deltas,
 )
 
 from .Cache import (
@@ -202,26 +203,6 @@ def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
     return image_crs
 
 
-def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
-    """
-    Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
-    by adding half the template size per side and scaling deltas by years_between.
-
-    deltas: (dx+, dx-, dy+, dy-) meaning *extra* pixels beyond half the template per year.
-    cell_size: movement_cell_size or control_cell_size
-    years_between: time span in years between the two images
-    cap_per_side: optional int to clamp each side (to keep windows bounded)
-
-    Returns (posx, negx, posy, negy) as ints >= half.
-    """
-    half = int(cell_size) // 2
-    def one(v):
-        eff = half + int(round(float(v) * float(years_between)))
-        if cap_per_side is not None:
-            eff = min(int(cap_per_side), eff)
-        return max(half, eff)
-    px, nx, py, ny = deltas
-    return (one(px), one(nx), one(py), one(ny))
 
 
 def _recompute_lod_from_points(image_pair, filter_params) -> bool:

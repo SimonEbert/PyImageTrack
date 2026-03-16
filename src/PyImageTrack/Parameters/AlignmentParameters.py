@@ -8,6 +8,7 @@ class AlignmentParameters:
         self.control_search_extent_px = parameter_dict.get("control_search_extent_px")
         self.control_search_extent_deltas = parameter_dict.get("control_search_extent_deltas",
                                                                self.control_search_extent_px)
+        self.control_search_extent_full_cell = parameter_dict.get("control_search_extent_full_cell")
         self.control_cell_size = parameter_dict.get("control_cell_size") or parameter_dict.get(
             "image_alignment_control_cell_size")
         self.cross_correlation_threshold_alignment = parameter_dict.get("cross_correlation_threshold_alignment")
@@ -34,6 +35,7 @@ class AlignmentParameters:
             "cross_correlation_threshold_alignment": self.cross_correlation_threshold_alignment,
             "maximal_alignment_movement": self.maximal_alignment_movement,
             "control_search_extent_px": self.control_search_extent_px,
+            "control_search_extent_deltas": self.control_search_extent_deltas,
             "control_search_extent_full_cell": self.control_search_extent_full_cell,
             "image_bands": self.image_bands
         }
