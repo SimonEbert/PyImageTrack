@@ -7,6 +7,8 @@ from typing import Optional
 
 import pandas as pd
 
+from .ConsoleOutput import get_console
+
 
 def _round_to_nearest_hour(dt: datetime) -> datetime:
     """Round to nearest hour (>=30 min rounds up)."""
