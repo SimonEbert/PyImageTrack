@@ -84,6 +84,13 @@ class ImagePair:
         self.downsample_factor = int(parameter_dict.get("downsample_factor", 1)) if parameter_dict else 1
         if self.downsample_factor < 1:
             self.downsample_factor = 1
+        
+        # Adaptive tracking window setting
+        self.use_adaptive_tracking_window = bool(
+            parameter_dict.get("use_adaptive_tracking_window", False)) if parameter_dict else False
+        
+        # Image bands
+        self.image_bands = None
 
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
@@ -304,6 +311,10 @@ class ImagePair:
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
+
+        # Calculate years between observations
+        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
+        self.years_between_observations = delta_hours / (24.0 * 365.25)
 
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
@@ -1204,7 +1215,7 @@ class ImagePair:
                         "\t\t" + str(int(tr_all[
                                              "is_movement_rate_standard_deviation_outlier"].sum())) + " movement rate standard deviation outliers\n"
                     )
-                if getattr(self.filter_parameters,"maximal_fraction_depth_change_of_3d_displacement"):
+                if getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None):
                     statistics_file.write(
                         "\t\t" + str(int(tr_all["is_depth_fraction_outlier"].sum())) + " depth fraction outliers\n"
                     )
