@@ -281,7 +281,7 @@ class ConsoleOutput:
         prefix = ' ' * indent
         self.print(f"{prefix}[OK] {key}: {value}", color='green')
     
-    def cache_info(self, action: str, path: str, pair_id: str = None):
+    def cache_info(self, action: str, path: str, pair_id: str = None, cache_type: str = None):
         """
         Print cache information.
         
@@ -293,14 +293,25 @@ class ConsoleOutput:
             Path to cache
         pair_id : str
             Optional pair identifier
+        cache_type : str
+            Type of cache (e.g., "alignment", "tracking", "lod") for specific messages
         """
         # Show success message in all modes (normal, verbose, quiet)
         if action == "saved":
-            self.success("Saved cache.")
+            if cache_type:
+                self.success(f"Saved {cache_type} cache.")
+            else:
+                self.success("Saved cache.")
         elif action == "loaded":
-            self.success("Loaded cache.")
+            if cache_type:
+                self.success(f"Loaded {cache_type} cache.")
+            else:
+                self.success("Loaded cache.")
         else:
-            self.success(f"Cache {action}.")
+            if cache_type:
+                self.success(f"Cache {cache_type} {action}.")
+            else:
+                self.success(f"Cache {action}.")
         
         # Only show path and pair details in verbose mode
         if not self.verbose:

@@ -615,7 +615,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 if use_alignment_cache:
                     used_cache_alignment = load_alignment_cache(image_pair, align_dir, year1, year2)
                     if used_cache_alignment:
-                        console.cache_info("loaded", align_dir, f"{year1}->{year2}")
+                        console.cache_info("loaded", align_dir, f"{year1}->{year2}", cache_type="alignment")
 
                 if not used_cache_alignment:
                     console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
@@ -640,16 +640,17 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue
-                
-                # Always save alignment results (regardless of cache flag)
-                save_alignment_cache(
-                    image_pair, align_dir, year1, year2,
-                    align_params=alignment_params.__dict__,
-                    filenames={year1: filename_1, year2: filename_2},
-                    dates={year1: date_1, year2: date_2},
-                    save_truecolor_aligned=write_truecolor_aligned,
-                )
-                console.cache_info("saved", align_dir, f"{year1}->{year2}")
+                    
+                    # Only save alignment results if they were NOT loaded from cache
+                    if not used_cache_alignment:
+                        save_alignment_cache(
+                            image_pair, align_dir, year1, year2,
+                            align_params=alignment_params.__dict__,
+                            filenames={year1: filename_1, year2: filename_2},
+                            dates={year1: date_1, year2: date_2},
+                            save_truecolor_aligned=write_truecolor_aligned,
+                        )
+                        console.cache_info("saved", align_dir, f"{year1}->{year2}", cache_type="alignment")
 
             else:
                 console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
@@ -672,7 +673,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             image_pair.tracking_results = None
                             console.warning("CRS not compatible with no-georef; recomputing.")
                         else:
-                            console.cache_info("loaded", track_dir, f"{year1}->{year2}")
+                            console.cache_info("loaded", track_dir, f"{year1}->{year2}", cache_type="tracking")
 
 
                 if not used_cache_tracking:
@@ -694,17 +695,18 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         tracked_points = image_pair.track_points(tracking_area=polygon_inside)
                     image_pair.tracking_results = tracked_points
                 
-                # Always save tracking results (regardless of cache flag)
-                save_tracking_cache(
-                    image_pair,
-                    track_dir,
-                    year1,
-                    year2,
-                    track_params=pair_tracking_config,
-                    filenames={year1: filename_1, year2: filename_2},
-                    dates={year1: date_1, year2: date_2},
-                )
-                console.cache_info("saved", track_dir, f"{year1}->{year2}")
+                # Only save tracking results if they were NOT loaded from cache
+                if not used_cache_tracking:
+                    save_tracking_cache(
+                        image_pair,
+                        track_dir,
+                        year1,
+                        year2,
+                        track_params=pair_tracking_config,
+                        filenames={year1: filename_1, year2: filename_2},
+                        dates={year1: date_1, year2: date_2},
+                    )
+                    console.cache_info("saved", track_dir, f"{year1}->{year2}", cache_type="tracking")
             else:
                 console.info("Tracking is disabled (alignment-only run).")
 
@@ -714,8 +716,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # ==============================
             if do_tracking:
                 if do_filtering:
-                    image_pair.filter_outliers(filter_parameters=filter_params)
-
+                    # Load LoD cache FIRST, before filtering
                     used_cache_lod = False
                     if use_lod_cache:
                         used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
@@ -725,7 +726,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                                 image_pair.level_of_detection_points = None
                                 console.warning("CRS not compatible with no-georef; recomputing.")
                             else:
-                                console.cache_info("loaded", track_dir, f"{year1}->{year2}")
+                                console.cache_info("loaded", track_dir, f"{year1}->{year2}", cache_type="LoD")
 
                     if not used_cache_lod:
                         if poly_outside is not None:
@@ -747,17 +748,20 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             )
                         image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                     
-                    # Always save LoD results (regardless of cache flag)
-                    save_lod_cache(
-                        image_pair,
-                        track_dir,
-                        year1,
-                        year2,
-                        filenames={year1: filename_1, year2: filename_2},
-                        dates={year1: date_1, year2: date_2},
-                    )
-                    console.cache_info("saved", track_dir, f"{year1}->{year2}")
+                    # Only save LoD results if they were NOT loaded from cache
+                    if not used_cache_lod:
+                        save_lod_cache(
+                            image_pair,
+                            track_dir,
+                            year1,
+                            year2,
+                            filenames={year1: filename_1, year2: filename_2},
+                            dates={year1: date_1, year2: date_2},
+                        )
+                        console.cache_info("saved", track_dir, f"{year1}->{year2}", cache_type="LoD")
 
+                    # NOW do the outlier filtering (after LoD is loaded/calculated)
+                    image_pair.filter_outliers(filter_parameters=filter_params)
                     image_pair.filter_lod_points()
                 else:
                     console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
