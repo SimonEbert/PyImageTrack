@@ -14,6 +14,8 @@ from shapely.geometry import box
 import scipy
 import sklearn
 
+from ..Utils import make_effective_extents_from_deltas
+
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
 from ..Parameters.FilterParameters import FilterParameters

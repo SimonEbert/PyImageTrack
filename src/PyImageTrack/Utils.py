@@ -10,6 +10,28 @@ import pandas as pd
 from .ConsoleOutput import get_console
 
 
+def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
+    """
+    Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
+    by adding half the template size per side and scaling deltas by years_between.
+
+    deltas: (dx+, dx-, dy+, dy-) meaning *extra* pixels beyond half the template per year.
+    cell_size: movement_cell_size or control_cell_size
+    years_between: time span in years between the two images
+    cap_per_side: optional int to clamp each side (to keep windows bounded)
+
+    Returns (posx, negx, posy, negy) as ints >= half.
+    """
+    half = int(cell_size) // 2
+    def one(v):
+        eff = half + int(round(float(v) * float(years_between)))
+        if cap_per_side is not None:
+            eff = min(int(cap_per_side), eff)
+        return max(half, eff)
+    px, nx, py, ny = deltas
+    return (one(px), one(nx), one(py), one(ny))
+
+
 def _round_to_nearest_hour(dt: datetime) -> datetime:
     """Round to nearest hour (>=30 min rounds up)."""
     if dt.minute > 30 or (dt.minute == 30 and (dt.second > 0 or dt.microsecond > 0)):
