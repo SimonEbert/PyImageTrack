@@ -140,15 +140,11 @@ def _resolve_input_file(file_path: Optional[str | Path],
     # Priority 2: Relative to input_folder
     input_path = (Path(input_folder) / path_obj).resolve()
     if input_path.exists():
-        console = get_console()
-        console.info_verbose(f"{file_type_description} found in input_folder: {input_path}")
         return str(input_path)
     
     # Priority 3: Relative to config directory (fallback)
     config_path = (config_dir / path_obj).resolve()
     if config_path.exists():
-        console = get_console()
-        console.info_verbose(f"{file_type_description} found in config directory: {config_path}")
         return str(config_path)
     
     # File not found - provide helpful error
@@ -480,11 +476,20 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 # compute years_between (hour-precise)
                 delta_hours = (dt2 - dt1).total_seconds() / 3600.0
                 years_between = delta_hours / (24.0 * 365.25)
-                if delta_hours < 48:
+                # Format time with largest unit and next smaller unit (total)
+                if delta_hours < 24:
                     console.info_verbose(f"Time between observations: {delta_hours:.1f} hours")
+                elif delta_hours < 24 * 30:
+                    days = int(delta_hours // 24)
+                    console.info_verbose(f"Time between observations: {days} day{'s' if days != 1 else ''}")
+                elif delta_hours < 24 * 365.25:
+                    months = int(delta_hours // (24 * 30.44))  # Average days per month
+                    total_days = int(delta_hours // 24)
+                    console.info_verbose(f"Time between observations: {months} month{'s' if months != 1 else ''} ({total_days} days)")
                 else:
-                    days = int(delta_hours / 24.0)
-                    console.info_verbose(f"Time between observations: {days} days")
+                    years = int(delta_hours // (24 * 365.25))
+                    total_days = int(delta_hours // 24)
+                    console.info_verbose(f"Time between observations: {years} year{'s' if years != 1 else ''} ({total_days} days)")
 
 
             # alignment: convert user-entered deltas -> effective extents
@@ -759,11 +764,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     console.info("Filtering is disabled (skipping this step).")
 
                 if do_plotting:
-                    console.section_header("PLOTTING", "Generating diagnostic plots", f"({pair_id_short})", level=2)
                     with console.timer("Plotting", verbose=True):
                         image_pair.plot_tracking_results_with_valid_mask()
                 else:
-                    console.section_header("PLOTTING", "Generating diagnostic plots", f"({pair_id_short})", level=2)
                     console.info("Plotting is disabled (skipping this step).")
 
                 # write a small CSV with valid fraction
@@ -790,7 +793,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             else:
                 console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
                 console.info("Filtering is disabled (skipping this step).")
-                console.section_header("PLOTTING", "Generating diagnostic plots", f"({pair_id_short})", level=2)
                 console.info("Plotting is disabled (skipping this step).")
                 console.section_header("OUTPUT", "Saving results", f"({pair_id_short})", level=2)
                 console.info("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
