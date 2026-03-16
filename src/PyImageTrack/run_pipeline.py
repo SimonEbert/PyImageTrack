@@ -10,6 +10,7 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
 
 
@@ -92,6 +93,70 @@ def _resolve_path(value, base_dir: Path):
     if not path_obj.is_absolute():
         path_obj = (base_dir / path_obj).resolve()
     return str(path_obj)
+
+
+def _resolve_input_file(file_path: Optional[str | Path],
+                        input_folder: str | Path,
+                        config_dir: Path,
+                        file_type_description: str) -> Optional[str]:
+    """
+    Resolve input file paths using a three-priority system:
+    
+    Priority 1: Absolute path
+        If file_path is absolute, use it as-is (no verification).
+    
+    Priority 2: Relative to input_folder
+        If file_path relative and exists in input_folder, use it.
+    
+    Priority 3: Relative to config directory (fallback)
+        If file_path relative and exists in config_dir, use it.
+    
+    Args:
+        file_path: Path from config (can be None, "none", "null", absolute, or relative)
+        input_folder: The input folder path
+        config_dir: Directory containing the config file
+        file_type_description: Description for error messages (e.g., "CSV file", "Shapefile")
+    
+    Returns:
+        Resolved absolute path as string, or None if file_path is None/"none"/"null"/""
+    
+    Raises:
+        FileNotFoundError: If file is required but not found in any location
+    """
+    # Handle None and special "none" values
+    if file_path is None:
+        return None
+    if isinstance(file_path, str) and file_path.strip().lower() in ("", "none", "null"):
+        return None
+    
+    path_obj = Path(file_path)
+    
+    # Priority 1: Absolute path
+    if path_obj.is_absolute():
+        absolute_path = path_obj.resolve()
+        return str(absolute_path)
+    
+    # Priority 2: Relative to input_folder
+    input_path = (Path(input_folder) / path_obj).resolve()
+    if input_path.exists():
+        console = get_console()
+        console.info_verbose(f"{file_type_description} found in input_folder: {input_path}")
+        return str(input_path)
+    
+    # Priority 3: Relative to config directory (fallback)
+    config_path = (config_dir / path_obj).resolve()
+    if config_path.exists():
+        console = get_console()
+        console.info_verbose(f"{file_type_description} found in config directory: {config_path}")
+        return str(config_path)
+    
+    # File not found - provide helpful error
+    raise FileNotFoundError(
+        f"{file_type_description} '{file_path}' not found. "
+        f"Searched in:\n"
+        f"  1. input_folder: {input_path}\n"
+        f"  2. config directory: {config_path}"
+    )
 
 
 def _crs_label(crs) -> str:
@@ -213,8 +278,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     console.show_banner()
     console.config_loaded("Loaded configuration from", config_path)
 
-    date_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "date_csv_path")), config_dir)
-    pairs_csv_path = _resolve_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_path")), config_dir)
+    # Resolve CSV paths with priority: absolute -> input_folder -> config_dir
+    date_csv_raw = _get(cfg, "paths", "date_csv_path")
+    date_csv_path = _resolve_input_file(date_csv_raw, input_folder, config_dir, "CSV file (image_dates)")
+    
+    pairs_csv_raw = _get(cfg, "paths", "pairs_csv_path")
+    pairs_csv_path = _resolve_input_file(pairs_csv_raw, input_folder, config_dir, "CSV file (image_pairs)")
 
     poly_outside_filename = _get(cfg, "polygons", "stable_area_filename", "none")
     poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
@@ -346,22 +415,25 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     console.info(f"Image pairs to process ({pairing_mode}): {len(year_pairs)}")
 
-    # Load polygons
+    # Load polygons - resolve paths with priority: absolute -> input_folder -> config_dir
+    poly_inside_path = _resolve_input_file(poly_inside_filename, input_folder, config_dir, "Shapefile (moving_area)")
+    polygon_inside = gpd.read_file(poly_inside_path)
+    if use_no_georeferencing:
+        polygon_inside = polygon_inside.set_crs(None, allow_override=True)
+    
+    # stable_area is optional ("none" allowed)
     poly_outside = None
     poly_outside_filename_resolved = _as_optional_value(poly_outside_filename)
     if poly_outside_filename_resolved is not None:
         try:
-            poly_outside = gpd.read_file(os.path.join(input_folder, poly_outside_filename_resolved))
+            poly_outside_path = _resolve_input_file(poly_outside_filename_resolved, input_folder, config_dir, "Shapefile (stable_area)")
+            poly_outside = gpd.read_file(poly_outside_path)
             if use_no_georeferencing:
                 poly_outside = poly_outside.set_crs(None, allow_override=True)
         except Exception as e:
             console.warning(f"Could not load stable area file '{poly_outside_filename_resolved}': {e}")
             console.warning("Using fallback mode (image_bounds minus moving_area as stable area).")
             poly_outside = None
-    
-    polygon_inside = gpd.read_file(os.path.join(input_folder, poly_inside_filename))
-    if use_no_georeferencing:
-        polygon_inside = polygon_inside.set_crs(None, allow_override=True)
     
     # CRS validation
     if poly_outside is not None:
@@ -484,7 +556,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # Determine if alignment will be performed or loaded from cache
             will_do_alignment = do_alignment
             will_load_alignment_cache = False
-            if do_alignment and use_alignment_cache and not force_recompute_alignment:
+            if do_alignment and use_alignment_cache:
                 # We'll try to load from cache, but we don't know yet if it exists
                 # For directory structure, we assume alignment will be done
                 will_load_alignment_cache = True
