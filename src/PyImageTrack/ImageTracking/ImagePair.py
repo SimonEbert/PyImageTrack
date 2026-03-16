@@ -222,6 +222,9 @@ class ImagePair:
             image_bounds = image_bounds.rename(columns={0: "geometry"})
             image_bounds.set_geometry("geometry", inplace=True)
             self.image_bounds = image_bounds
+            
+            # Store bounds polygon for safe bounds calculation (will be computed after else block)
+            bounds_poly = intersection
 
         else:
             # FAKE georeferencing path (e.g., JPGs)
@@ -286,28 +289,37 @@ class ImagePair:
             self.image1_transform = tform
             self.image2_transform = tform
 
-            # Bounds in that CRS (pixel grid space), then shrink by search radius
+            # Bounds in that CRS (pixel grid space)
             from rasterio.transform import array_bounds
             bounds_poly = box(*array_bounds(h, w, tform))
 
-            def make_safe_bounds_from_buffer(buffer):
-                if not buffer:
-                    raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
+        # Common safe bounds calculation for both true and fake georef paths
+        def make_safe_bounds_from_buffer(buffer, base_polygon):
+            if not buffer:
+                raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
+            # Use appropriate pixel size variable based on which path was taken
+            if self.use_no_georeferencing:
+                # FAKE georef path - px is defined locally
                 buffer_len = px * buffer
+            else:
+                # TRUE georef path - px_size is defined locally
+                buffer_len = px_size * buffer
 
-                image_bounds = gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs).buffer(-buffer_len)
-                image_bounds = gpd.GeoDataFrame(geometry=image_bounds, crs=self.crs)
-                image_bounds = image_bounds.rename(columns={0: "geometry"})
-                image_bounds.set_geometry("geometry", inplace=True)
-                return image_bounds
+            safe_bounds = gpd.GeoDataFrame({'geometry': [base_polygon]}, crs=self.crs).buffer(-buffer_len)
+            safe_bounds = gpd.GeoDataFrame(geometry=safe_bounds, crs=self.crs)
+            safe_bounds = safe_bounds.rename(columns={0: "geometry"})
+            safe_bounds.set_geometry("geometry", inplace=True)
+            return safe_bounds
 
-            self.safe_image_bounds_tracking = make_safe_bounds_from_buffer(
-                max(getattr(self.tracking_parameters, "search_extent_px", None))
-                + getattr(self.tracking_parameters, "movement_cell_size", None)/2)
+        self.safe_image_bounds_tracking = make_safe_bounds_from_buffer(
+            max(getattr(self.tracking_parameters, "search_extent_px", None))
+            + getattr(self.tracking_parameters, "movement_cell_size", None)/2,
+            bounds_poly)
 
-            self.safe_image_bounds_alignment = make_safe_bounds_from_buffer(
-                max(getattr(self.alignment_parameters, "control_search_extent_px", None))
-                + getattr(self.alignment_parameters, "control_cell_size", None)/2)
+        self.safe_image_bounds_alignment = make_safe_bounds_from_buffer(
+            max(getattr(self.alignment_parameters, "control_search_extent_px", None))
+            + getattr(self.alignment_parameters, "control_cell_size", None)/2,
+            bounds_poly)
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
@@ -406,6 +418,22 @@ class ImagePair:
         image_bounds = image_bounds.rename(columns={0: "geometry"})
         image_bounds.set_geometry("geometry", inplace=True)
         self.image_bounds = image_bounds
+        
+        # Also compute safe_image_bounds_alignment for align_images() method
+        alignment_ext = getattr(self.alignment_parameters, "control_search_extent_px", None)
+        if not alignment_ext:
+            raise ValueError("AlignmentParameters.control_search_extent_px must be set (tuple posx,negx,posy,negy).")
+        alignment_cell_size = getattr(self.alignment_parameters, "control_cell_size", None)
+        if alignment_cell_size is None:
+            raise ValueError("AlignmentParameters.control_cell_size must be set.")
+        
+        alignment_buffer = px_size * max(alignment_ext) + px_size * alignment_cell_size / 2
+        safe_image_bounds_alignment = gpd.GeoDataFrame(
+            gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-alignment_buffer)
+        )
+        safe_image_bounds_alignment = safe_image_bounds_alignment.rename(columns={0: "geometry"})
+        safe_image_bounds_alignment.set_geometry("geometry", inplace=True)
+        self.safe_image_bounds_alignment = safe_image_bounds_alignment
 
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
