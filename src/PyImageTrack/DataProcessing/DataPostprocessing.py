@@ -336,9 +336,9 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
 
 def filter_outliers_depth_change_fraction(tracking_results: gpd.GeoDataFrame,filter_parameters: FilterParameters,
                                           displacement_column_name) -> gpd.GeoDataFrame:
+    # Skip depth change filtering when not using 3D displacement
     if displacement_column_name != "3d_displacement_distance_per_year":
-        raise ValueError("Trying to filter based on the fraction of depth change compared to 3d displacement, but "
-                         "no 3d displacement column is available in the tracking results.")
+        return tracking_results
 
     if filter_parameters.maximal_fraction_depth_change_of_3d_displacement is None:
         return tracking_results
