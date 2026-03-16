@@ -715,7 +715,8 @@ class ImagePair:
         """
         if not self.valid_alignment_possible:
             return
-        print("Filtering outliers. This may take a moment.")
+        console = get_console()
+        console.processing("Filtering outliers. This may take a moment.")
 
         self.filter_parameters = filter_parameters
         self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
@@ -757,7 +758,8 @@ class ImagePair:
                     list(tracked_points[
                              "correlation_coefficient"])) + " (None-values may signify problems during tracking).")
 
-        print("Used " + str(len(tracked_control_pixels_valid)) + " pixels for LoD calculation.")
+        console = get_console()
+        console.info(f"Used {len(tracked_control_pixels_valid)} pixels for LoD calculation.")
 
         if self.convert_to_3d_displacement:
             tracked_points = calculate_displacement_from_depth_images(
@@ -826,13 +828,13 @@ class ImagePair:
         self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[self.displacement_column_name],
                                                  level_of_detection_quantile)
 
+        console = get_console()
         if points_for_lod_calculation.crs is not None:
             unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
         else:
             unit_name = "pixel"
-        print("Found level of detection with quantile " + str(level_of_detection_quantile) + " as "
-              + str(np.round(self.level_of_detection, decimals=5)) + " " + str(
-            unit_name) + "/year")
+        console.info(f"Found level of detection with quantile {level_of_detection_quantile} as "
+              f"{np.round(self.level_of_detection, decimals=5)} {unit_name}/year")
 
     def filter_lod_points(self) -> None:
         """
