@@ -216,6 +216,24 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
 
 
 def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
+    """
+    Plots the distribution of point movement as a scatter plot.
+    
+    Creates a scatter plot showing the movement in row and column directions
+    for all tracked points. The plot includes grid lines and axes at the
+    origin for reference.
+    
+    Parameters
+    ----------
+    moving_points : gpd.GeoDataFrame
+        A GeoDataFrame containing tracked points with columns
+        "movement_row_direction" and "movement_column_direction".
+    
+    Returns
+    -------
+    None
+        Displays the plot using plt.show().
+    """
     fig, ax = plt.subplots()
     ax.grid(True, which='both')
 
@@ -223,7 +241,6 @@ def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
     ax.axvline(x=0, color='k')
     # ax.set_xlim((-1,1))
     # ax.set_ylim((-1,1))
-
     ax.scatter(moving_points["movement_row_direction"],
                moving_points["movement_column_direction"])
     plt.show()

@@ -28,7 +28,6 @@ def get_submatrix_symmetric(central_index, shape, matrix):
     ----------
     submatrix: A numpy array of the specified shape.
     """
-    # central_index = central_index.astype(float)#  np.array([float(central_index[0]), float(central_index[1])]
     # matrix is three-dimensional if there are several channels
     if len(matrix.shape) == 3:
         submatrix = matrix[
@@ -47,6 +46,37 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
                                        distance_of_points: float = 10,
                                        distance_px: float = None,
                                        pixel_size: float = None):
+    """
+    Creates a grid of points on a polygon with a specified distance between points.
+    
+    Parameters
+    ----------
+    polygon : gpd.GeoDataFrame
+        A one-element GeoDataFrame containing the polygon geometry.
+    distance_of_points : float, default=10
+        The distance between points in the coordinate reference system units.
+    distance_px : float, optional
+        The distance in pixels (for console output only).
+    pixel_size : float, optional
+        The pixel size (for console output only).
+    
+    Returns
+    -------
+    gpd.GeoDataFrame
+        A GeoDataFrame containing the grid points that intersect with the polygon.
+    
+    Raises
+    ------
+    ValueError
+        If the polygon GeoDataFrame is empty, lacks a 'geometry' column,
+        or if distance_of_points is not positive.
+    """
+    if len(polygon) == 0:
+        raise ValueError("polygon GeoDataFrame is empty")
+    if "geometry" not in polygon.columns:
+        raise ValueError("polygon GeoDataFrame must contain a 'geometry' column")
+    if distance_of_points <= 0:
+        raise ValueError(f"distance_of_points must be positive, got {distance_of_points}")
     minx = polygon.bounds.loc[0, 'minx']
     miny = polygon.bounds.loc[0, 'miny']
     maxx = polygon.bounds.loc[0, 'maxx']
@@ -95,6 +125,12 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
 
 
 def random_points_on_polygon_by_number(polygon: gpd.GeoDataFrame, number_of_points: int):
+    if len(polygon) == 0:
+        raise ValueError("polygon GeoDataFrame is empty")
+    if "geometry" not in polygon.columns:
+        raise ValueError("polygon GeoDataFrame must contain a 'geometry' column")
+    if number_of_points <= 0:
+        raise ValueError(f"number_of_points must be positive, got {number_of_points}")
     points = gpd.GeoDataFrame()
     """
     Creates randomly distributed points on a polygon given as a one-element GeoDataFrame."""
@@ -156,6 +192,10 @@ def crop_images_to_intersection(file1, file2):
                                           right=min(bbox1[2], bbox2[2]),
                                           top=min(bbox1[3], bbox2[3])
                                           )
+    
+    # Check if intersection is valid (non-empty)
+    if minbbox.left >= minbbox.right or minbbox.bottom >= minbbox.top:
+        raise ValueError("Images do not intersect or intersection is empty")
 
     minbbox_polygon = [shapely.Polygon((
         (minbbox[0], minbbox[1]),
@@ -199,11 +239,6 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         specifying the movement in the unit of the given coordinate reference system and one geometry column.
     """
     [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
-    # georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels.loc[:,
-    #                                                 ["row", "column", "movement_row_direction",
-    #                                                  "movement_column_direction",
-    #                                                  "movement_distance_pixels", "movement_bearing_pixels"]],
-    #                                                 geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels, geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
         [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
@@ -226,6 +261,23 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
 
 
 def circular_std_deg(angles_deg):
+    """
+    Calculates the circular standard deviation of angles in degrees.
+    
+    Circular statistics are used for directional data where 0° and 360°
+    represent the same direction. This function computes the standard
+    deviation considering the circular nature of angle data.
+    
+    Parameters
+    ----------
+    angles_deg : np.ndarray or array-like
+        Array of angles in degrees.
+    
+    Returns
+    -------
+    float
+        The circular standard deviation in degrees.
+    """
     # Convert to radians
     angles_rad = np.deg2rad(angles_deg)
 

@@ -25,27 +25,46 @@ input_folder = "/path/to/input/hillshades"
 # Directory where all output files will be saved
 output_folder = "/path/to/output/hillshades"
 
-# Path to CSV file mapping abbreviated dates from image names to YYYY-MM-DD dates
+# Path to CSV file mapping abbreviated dates from image names to YYYY-MM-DD dates (searched in input_folder, or use absolute path)
 # Format: year;date (e.g., "2018;2018-01-01")
 # Can be set to "none" if the date is reflected in the filename
-date_csv_path = "/path/to/input/hillshades/image_dates.csv"
+date_csv_path = "image_dates.csv"
 
-# Path to CSV file defining custom image pairs
+# Path to CSV file defining custom image pairs (searched in input_folder, or use absolute path)
 # Format: date_earlier;date_later (e.g., "2024_07;2025_06")
 # Can be set to "none" if "all" or "successive" pairing mode is selected below
-pairs_csv_path = "/path/to/input/hillshades/image_pairs.csv"
+pairs_csv_path = "image_pairs.csv"
 
 [polygons]
-# Shapefile defining the stable area (no expected movement)
+# Shapefile defining the stable area (no expected movement) - searched in input_folder, or use absolute path
 # Used for image alignment - stable areas provide reliable control points
 # Can be set to "none" to use image_bounds minus moving_area as stable area
 # (this assumes all areas outside the moving area are stable; alignment quality may be
 #  slightly lower but can be improved by increasing number_of_control_points)
+#
+# NOTE: Wildcard pattern (*) is supported for batch processing mode.
+# The * will be replaced with the identifier when processing in batch mode.
+# Example: "stable_area_*.shp" will load "stable_area_9109.shp" for identifier "9109"
+# Wildcard patterns are only valid when an identifier is provided (batch mode).
+# Stable area shapefiles can contain one or multiple singlepart polygons; they are
+# combined into one reference area for alignment.
 stable_area_filename = "stable_area.shp"
 
-# Shapefile defining the moving area (where movement is expected)
+# Shapefile defining the moving area (where movement is expected) - searched in input_folder, or use absolute path
 # Used to define the region of interest for tracking
+#
+# NOTE: Wildcard pattern (*) is supported for batch processing mode.
+# The * will be replaced with the identifier when processing in batch mode.
+# Example: "moving_area_*.shp" will load "moving_area_9109.shp" for identifier "9109"
+# Wildcard patterns are only valid when an identifier is provided (batch mode).
+# Moving area shapefiles can contain one or multiple singlepart polygons. Provide an
+# ID column to split stats by polygon; missing IDs will be auto-filled with row indices.
 moving_area_filename = "moving_area.shp"
+
+# Name of the ID column in the moving-area shapefile. Default is "moving_id". If missing
+# or empty for some polygons, IDs are filled with the polygon row index (as string) and a
+# warning is issued. Stats/valid fractions are reported per ID.
+moving_id_column = "moving_id"
 
 [pairing]
 # Strategy for pairing images for tracking:
@@ -84,7 +103,6 @@ downsample_factor = 1
 do_alignment = true      # Co-register image pairs
 do_tracking = true       # Detect movement between images
 do_filtering = true      # Remove outliers from tracking results
-do_plotting = true       # Generate diagnostic plots
 
 # Optional image enhancement via CLAHE (Contrast Limited Adaptive Histogram Equalization)
 # Improves contrast in areas with low contrast (e.g., shadows)
@@ -190,39 +208,46 @@ number_of_points_for_level_of_detection = 50
 
 # --- Movement Bearing Filters ---
 
-# Maximum allowed difference in movement bearing between neighboring points
-# Used to detect outliers with inconsistent direction
+# Maximum allowed difference from neighborhood median
+# Compares each point's bearing to the median of its neighbors
 # Range: 0-360 degrees, 360 = disabled
 difference_movement_bearing_threshold = 360
 
 # Window size for bearing difference filter (CRS units)
-# Defines the neighborhood size for comparison
+# Radius of circular neighborhood around each point (e.g., 500 = 500m radius)
+# Larger = more neighbors, regional comparison; Smaller = fewer neighbors, local comparison
 difference_movement_bearing_moving_window_size = 500
 
 # Maximum allowed standard deviation of movement bearing in a window
-# Used to detect areas with inconsistent movement directions
+# Filters all points in neighborhoods with inconsistent directions
 # Range: 0-360 degrees, 360 = disabled
 standard_deviation_movement_bearing_threshold = 360
 
 # Window size for bearing standard deviation filter (CRS units)
+# Radius of circular neighborhood for std dev calculation
+# Larger = regional consistency; Smaller = local consistency
 standard_deviation_movement_bearing_moving_window_size = 500
 
 # --- Movement Rate Filters ---
 
-# Maximum allowed difference in movement rate between neighboring points
-# Used to detect outliers with inconsistent speed
+# Maximum allowed difference from neighborhood median
+# Compares each point's value to the median of its neighbors
 # Units: CRS units per year
 difference_movement_rate_threshold = 10
 
 # Window size for rate difference filter (CRS units)
+# Radius of circular neighborhood around each point (e.g., 10 = 10m radius)
+# Larger = more neighbors, regional comparison; Smaller = fewer neighbors, local comparison
 difference_movement_rate_moving_window_size = 10
 
-# Maximum allowed standard deviation of movement rate in a window
-# Used to detect areas with inconsistent movement speeds
-# Units: CRS units per year
-standard_deviation_movement_rate_threshold = 10
+# Modified Z-score threshold: filters individual points deviating from neighborhood median
+# Uses median and MAD (Median Absolute Deviation) for robustness to outliers
+# Common values: 2 or 3 (number of MADs, analog to std)
+standard_deviation_movement_rate_threshold = 2
 
 # Window size for rate standard deviation filter (CRS units)
+# Radius of circular neighborhood for std dev calculation
+# Larger = regional consistency; Smaller = local consistency
 standard_deviation_movement_rate_moving_window_size = 50
 
 # ==============================================================================
@@ -234,6 +259,11 @@ standard_deviation_movement_rate_moving_window_size = 50
 # If true: additionally write a true-color aligned image
 # Useful for visual inspection of alignment quality
 write_truecolor_aligned = false
+
+# If true: display interactive plots during processing (requires graphical display)
+# Plots are always saved as JPG regardless of this setting
+# Set to false for headless environments (e.g., servers, WSL without X11)
+display_plots = false
 
 [output_units]
 # How movement rates are calculated:
@@ -247,7 +277,7 @@ mode = "per_year"
 # Cache files are stored in the output folder
 use_alignment_cache = true   # Cache alignment results
 use_tracking_cache = true    # Cache tracking results
-use_lod_cache = false        # Cache Level of Detection calculations
+use_lod_cache = false         # Cache Level of Detection calculations
 
 [save]
 # List of output files to generate. Available options:

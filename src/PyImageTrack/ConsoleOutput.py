@@ -8,11 +8,14 @@ Provides consistent, formatted console output for PyImageTrack with:
 - Status indicators ([OK], [!], [X], [i], [~])
 - Timing information
 - Parameter summaries
-- Log file support
+- Log file support (plain text, no ANSI codes)
 - Verbose/quiet modes
+- Configurable log levels
+- Log rotation support
 """
 
 import logging
+import logging.handlers
 import sys
 import time
 from contextlib import contextmanager
@@ -57,11 +60,14 @@ class ConsoleOutput:
         'processing': '[~]',
     }
     
-    def __init__(self, 
-                 verbose: bool = False, 
+    def __init__(self,
+                 verbose: bool = False,
                  quiet: bool = False,
                  use_colors: bool = True,
-                 log_file: Optional[Path] = None):
+                 log_file: Optional[Path] = None,
+                 log_level: str = 'INFO',
+                 log_max_bytes: int = 10 * 1024 * 1024,
+                 log_backup_count: int = 5):
         """
         Initialize ConsoleOutput.
         
@@ -75,11 +81,21 @@ class ConsoleOutput:
             Use ANSI colors in output (disable for non-terminal output)
         log_file : Path or None
             Path to log file. If None, no log file is written.
+        log_level : str
+            Logging level for file output (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+            Independent of verbose/quiet settings.
+        log_max_bytes : int
+            Maximum size of log file before rotation (default: 10MB).
+        log_backup_count : int
+            Number of backup log files to keep (default: 5).
         """
         self.verbose = verbose
         self.quiet = quiet
         self.use_colors = use_colors and sys.stdout.isatty()
         self.log_file = log_file
+        self.log_level = log_level.upper()
+        self.log_max_bytes = log_max_bytes
+        self.log_backup_count = log_backup_count
         
         # Setup logging for log file
         self._setup_logging()
@@ -91,7 +107,7 @@ class ConsoleOutput:
         self._banner_shown = False
     
     def _setup_logging(self):
-        """Setup logging for log file output."""
+        """Setup logging for log file output with rotation support."""
         self.logger = logging.getLogger('PyImageTrack')
         self.logger.setLevel(logging.DEBUG)
         
@@ -102,9 +118,19 @@ class ConsoleOutput:
             # Ensure log directory exists
             self.log_file.parent.mkdir(parents=True, exist_ok=True)
             
-            # File handler
-            file_handler = logging.FileHandler(self.log_file, mode='w', encoding='utf-8')
-            file_handler.setLevel(logging.DEBUG)
+            # Rotating file handler with configurable max size and backup count
+            file_handler = logging.handlers.RotatingFileHandler(
+                self.log_file,
+                mode='a',
+                maxBytes=self.log_max_bytes,
+                backupCount=self.log_backup_count,
+                encoding='utf-8'
+            )
+            
+            # Set the log level for file output (independent of console)
+            file_handler.setLevel(getattr(logging, self.log_level, logging.INFO))
+            
+            # Plain text formatter (no ANSI codes)
             file_formatter = logging.Formatter(
                 '%(asctime)s - %(levelname)s - %(message)s',
                 datefmt='%Y-%m-%d %H:%M:%S'
@@ -119,7 +145,12 @@ class ConsoleOutput:
         return f"{self.COLORS.get(color, '')}{text}{self.COLORS['reset']}"
     
     def _log(self, message: str, level: str = 'info'):
-        """Write message to log file if configured."""
+        """
+        Write plain text message to log file if configured.
+        
+        This method logs the original message WITHOUT any ANSI color codes,
+        ensuring log files remain clean and parseable.
+        """
         if self.log_file:
             log_level = getattr(logging, level.upper(), logging.INFO)
             self.logger.log(log_level, message)
@@ -137,14 +168,15 @@ class ConsoleOutput:
         level : str
             Logging level (debug, info, warning, error)
         """
-        if self.quiet and level not in ('error', 'warning'):
-            return
+        # Log the original message BEFORE colorization (plain text)
+        # This happens regardless of quiet mode - logs should always be written
+        self._log(message, level)
         
+        # Apply color for console output only
         if color:
             message = self._colorize(message, color)
         
         print(message)
-        self._log(message, level)
     
     def show_banner(self):
         """Display PyImageTrack banner."""
@@ -156,12 +188,48 @@ class ConsoleOutput:
 ║                    PyImageTrack - Image Tracking Pipeline                    ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
-        self.print(banner.strip(), color='cyan')
+        if not self.quiet:
+            self.print(banner.strip(), color='cyan')
+        else:
+            # Still log to file in quiet mode
+            self._log(banner.strip(), 'info')
         self._banner_shown = True
     
-    def section_header(self, 
-                      step_name: str, 
-                      config_ref: str, 
+    def show_batch_banner(self, mode: str = 'start'):
+        """
+        Display batch processing banner.
+        
+        Parameters
+        ----------
+        mode : str
+            Either 'start' or 'next' to determine the banner text.
+        """
+        if mode == 'start':
+            banner_text = "PyImageTrack - Image Tracking Pipeline - Batch Mode: Start"
+        else:
+            banner_text = "PyImageTrack - Image Tracking Pipeline - Batch Mode: Next Process"
+        
+        # Calculate padding to center the text
+        banner_width = 80
+        text_length = len(banner_text)
+        padding = (banner_width - text_length - 2) // 2  # -2 for the spaces on each side
+        
+        banner = f"""
+╔══════════════════════════════════════════════════════════════════════════════╗
+║{' ' * padding}{banner_text}{' ' * (banner_width - padding - text_length - 2)}║
+╚══════════════════════════════════════════════════════════════════════════════╝
+"""
+        # Log to file
+        self._log(banner.strip(), 'info')
+        
+        # Print to console (not in quiet mode)
+        if not self.quiet:
+            # Use magenta color for batch mode banners to distinguish from normal banner
+            self.print(banner.strip(), color='magenta')
+    
+    def section_header(self,
+                      step_name: str,
+                      config_ref: str,
                       description: str = None,
                       level: int = 1):
         """
@@ -179,6 +247,8 @@ class ConsoleOutput:
             Header level (1 = main, 2 = sub-section)
         """
         if self.quiet:
+            # Still log to file, but don't print to console
+            self._log(f"{step_name} {config_ref} {description or ''}", 'info')
             return
         
         if level == 1:
@@ -212,21 +282,43 @@ class ConsoleOutput:
         """
         # In quiet mode, only show success, warning, error, and processing messages
         if self.quiet and status_type not in ('success', 'warning', 'error', 'processing'):
+            # Still log to file, but don't print to console
+            icon = self.ICONS.get(status_type, '[*]')
+            prefix = ' ' * indent
+            level_map = {
+                'success': 'info',
+                'warning': 'warning',
+                'error': 'error',
+                'info': 'info',
+                'processing': 'info'
+            }
+            level = level_map.get(status_type, 'info')
+            self._log(f"{prefix}{icon} {message}", level)
             return
         
         icon = self.ICONS.get(status_type, '[*]')
         prefix = ' ' * indent
         
+        # Map status_type to log level
+        level_map = {
+            'success': 'info',
+            'warning': 'warning',
+            'error': 'error',
+            'info': 'info',
+            'processing': 'info'
+        }
+        level = level_map.get(status_type, 'info')
+        
         if status_type == 'success':
-            self.print(f"{prefix}{icon} {message}", color='green')
+            self.print(f"{prefix}{icon} {message}", color='green', level=level)
         elif status_type == 'warning':
-            self.print(f"{prefix}{icon} {message}", color='yellow')
+            self.print(f"{prefix}{icon} {message}", color='yellow', level=level)
         elif status_type == 'error':
-            self.print(f"{prefix}{icon} {message}", color='red')
+            self.print(f"{prefix}{icon} {message}", color='red', level=level)
         elif status_type == 'info':
-            self.print(f"{prefix}{icon} {message}", color='white')
+            self.print(f"{prefix}{icon} {message}", color='white', level=level)
         else:
-            self.print(f"{prefix}{icon} {message}")
+            self.print(f"{prefix}{icon} {message}", level=level)
     
     def info(self, message: str, indent: int = 0):
         """Print an info message."""
@@ -294,24 +386,16 @@ class ConsoleOutput:
         pair_id : str
             Optional pair identifier
         cache_type : str
-            Type of cache (e.g., "alignment", "tracking", "lod") for specific messages
+            Type of cache (e.g., "alignment", "tracking", "LoD")
         """
         # Show success message in all modes (normal, verbose, quiet)
+        cache_name = f"{cache_type} " if cache_type else ""
         if action == "saved":
-            if cache_type:
-                self.success(f"Saved {cache_type} cache.")
-            else:
-                self.success("Saved cache.")
+            self.success(f"Saved {cache_name}cache.")
         elif action == "loaded":
-            if cache_type:
-                self.success(f"Loaded {cache_type} cache.")
-            else:
-                self.success("Loaded cache.")
+            self.success(f"Loaded {cache_name}cache.")
         else:
-            if cache_type:
-                self.success(f"Cache {cache_type} {action}.")
-            else:
-                self.success(f"Cache {action}.")
+            self.success(f"Cache {cache_name}{action}.")
         
         # Only show path and pair details in verbose mode
         if not self.verbose:
@@ -408,9 +492,11 @@ class ConsoleOutput:
         Parameters
         ----------
         successes : list
-            List of successfully processed pairs
+            List of successfully processed pairs. Each item is a tuple:
+            (date_token_1, date_token_2, identifier) where identifier can be None.
         skipped : list
-            List of skipped pairs with reasons
+            List of skipped pairs with reasons. Each item is a tuple:
+            (year1, year2, reason) where year1/year2 are full IDs.
         total_elapsed : float, optional
             Total elapsed time in seconds. If provided, will be shown in summary.
         """
@@ -425,26 +511,97 @@ class ConsoleOutput:
         
         self.success(f"Successfully processed: {len(successes)} pair{'s' if len(successes) != 1 else ''}")
         for s in successes:
-            self.print(f"  • {s[0]} → {s[1]}")
+            # s is (date_token_1, date_token_2, identifier)
+            if s[2] is not None:
+                self.print(f"  • {s[0]} -> {s[1]}; id: {s[2]}")
+            else:
+                self.print(f"  • {s[0]} -> {s[1]}")
         
         if skipped:
             self.info(f"Skipped: {len(skipped)} pair{'s' if len(skipped) != 1 else ''}")
             for s in skipped:
-                self.print(f"  • {s[0]} → {s[1]} | Reason: {s[2]}")
+                # Extract date tokens from full IDs for skipped items
+                date_token_1 = s[0].split('_')[0] if '_' in s[0] else s[0]
+                date_token_2 = s[1].split('_')[0] if '_' in s[1] else s[1]
+                identifier = s[0].split('_')[1] if '_' in s[0] else None
+                if identifier is not None:
+                    self.print(f"  • {date_token_1} -> {date_token_2}; id: {identifier} | Reason: {s[2]}")
+                else:
+                    self.print(f"  • {date_token_1} -> {date_token_2} | Reason: {s[2]}")
         
         # Show total processing time in verbose mode
         if total_elapsed is not None and self.verbose:
             self.success(f"Total processing completed in {total_elapsed:.2f}s")
+    
+    @staticmethod
+    def format_duration(delta_hours: float) -> str:
+        """
+        Format a duration in hours to a human-readable string.
+        
+        Shows the first reached unit and its next smaller unit (if non-zero).
+        The parenthetical value shows the total duration in that unit.
+        Examples: "90 sec (1 min)", "80 days (1920 h)", "7 days (168 h)"
+        
+        Parameters
+        ----------
+        delta_hours : float
+            Duration in hours
+            
+        Returns
+        -------
+        str
+            Formatted duration string
+        """
+        # Convert to seconds for easier calculations
+        total_seconds = delta_hours * 3600
+        
+        # Define unit thresholds in seconds
+        MINUTE = 60
+        HOUR = 60 * MINUTE
+        DAY = 24 * HOUR
+        YEAR = 365.25 * DAY
+        
+        # Determine the primary unit and format accordingly
+        if total_seconds < MINUTE:
+            # Less than 1 minute: show seconds only
+            return f"{total_seconds:.0f} sec"
+        elif total_seconds < HOUR:
+            # Less than 1 hour: show minutes (and total seconds)
+            minutes = int(total_seconds // MINUTE)
+            # Show total seconds
+            seconds = round(total_seconds)
+            return f"{minutes} min ({seconds} sec)"
+        elif total_seconds < DAY:
+            # Less than 1 day: show hours (and total minutes)
+            hours = int(total_seconds // HOUR)
+            # Show total minutes, not remainder minutes
+            minutes = round(total_seconds / MINUTE)
+            return f"{hours} h ({minutes} min)"
+        elif total_seconds < YEAR:
+            # Less than 1 year: show days (and total hours)
+            days = int(total_seconds // DAY)
+            # Show total hours, not remainder hours
+            hours = round(total_seconds / HOUR)
+            return f"{days} days ({hours} h)"
+        else:
+            # 1 year or more: show years (and total days)
+            years = total_seconds / YEAR
+            # Show total days, not remainder days
+            days = round(total_seconds / DAY)
+            return f"{years:.1f} years ({days} days)"
 
 
 # Global instance for backward compatibility
 _global_console: Optional[ConsoleOutput] = None
 
 
-def get_console(verbose: bool = False, 
+def get_console(verbose: bool = False,
                 quiet: bool = False,
                 use_colors: bool = True,
-                log_file: Optional[Path] = None) -> ConsoleOutput:
+                log_file: Optional[Path] = None,
+                log_level: str = 'INFO',
+                log_max_bytes: int = 10 * 1024 * 1024,
+                log_backup_count: int = 5) -> ConsoleOutput:
     """
     Get or create the global ConsoleOutput instance.
     
@@ -458,6 +615,12 @@ def get_console(verbose: bool = False,
         Use ANSI colors
     log_file : Path or None
         Path to log file
+    log_level : str
+        Logging level for file output (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+    log_max_bytes : int
+        Maximum size of log file before rotation (default: 10MB)
+    log_backup_count : int
+        Number of backup log files to keep (default: 5)
     
     Returns
     -------
@@ -471,7 +634,10 @@ def get_console(verbose: bool = False,
             verbose=verbose,
             quiet=quiet,
             use_colors=use_colors,
-            log_file=log_file
+            log_file=log_file,
+            log_level=log_level,
+            log_max_bytes=log_max_bytes,
+            log_backup_count=log_backup_count
         )
     
     return _global_console
