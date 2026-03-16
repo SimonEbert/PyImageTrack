@@ -1,14 +1,22 @@
 # PyImageTrack/Utils.py
+"""
+Utility functions for PyImageTrack.
+
+This module provides helper functions for:
+- Date parsing and formatting
+- Image file collection and pairing
+- Parameter abbreviation for cache keys
+- Directory management
+"""
 import itertools
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 import pandas as pd
 
 from .ConsoleOutput import get_console
-
 
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
@@ -31,75 +39,491 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
     px, nx, py, ny = deltas
     return (one(px), one(nx), one(py), one(ny))
 
+def _validate_date_token(token: str, year_part: str) -> bool:
+    """
+    Validate if a date token is complete and parsable.
+    
+    Returns True if all segments in the token are valid (no ignored invalid parts).
+    Compact format: expects 4, 8, or 10+ digits (YYYYMMDD, YYYYMMDDHHMM, YYYYMMDDHHMMSS)
+    Separated format: expects complete date/time pairs (YYYY-MM-DD-HH-MM)
+    
+    Parameters
+    ----------
+    token : str
+        The token to validate.
+    year_part : str
+        The year that was extracted first.
+    
+    Returns
+    -------
+    bool
+        True if token is complete and valid, False if parts are incomplete or invalid.
+    """
+    from datetime import datetime
+    
+    # Extract year from token
+    year_match = re.match(r'^(\d{2,4})', token)
+    if not year_match:
+        return False
+    
+    year_len = len(year_match.group(1))
+    remaining = token[year_len:]
+    
+    # Determine format by checking for hyphens
+    has_hyphens = '-' in remaining
+    
+    try:
+        if len(year_part) == 2:
+            year = 2000 + int(year_part)
+        else:
+            year = int(year_part)
+        
+        if has_hyphens:
+            # Separated format - strip leading hyphen that was already counted by has_hyphens check
+            remaining = remaining.lstrip('-')
+            parts = remaining.split('-')
+            
+            if len(parts) >= 1 and parts[0]:
+                m = int(parts[0])
+                if not (1 <= m <= 12):
+                    return False
+                
+            if len(parts) >= 2 and parts[1]:
+                d = int(parts[1])
+                if not (1 <= d <= 31):
+                    return False
+                
+            # If we have hour, we MUST have minute too (time must be complete)
+            # Only check for hour if the part is non-empty (not just from trailing hyphen)
+            if len(parts) >= 3 and parts[2] and parts[2].strip():
+                h = int(parts[2])
+                if not (0 <= h <= 23):
+                    return False
+                # Hour without minute or with non-digit minute is incomplete
+                if len(parts) < 4 or not parts[3] or not parts[3].isdigit():
+                    return False
+                m = int(parts[3])
+                if not (0 <= m <= 59):
+                    return False
+        else:
+            # Compact format
+            remaining_digits = remaining.replace('-', '')
+            digit_count = len(remaining_digits)
+            
+            # Valid digit counts for compact format:
+            # 0 = year only
+            # 4 = month + day (valid)
+            # 6 = month + day + hour (INVALID - incomplete time!)
+            # 8 = month + day + hour + minute (valid)
+            # 10 = month + day + hour + minute + second (valid)
+            if digit_count == 6:
+                return False  # HH without MM is incomplete
+            
+            if digit_count >= 2:
+                m = int(remaining_digits[0:2])
+                if not (1 <= m <= 12):
+                    return False
+            
+            if digit_count >= 4:
+                d = int(remaining_digits[2:4])
+                if not (1 <= d <= 31):
+                    return False
+            
+            if digit_count >= 6:
+                h = int(remaining_digits[4:6])
+                if not (0 <= h <= 23):
+                    return False
+            
+            if digit_count >= 8:
+                m = int(remaining_digits[6:8])
+                if not (0 <= m <= 59):
+                    return False
+        
+        return True
+        
+    except (ValueError, IndexError):
+        return False
 
-def _round_to_nearest_hour(dt: datetime) -> datetime:
-    """Round to nearest hour (>=30 min rounds up)."""
-    if dt.minute > 30 or (dt.minute == 30 and (dt.second > 0 or dt.microsecond > 0)):
-        dt = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
-    else:
-        dt = dt.replace(minute=0, second=0, microsecond=0)
-    return dt
+
+def extract_date_token(s: str) -> Optional[str]:
+    """
+    Extract the complete date token from a string.
+    
+    Normalizes the string by replacing underscores with hyphens and extracts
+    the leading date token starting with a year (YY or YYYY). The token includes
+    the year and any following date/time parts with separators.
+    
+    This is used in conjunction with parse_date() to ensure consistent token
+    extraction across the codebase. The extraction stops when an invalid part
+    is encountered (e.g., a letter or a value that doesn't make sense for dates).
+    
+    Parameters
+    ----------
+    s : str
+        String to extract date token from (e.g., filename).
+    
+    Returns
+    -------
+    Optional[str]
+        The extracted date token, or None if no valid token is found.
+    
+    Examples
+    --------
+    >>> extract_date_token("2023-09-01-1504")
+    '2023-09-01-1504'
+    >>> extract_date_token("HS_2023_09_01_1504_xyz.tif")
+    '2023-09-01-1504'
+    >>> extract_date_token("image_20230317_1504.tif")
+    '202303171504'
+    >>> extract_date_token("no_date.tif")
+    None
+    """
+    # Shortcut: if s looks like a complete date token already, return it
+    # This handles the case where parse_date is called on already-extracted tokens
+    # Completeness check: should have year, optionally month/day
+    # For separated format: YYYY-MM or YYYY-MM-DD or YYYY-MM-DD-HH-MM
+    # For compact format: YYYY, YYYYMMDD, YYYYMMDDHHMM, etc.
+    s_norm = s.replace('_', '-')
+    full_match = re.match(r'^(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2})?)?)?)?$', s_norm)
+    if full_match:
+        # Check if it's more than just year
+        matched_str = full_match.group(0)
+        year_only = full_match.group(1)
+        if len(matched_str) > len(year_only):
+            # Already looks like a valid complete token
+                return s_norm
+    
+    # Store original to check for separators before normalization
+    original = s
+    
+    # Normalize: replace underscores with hyphens for consistent parsing
+    normalized = s.replace('_', '-')
+    
+    # Extract leading numeric token starting with year (YY or YYYY)
+    # The token may include separators and continues while the pattern makes sense for dates
+    match = re.match(r'^(\d{2,4})', normalized)
+    if not match:
+        return None
+    
+    year_part = match.group(1)
+    token = year_part
+    remaining = normalized[len(year_part):]
+    
+    # Check if original has separator (hyphen or underscore) immediately after the year
+    # This determines whether we use separated format (2023-03-16)
+    # or compact format (20230316)
+    year_idx = original.find(year_part)
+    has_separator = False
+    if year_idx >= 0 and year_idx + len(year_part) < len(original):
+        next_char = original[year_idx + len(year_part)]
+        has_separator = next_char in ('-', '_')
+    
+    # Progressive extraction: build token incrementally and validate completeness
+    # Stop when adding more parts makes the date incomplete or invalid
+    
+    # Match all characters that could be part of the date
+    all_match = re.match(r'^([0-9\\-]*)(?=[^0-9\\-]|$)', remaining)
+    if all_match:
+        all_additional = all_match.group(1)
+        all_additional = all_additional.lstrip('-').rstrip('-')
+        
+        if all_additional:
+            # Progressive testing: add parts incrementally
+            validated_token = token
+            pos = 0
+            
+            while pos < len(all_additional):
+                # Try adding 1-4 characters at a time
+                added = False
+                for add_len in range(1, 5):
+                    if pos + add_len > len(all_additional):
+                        continue
+                    
+                    test_part = all_additional[pos:pos+add_len]
+                    
+                    # In compact format with no initial separator, hyphens mean end of date
+                    if not has_separator and '-' in test_part:
+                        # Stop at hyphen - the date portion is complete
+                        break
+                    
+                    # Build test token based on format
+                    if has_separator:
+                        # For separated format, we need to handle hyphen boundaries
+                        # If test_part is just digits, we probably need to find hyphen boundary
+                        # Simplification: add exactly what we have, including hyphens
+                        if test_part == '-':
+                            # Skip adding lone hyphen as incremental addition
+                            pos += 1
+                            added = True
+                            break
+                        
+                        # Check if we need to add a hyphen before
+                        if validated_token[-1] != '-' and not test_part.startswith('-'):
+                            test_token = validated_token + '-' + test_part
+                        else:
+                            test_token = validated_token + test_part
+                    else:
+                        # Compact format: no hyphens should be added here
+                        test_token = validated_token + test_part
+                    
+                    # Validate this test token
+                    valid = _validate_date_token(test_token, year_part)
+                    
+                    if valid:
+                        # Token looks good, use it
+                        validated_token = test_token
+                        pos += add_len
+                        added = True
+                        break
+                    else:
+                        # Token invalid: might be because current test_part is too much
+                        # But might also be because we're missing a continuation
+                        # We only skip if this is clearly wrong
+                        pass
+                
+                if not added:
+                    # Can't add more without making it invalid - stop
+                    break
+            
+            token = validated_token
+    
+    return token
 
 
 def parse_date(s: str) -> datetime:
     """
-    Parse flexible date/time strings. Behavior:
-      - Filenames with compact tokens:
-        * YYYYMMDD-HHMMSS... -> time kept and rounded to nearest hour
-        * YYYYMMDD           -> 00:00:00
-        * YYYY-MM-DD         -> 00:00:00
-      - Plain strings:
-        * 'YYYY-MM-DD HH:MM:SS' or 'YYYY-MM-DD HH:MM' -> rounded to nearest hour
-        * 'YYYY-MM-DD' -> 00:00:00
-    IMPORTANT: 'YYYY-MM' and 'YYYY' are NOT parsed here for filenames;
-               those should be resolved via image_dates.csv and then parsed.
+    Parse ISO-standard date strings with flexible separators.
+    
+    Only accepts dates starting with year (YY or YYYY).
+    Supports separators: '-', '_', or none.
+    Missing or invalid parts default to first standard (month=01, day=01, etc.).
+    No rounding - exact values are used.
+    
+    Parameters
+    ----------
+    s : str
+        Date string to parse.
+    
+    Returns
+    -------
+    datetime
+        Parsed datetime object.
+    
+    Raises
+    ------
+    ValueError
+        If the date format is not recognized or invalid.
+    
+    Supported Formats
+    ------------------
+    Year only:           2024, 24
+    Year-Month:          2024-09, 2024_09, 202409, 24-09, 24_09, 2409
+    Year-Month-Day:      2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901
+    With time:           2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045
+    
+    Separators: '-', '_', or none
+    Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00
+    No rounding - exact values are used
+    
+    Note
+    ----
+    If a part is present but invalid (e.g., month=13, day=47, hour=99), it is
+    ignored and the default value is used. This allows filenames like
+    "2008_9109" to be parsed as year-only (2008-01-01), or "2024_09_47" to
+    be parsed as year-month (2024-09-01).
     """
-    name = os.path.basename(str(s))
+    console = get_console()
+    
+    # Pre-extract and normalize the date token using our helper
+    token = extract_date_token(s)
+    if token is None:
+        console.error(f"Invalid date format: {s!r}")
+        console.error("")
+        console.error("Supported formats (ISO standard, year-first):")
+        console.error("  Year only:           2024, 24")
+        console.error("  Year-Month:          2024-09, 2024_09, 202409, 24-09, 24_09, 2409")
+        console.error("  Year-Month-Day:      2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901")
+        console.error("  With time:           2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045")
+        console.error("")
+        console.error("Separators: '-', '_', or none")
+        console.error("Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00")
+        console.error("No rounding - exact values are used")
+        raise ValueError(f"Invalid date format: {s!r}")
+    
+    # Extract year from the token (first 2-4 digits)
+    year_match = re.match(r'^(\d{2,4})', token)
+    year_part = year_match.group(1)
+    
+    # Determine year (2-digit -> 2000s, 4-digit -> as-is)
+    if len(year_part) == 2:
+        year = 2000 + int(year_part)
+    elif len(year_part) == 4:
+        year = int(year_part)
+    else:
+        console.error(f"Invalid year format: {year_part!r}")
+        raise ValueError(f"Invalid year format: {year_part!r}")
+    
+    # Default values
+    month = 1
+    day = 1
+    hour = 0
+    minute = 0
+    second = 0
+    
+    # Get the remaining part after the year
+    remaining = token[len(year_part):]
+    
+    # Check if there are separators
+    if '-' in remaining:
+        # Strip leading hyphens that might be present from the year separator
+        remaining = remaining.lstrip('-')
+        # Parse with separators (e.g., 2016-03-19 or 2016-03-19-14-30-45)
+        parts = remaining.split('-')
+        
+        # Extract and validate values - ignore invalid parts
+        if len(parts) >= 1 and parts[0]:
+            try:
+                m = int(parts[0])
+                if 1 <= m <= 12:
+                    month = m
+            except ValueError:
+                pass  # Keep default month
+        
+        if len(parts) >= 2 and parts[1]:
+            try:
+                d = int(parts[1])
+                if 1 <= d <= 31:
+                    day = d
+            except ValueError:
+                pass  # Keep default day
+        
+        if len(parts) >= 3 and parts[2]:
+            try:
+                h = int(parts[2])
+                if 0 <= h <= 23:
+                    hour = h
+            except ValueError:
+                pass  # Keep default hour
+        
+        if len(parts) >= 4 and parts[3]:
+            try:
+                m = int(parts[3])
+                if 0 <= m <= 59:
+                    minute = m
+            except ValueError:
+                pass  # Keep default minute
+        
+        if len(parts) >= 5 and parts[4]:
+            try:
+                s = int(parts[4])
+                if 0 <= s <= 59:
+                    second = s
+            except ValueError:
+                pass  # Keep default second
+    else:
+        # Parse without separators (e.g., 20160319 or 20160319143045)
+        # Extract month (2 digits after year)
+        if len(remaining) >= 2:
+            try:
+                m = int(remaining[0:2])
+                if 1 <= m <= 12:
+                    month = m
+            except ValueError:
+                pass  # Keep default month
+        
+        # Extract day (next 2 digits)
+        if len(remaining) >= 4:
+            try:
+                d = int(remaining[2:4])
+                if 1 <= d <= 31:
+                    day = d
+            except ValueError:
+                pass  # Keep default day
+        
+        # Extract hour (next 2 digits)
+        if len(remaining) >= 6:
+            try:
+                h = int(remaining[4:6])
+                if 0 <= h <= 23:
+                    hour = h
+            except ValueError:
+                pass  # Keep default hour
+        
+        # Extract minute (next 2 digits)
+        if len(remaining) >= 8:
+            try:
+                m = int(remaining[6:8])
+                if 0 <= m <= 59:
+                    minute = m
+            except ValueError:
+                pass  # Keep default minute
+        
+        # Extract second (next 2 digits)
+        if len(remaining) >= 10:
+            try:
+                s = int(remaining[8:10])
+                if 0 <= s <= 59:
+                    second = s
+            except ValueError:
+                pass  # Keep default second
+    
+    return datetime(year, month, day, hour, minute, second)
 
-    # YYYYMMDD-HHMMSS...
-    m = re.match(r'^(\d{4})(\d{2})(\d{2})[-_](\d{2})(\d{2})(\d{2})', name)
-    if m:
-        y, mo, d, H, M, S = map(int, m.groups())
-        return _round_to_nearest_hour(datetime(y, mo, d, H, M, S))
 
-    # YYYY-MM-DD_HH-mm-SS
-    m = re.match(r'^(\d{4})-(\d{2})-(\d{2})[-_](\d{2})-(\d{2})-(\d{2})', name)
-    if m:
-        y, mo, d, H, M, S = map(int, m.groups())
-        return _round_to_nearest_hour(datetime(y, mo, d, H, M, S))
-
-    # YYYYMMDD (no time)
-    m = re.match(r'^(\d{4})(\d{2})(\d{2})', name)
-    if m:
-        y, mo, d = map(int, m.groups())
-        return datetime(y, mo, d, 0, 0, 0)
-
-    # YYYY-MM-DD at start
-    m = re.match(r'^(\d{4})[-_](\d{2})[-_](\d{2})', name)
-    if m:
-        y, mo, d = map(int, m.groups())
-        return datetime(y, mo, d, 0, 0, 0)
-
-    # Plain strings (with/without time)
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M",
-                "%d-%m-%Y %H:%M:%S", "%d-%m-%Y %H:%M"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return _round_to_nearest_hour(dt)
-        except ValueError:
-            pass
-
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y"):
-        try:
-            dt = datetime.strptime(s, fmt)
-            return dt.replace(minute=0, second=0, microsecond=0)
-        except ValueError:
-            pass
-
-    raise ValueError(f"Unsupported date format: {s!r}")
+def extract_identifier(filename: str) -> Optional[str]:
+    """
+    Extract identifier from filename using pattern 'id<identifier>'.
+    
+    The identifier is extracted from the pattern 'id<identifier>' where
+    identifier consists of alphanumeric characters and ends at the next
+    separator ('-', '_', '.', or end of string).
+    
+    Parameters
+    ----------
+    filename : str
+        Filename to extract identifier from.
+    
+    Returns
+    -------
+    Optional[str]
+        The extracted identifier, or None if no identifier pattern is found.
+    
+    Examples
+    --------
+    >>> extract_identifier("HS_2008_id9109_az315.tif")
+    '9109'
+    >>> extract_identifier("image_idAB12_test.tif")
+    'AB12'
+    >>> extract_identifier("test_id12345.tif")
+    '12345'
+    >>> extract_identifier("idABC123.tif")
+    'ABC123'
+    >>> extract_identifier("no_identifier.tif")
+    None
+    """
+    # Match pattern: id followed by alphanumeric characters until separator or end
+    # The 'id' must be preceded by a separator or start of string
+    # Separators: '-', '_', '.', or end of string
+    match = re.search(r'(?:^|[-_.])id([A-Za-z0-9]+)(?:[-_.]|$)', filename)
+    if match:
+        return match.group(1)
+    return None
 
 
 def _successive_pairs(sorted_years):
+    """
+    Generate successive pairs from a sorted list.
+
+    Parameters
+    ----------
+    sorted_years : list
+        A sorted list of identifiers.
+
+    Returns
+    -------
+    list
+        A list of tuples representing successive pairs: [(a,b), (b,c), ...].
+    """
     return [(sorted_years[i], sorted_years[i + 1]) for i in range(len(sorted_years) - 1)]
 
 
@@ -107,146 +531,169 @@ def collect_pairs(input_folder: str,
                   date_csv_path: Optional[str] = None,
                   pairs_csv_path: Optional[str] = None,
                   pairing_mode: str = "all",
-                  extensions: Optional[tuple] = None):
+                  extensions: Optional[tuple] = None,
+                  identifier: Optional[str] = None):
     """
     Build pairs and return:
       - year_pairs: list of (id1, id2)
       - id_to_file: id -> tif path
-      - id_to_date: id -> date string ("YYYY-MM-DD" or "YYYY-MM-DD HH:00:00")
-      - id_hastime_from_filename: id -> bool (True if hour came from filename)
-
-    Behavior:
-      - If date_csv_path is None or the file is missing, files whose leading token is only 'YYYY' or 'YYYY-MM'
-        will be SKIPPED with a warning. Files with a full day (YYYYMMDD, YYYY-MM-DD, or YYYYMMDD-HHMMSS...)
-        will still be used.
+      - id_to_date: id -> date string ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS")
+      - id_hastime_from_filename: id -> bool (True if time came from filename)
+      - id_to_identifier: id -> identifier (only if identifier parameter is provided)
+    
+    Date extraction from filenames:
+      - Extracts leading numeric token (YY or YYYY followed by optional parts)
+      - Passes token directly to parse_date() for parsing
+      - CSV dates handled identically to filename dates
+    
+    ID Generation:
+      - When an identifier is present in the filename, IDs are generated as "date_token_identifier"
+        to ensure uniqueness when multiple files share the same date token (e.g., year).
+      - When no identifier is present, IDs use only the date token.
+      - This prevents collisions when processing files with the same date but different identifiers.
+    
+    Parameters
+    ----------
+    input_folder : str
+        Path to folder containing image files.
+    date_csv_path : Optional[str], optional
+        Path to CSV file mapping file IDs to dates. Default is None.
+    pairs_csv_path : Optional[str], optional
+        Path to CSV file defining custom image pairs. Default is None.
+    pairing_mode : str, optional
+        Pairing strategy: "all", "successive", "first_to_all", or "custom". Default is "all".
+    extensions : Optional[tuple], optional
+        Allowed file extensions. Default is None (uses .tif, .tiff).
+    identifier : Optional[str], optional
+        If provided, only process files matching this identifier. Default is None.
+    
+    Returns
+    -------
+    tuple
+        (year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier)
+        where id_to_identifier is only included if identifier parameter is not None.
     """
+    console = get_console()
+    
     # 1) Try to read image_dates.csv if provided and exists
     csv_year_to_date: dict[str, str] = {}
     if date_csv_path is not None and os.path.exists(date_csv_path):
-        date_df = pd.read_csv(date_csv_path)
-        date_df.columns = date_df.columns.str.strip()
-        if not {"year", "date"}.issubset(date_df.columns):
-            raise ValueError("image_dates.csv must contain 'year' and 'date' columns.")
-        date_df["year"] = date_df["year"].astype(str)
-        csv_year_to_date = dict(zip(date_df["year"], date_df["date"]))
+        try:
+            date_df = pd.read_csv(date_csv_path)
+            date_df.columns = date_df.columns.str.strip()
+            # Check for either "file" or "year" column (or "file/year")
+            if "file" in date_df.columns:
+                id_col = "file"
+            elif "year" in date_df.columns:
+                id_col = "year"
+            elif "file/year" in date_df.columns:
+                id_col = "file/year"
+            else:
+                raise ValueError("image_dates.csv must contain a 'file', 'year', or 'file/year' column.")
+            if "date" not in date_df.columns:
+                raise ValueError("image_dates.csv must contain a 'date' column.")
+            date_df[id_col] = date_df[id_col].astype(str)
+            csv_year_to_date = dict(zip(date_df[id_col], date_df["date"]))
+        except Exception as e:
+            raise ValueError(f"Failed to read image_dates.csv at {date_csv_path}: {e}")
     elif date_csv_path is not None:
         pass
 
     # 2) Collect all files with allowed extensions
-    # Default (None) = keep legacy behavior: only TIF/TIFF
     if extensions is None:
         extensions = (".tif", ".tiff")
     exts = tuple(e.lower() for e in extensions)
 
     img_files = [f for f in os.listdir(input_folder) if f.lower().endswith(exts)]
+    console.info_verbose(f"Found {len(img_files)} image files in {input_folder}")
 
     id_to_file = {}
     id_to_date = {}
     id_hastime_from_filename = {}
 
     for f in img_files:
-        token_match = re.match(r'^([0-9][0-9\-_]*)', f)
-        if not token_match:
+        # Extract date token using our helper function
+        lead = extract_date_token(f)
+        if lead is None:
             continue
-        lead = token_match.group(1)
+        
         path = os.path.join(input_folder, f)
-        lead = lead.rstrip("-_")  # '1953_' -> '1953', '1953-09_' -> '1953-09'
-
-        # Case: YYYYMMDD-HHMMSS...
-        if re.match(r'^\d{8}[-_]\d{6}', lead):
-            dt = parse_date(lead)  # rounded to nearest hour
-            id_ = lead
-            id_to_file[id_] = path
-            id_to_date[id_] = dt.strftime("%Y-%m-%d %H:00:00")
-            id_hastime_from_filename[id_] = True
-
-        # Case: YYYY-MM-DD_HH-mm-SS
-        elif re.match(r'^\d{4}-\d{2}-\d{2}[-_]\d{2}-\d{2}-\d{2}', lead):
+        
+        # Parse the date token
+        try:
             dt = parse_date(lead)
-            id_ = dt.strftime("%Y-%m-%d_%H-%M-%S")
-            id_to_file[id_] = path
-            id_to_date[id_] = dt.strftime("%Y-%m-%d_%H-%M-%S")
-            id_hastime_from_filename[id_] = True
-
-        # Case: DD-MM-YYYY at start (e.g., 02-09-1953_*.tif)
-        elif re.match(r'^\d{2}-\d{2}-\d{4}', lead):
-            dt = parse_date(lead)
-            id_ = dt.strftime("%Y-%m-%d")
-            id_to_file[id_] = path
-            id_to_date[id_] = dt.strftime("%Y-%m-%d")
-            id_hastime_from_filename[id_] = False
-
-        # Case: YYYY-MM-DD...
-        elif re.match(r'^\d{4}-\d{2}-\d{2}', lead):
-            dt = parse_date(lead)
-            id_ = re.match(r'^(\d{4}-\d{2}-\d{2})', lead).group(1)
-            id_to_file[id_] = path
-            id_to_date[id_] = dt.strftime("%Y-%m-%d")  # no hour printed later
-            id_hastime_from_filename[id_] = False
-
-        # Case: YYYYMMDD (no time)
-        elif re.match(r'^\d{8}', lead):
-            dt = parse_date(lead)
-            id_ = re.match(r'^(\d{8})', lead).group(1)
-            id_to_file[id_] = path
-            id_to_date[id_] = dt.strftime("%Y-%m-%d")  # no hour printed later
-            id_hastime_from_filename[id_] = False
-
-        # Case: YYYY-MM -> use CSV if available, else assume first day of month
-        elif re.match(r'^\d{4}-\d{2}$', lead):
-            ym = re.match(r'^(\d{4}-\d{2})', lead).group(1)
-            if csv_year_to_date and ym in csv_year_to_date:
-                date_str = csv_year_to_date[ym]
-            else:
-                date_str = f"{ym}-01"
-                console = get_console()
-                if not csv_year_to_date:
-                    console.warning(
-                        f"Only year+month detected in filename '{f}'. "
-                        f"image_dates.csv not found at: {date_csv_path}. "
-                        f"Assuming date '{date_str}'."
-                    )
-                else:
-                    console.warning(
-                        f"Only year+month detected in filename '{f}'. "
-                        f"No CSV entry for '{ym}'. Assuming date '{date_str}'."
-                    )
-            id_ = ym
-            id_to_file[id_] = path
-            id_to_date[id_] = date_str
-            id_hastime_from_filename[id_] = False
-
-        # Case: YYYY -> use CSV if available, else assume Jan 1st
-        elif re.match(r'^\d{4}$', lead):
-            y = lead[:4]
-            if csv_year_to_date and y in csv_year_to_date:
-                date_str = csv_year_to_date[y]
-            else:
-                date_str = f"{y}-01-01"
-                console = get_console()
-                if not csv_year_to_date:
-                    console.warning(
-                        f"Only year detected in filename '{f}'. "
-                        f"image_dates.csv not found at: {date_csv_path}. "
-                        f"Assuming date '{date_str}'."
-                    )
-                else:
-                    console.warning(
-                        f"Only year detected in filename '{f}'. "
-                        f"No CSV entry for '{y}'. Assuming date '{date_str}'."
-                    )
-            id_ = y
-            id_to_file[id_] = path
-            id_to_date[id_] = date_str
-            id_hastime_from_filename[id_] = False
-
-        else:
+        except ValueError:
+            # Skip files with invalid date tokens
             continue
+        
+        # Extract identifier from filename to make ID unique
+        file_identifier = extract_identifier(f)
+        
+        # Use the original token as ID, but make it unique by appending identifier if present
+        if file_identifier:
+            id_ = f"{lead}_{file_identifier}"
+        else:
+            id_ = lead
+        
+        id_to_file[id_] = path
+        
+        # Check if this file has a date override in the CSV file
+        # First try to match by full filename (without extension), then by token
+        filename_without_ext = os.path.splitext(f)[0]
+        csv_date_str = None
+        if filename_without_ext in csv_year_to_date:
+            csv_date_str = csv_year_to_date[filename_without_ext]
+        elif id_ in csv_year_to_date:
+            csv_date_str = csv_year_to_date[id_]
+        
+        if csv_date_str is not None:
+            # Use the date from CSV, parsing it with the same logic as filename dates
+            try:
+                csv_dt = parse_date(csv_date_str)
+                dt = csv_dt  # Override with CSV date
+                id_hastime_from_filename[id_] = False  # Date came from CSV, not filename
+            except ValueError:
+                # If CSV date is invalid, fall back to filename date
+                id_hastime_from_filename[id_] = True
+        else:
+            id_hastime_from_filename[id_] = True
+        
+        # Format date string (with time if present, without if not)
+        if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
+            id_to_date[id_] = dt.strftime("%Y-%m-%d %H:%M:%S")
+        else:
+            id_to_date[id_] = dt.strftime("%Y-%m-%d")
 
     # 3) Order by actual time
     items = [(k, parse_date(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
     items.sort(key=lambda t: t[1])
     ordered_ids = [k for k, _ in items]
+
+    # 3.5) Filter by identifier if provided
+    id_to_identifier = {}
+    if identifier is not None:
+        # Build mapping of file IDs to their identifiers
+        for id_ in list(id_to_file.keys()):
+            # Extract identifier from the ID (format: "date_token_identifier" or "date_token")
+            # The identifier is the part after the last underscore if it exists
+            parts = id_.rsplit('_', 1)
+            if len(parts) == 2 and parts[1].isalnum():
+                file_identifier = parts[1]
+            else:
+                # No identifier in ID, extract from filename
+                file_identifier = extract_identifier(os.path.basename(id_to_file[id_]))
+            
+            id_to_identifier[id_] = file_identifier
+            # Filter out files that don't match the specified identifier
+            if file_identifier != identifier:
+                id_to_file.pop(id_, None)
+                id_to_date.pop(id_, None)
+                id_hastime_from_filename.pop(id_, None)
+        # Re-sort after filtering
+        items = [(k, parse_date(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
+        items.sort(key=lambda t: t[1])
+        ordered_ids = [k for k, _ in items]
+        console.info_verbose(f"Files remaining after identifier filtering: {len(ordered_ids)}")
 
     # 4) Build pairs
     if pairing_mode == "all":
@@ -269,7 +716,25 @@ def collect_pairs(input_folder: str,
 
     elif pairing_mode == "custom":
         # --- read CSV with auto delimiter (',' or ';') ---
-        pairs_df = pd.read_csv(pairs_csv_path, sep=None, engine="python", encoding="utf-8-sig")
+        if pairs_csv_path is None:
+            console.error("Pairing mode is set to 'custom', but no image_pairs.csv file was provided.")
+            console.error("To fix this, you have two options:")
+            console.error("  1. Provide a valid path to an image_pairs.csv file in your config:")
+            console.error("     pairs_csv_path = '/path/to/image_pairs.csv'")
+            console.error("     The CSV must contain columns 'date_earlier' and 'date_later'.")
+            console.error("  2. Change the pairing mode to an automatic option:")
+            console.error("     - 'all': Pair each image with every other image")
+            console.error("     - 'successive': Pair consecutive images (1-2, 2-3, 3-4, ...)")
+            console.error("     - 'first_to_all': Pair the first image with all subsequent images")
+            raise ValueError("Pairing mode is 'custom' but no image_pairs.csv file was provided.")
+        if not os.path.exists(pairs_csv_path):
+            raise FileNotFoundError(f"image_pairs.csv file does not exist: {pairs_csv_path}")
+        if not os.access(pairs_csv_path, os.R_OK):
+            raise PermissionError(f"image_pairs.csv file is not readable: {pairs_csv_path}")
+        try:
+            pairs_df = pd.read_csv(pairs_csv_path, sep=None, engine="python", encoding="utf-8-sig")
+        except Exception as e:
+            raise ValueError(f"Failed to read image_pairs.csv file: {e}") from e
         pairs_df.columns = (
             pairs_df.columns
             .str.replace("\ufeff", "", regex=False)
@@ -283,106 +748,25 @@ def collect_pairs(input_folder: str,
 
         left_col, right_col = "date_earlier", "date_later"
 
-        # Helper: extract a leading numeric date token similar to filename handling
-        token_re = re.compile(r"^([0-9][0-9\-_]*)")
-
-        def _extract_lead(any_str: str) -> str | None:
-            if not isinstance(any_str, str):
-                any_str = str(any_str)
-            any_str = any_str.strip()
-            m = token_re.match(any_str)
-            return m.group(1) if m else None
-
-        # Map CSV token -> ID used in id_to_file; relies on already scanned files (id_to_file)
+        # Map CSV token -> ID used in id_to_file
         def _resolve_csv_token_to_id(raw: str) -> str:
-            lead = _extract_lead(raw)
-            if not lead:
+            lead = extract_date_token(raw)
+            if lead is None:
                 raise ValueError(f"Unrecognized pair token: {raw!r}")
-
-            # 1) YYYYMMDD-HHMMSS...
-            if re.match(r"^\d{8}[-_]\d{6}", lead):
-                key = re.match(r"^(\d{8}[-_]\d{6})", lead).group(1)
-                if key in id_to_file:
-                    return key
-                # fallback: try exact match by startswith for very rare cases
-                cand = [k for k in id_to_file if k.startswith(key)]
-                if cand:
-                    return cand[0]
-                raise KeyError(f"No file ID matching time token '{key}' found in input folder.")
-
-            # 1b) DD-MM-YYYY (normalize to YYYY-MM-DD and resolve)
-            if re.match(r"^\d{2}-\d{2}-\d{4}", lead):
-                key = parse_date(lead).strftime("%Y-%m-%d")
-                if key in id_to_file:
-                    return key
-                raise KeyError(
-                    f"No file ID for date '{lead}' (normalized to '{key}') found. "
-                    f"Make sure a file with that day exists or rename the file prefix."
-                )
-
-            # 2) YYYY-MM-DD...
-            if re.match(r"^\d{4}-\d{2}-\d{2}", lead):
-                key = re.match(r"^(\d{4}-\d{2}-\d{2})", lead).group(1)
-                if key in id_to_file:
-                    return key
-                raise KeyError(f"No file ID for date '{key}' found. Make sure a file with that day exists.")
-
-            # 3) YYYYMMDD
-            if re.match(r"^\d{8}$", lead):
-                key = lead  # prefer exact YYYYMMDD if present
-                if key in id_to_file:
-                    return key
-                cand = [k for k in id_to_file if str(k).startswith(key)]
-                if cand:
-                    return sorted(cand)[0]
-                raise KeyError(f"No file ID for date '{key}' (YYYYMMDD) found.")
-
-            # 4) YYYY-MM (needs image_dates.csv-driven key)
-            if re.match(r"^\d{4}-\d{2}$", lead):
-                key = lead  # our id_to_file uses 'YYYY-MM' as key when resolved via CSV
-                if key in id_to_file:
-                    return key
-                raise KeyError(
-                    f"No ID for '{key}'. Either provide image_dates.csv entry for this month and ensure a file exists, "
-                    f"or switch to a day-resolved token present in filenames."
-                )
-
-            # 5) YYYYMM (6 digits) -> treat as YYYY-MM; requires CSV-backed entry
-            if re.match(r"^\d{6}$", lead):
-                key = f"{lead[:4]}-{lead[4:6]}"
-                if key in id_to_file:
-                    return key
-                raise KeyError(
-                    f"No ID for month token '{lead}' (mapped to '{key}'). "
-                    f"Provide image_dates.csv and ensure a corresponding file is used."
-                )
-
-            # 6) YYYY (map via image_dates.csv if available; otherwise accept year-only ID)
-            if re.match(r"^\d{4}$", lead):
-                # a) if there is a year-ID (file name 'YYYY')
-                if lead in id_to_file:
-                    return lead
-                # b) otherwise map image_dates.csv
-                if not csv_year_to_date:
-                    raise KeyError(f"CSV token '{lead}' is a year, but no image_dates.csv was provided.")
-                if lead not in csv_year_to_date:
-                    raise KeyError(f"Year '{lead}' not found in image_dates.csv.")
-                mapped = str(csv_year_to_date[lead]).strip()  # e.g. '02-09-1953'
-                try:
-                    norm = parse_date(mapped).strftime("%Y-%m-%d")  # '1953-09-02'
-                except Exception:
-                    norm = mapped
-                if norm in id_to_file:
-                    return norm
-                if mapped in id_to_file:
-                    return mapped
-                raise KeyError(
-                    f"Year '{lead}' mapped to '{mapped}' (normalized '{norm}'), "
-                    f"but no input file ID matches it."
-                )
-
-            # Otherwise: unsupported
-            raise ValueError(f"Unsupported token in image_pairs.csv: {raw!r}")
+            
+            # Try exact match first
+            if lead in id_to_file:
+                return lead
+            
+            # Try prefix match (for cases where filename has additional suffixes)
+            candidates = [k for k in id_to_file.keys() if k.startswith(lead)]
+            if candidates:
+                return sorted(candidates)[0]
+            
+            raise KeyError(
+                f"No file ID matching token '{lead}' found in input folder. "
+                f"Make sure a file with that date prefix exists."
+            )
 
         # Build pairs using the resolver
         pairs = []
@@ -390,7 +774,6 @@ def collect_pairs(input_folder: str,
             left_raw = str(row[left_col]).strip()
             right_raw = str(row[right_col]).strip()
             if not left_raw or not right_raw or left_raw.lower() == "nan" or right_raw.lower() == "nan":
-                console = get_console()
                 console.warning(f"Skipping empty pair row: {row.to_dict()}")
                 continue
             try:
@@ -398,21 +781,43 @@ def collect_pairs(input_folder: str,
                 right_id = _resolve_csv_token_to_id(right_raw)
                 pairs.append((left_id, right_id))
             except Exception as e:
-                console = get_console()
-                console.warning(f"Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
+                console.error(f"Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
 
         year_pairs = pairs
 
-    return year_pairs, id_to_file, id_to_date, id_hastime_from_filename
+    # Return with or without id_to_identifier based on whether identifier was provided
+    if identifier is not None:
+        return year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier
+    else:
+        return year_pairs, id_to_file, id_to_date, id_hastime_from_filename
 
 
 def ensure_dir(path: str):
-    """Create directory if missing."""
+    """
+    Create a directory if it doesn't exist.
+
+    Parameters
+    ----------
+    path : str
+        Path to the directory to create.
+    """
     os.makedirs(path, exist_ok=True)
 
 
 def float_compact(x):
-    """Compact float to short string without trailing zeros."""
+    """
+    Convert a float to a compact string without trailing zeros.
+
+    Parameters
+    ----------
+    x : float or any
+        Value to convert. If not a float, returns str(x).
+
+    Returns
+    -------
+    str
+        Compact string representation without trailing zeros.
+    """
     if isinstance(x, float):
         s = f"{x:.3f}".rstrip("0").rstrip(".")
         return s or "0"
@@ -420,7 +825,25 @@ def float_compact(x):
 
 
 def _get(obj, name, default="NA"):
-    """Return attribute or dict key `name` from `obj`, supporting both objects and dicts."""
+    """
+    Get an attribute or dict key from an object.
+
+    Supports both dictionary and object access patterns.
+
+    Parameters
+    ----------
+    obj : dict or object
+        Object to get the value from.
+    name : str
+        Name of the attribute or key.
+    default : any, optional
+        Default value to return if the attribute/key is not found. Default is "NA".
+
+    Returns
+    -------
+    any
+        The value of the attribute/key, or the default if not found.
+    """
     if obj is None:
         return default
     if isinstance(obj, dict):
@@ -430,7 +853,22 @@ def _get(obj, name, default="NA"):
 
 
 def abbr_alignment(ap):
-    """Short code for alignment parameters; supports objects or dicts."""
+    """
+    Generate a short code for alignment parameters.
+
+    This code is used for creating cache directory names that uniquely
+    identify the alignment configuration.
+
+    Parameters
+    ----------
+    ap : AlignmentParameters or dict
+        Alignment parameters object or dictionary.
+
+    Returns
+    -------
+    str
+        Short code string starting with "A_".
+    """
     parts = []
     # control extents (posx,negx,posy,negy) if provided
     ext = _get(ap, "control_search_extent_px", None)
@@ -457,7 +895,22 @@ def _part(prefix: str, value: str | None) -> str | None:
 
 
 def abbr_tracking(tp):
-    """Short code for tracking parameters; supports objects or dicts."""
+    """
+    Generate a short code for tracking parameters.
+
+    This code is used for creating cache directory names that uniquely
+    identify the tracking configuration.
+
+    Parameters
+    ----------
+    tp : TrackingParameters or dict
+        Tracking parameters object or dictionary.
+
+    Returns
+    -------
+    str
+        Short code string starting with "T_".
+    """
     parts = []
     # movement extents (posx,negx,posy,negy)
     ext = _get(tp, "search_extent_px", None)
@@ -483,6 +936,22 @@ def abbr_tracking(tp):
 
 
 def abbr_filter(fp) -> str:
+    """
+    Generate a short code for filter parameters.
+
+    This code is used for creating cache directory names that uniquely
+    identify the filtering configuration.
+
+    Parameters
+    ----------
+    fp : FilterParameters
+        Filter parameters object.
+
+    Returns
+    -------
+    str
+        Short code string starting with "F_".
+    """
     fc = float_compact
     parts = [
         f"LoDq{fc(fp.level_of_detection_quantile)}",
@@ -500,7 +969,19 @@ def abbr_filter(fp) -> str:
 
 
 def abbr_output_units(mode: str) -> str:
-    """Short code for output units mode."""
+    """
+    Generate a short code for the output units mode.
+
+    Parameters
+    ----------
+    mode : str
+        Output units mode ("per_year" or "total").
+
+    Returns
+    -------
+    str
+        Short code string starting with "U_".
+    """
     if mode == "per_year":
         return "U_per_year"
     elif mode == "total":
@@ -510,7 +991,22 @@ def abbr_output_units(mode: str) -> str:
 
 
 def abbr_enhancement(ep) -> str:
-    """Short code for image enhancement parameters; supports objects or dicts."""
+    """
+    Generate a short code for image enhancement parameters.
+
+    This code is used for creating cache directory names that uniquely
+    identify the enhancement configuration.
+
+    Parameters
+    ----------
+    ep : dict or object
+        Enhancement parameters object or dictionary.
+
+    Returns
+    -------
+    str
+        Short code string starting with "E_".
+    """
     fc = float_compact
     enhancement_type = _get(ep, "type", "none")
     

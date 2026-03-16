@@ -1,5 +1,3 @@
-import logging
-
 import geopandas as gpd
 import numpy as np
 import scipy
@@ -19,26 +17,36 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
     (default: 0.95). It moves the second image to match the first image, i.e. after applying this transform one can
     assume the second image to have the same transform as the first one.
+    
     Parameters
     ----------
-    image1_matrix :
+    image1_matrix : np.ndarray
         A raster image matrix to be aligned with the second image.
-    image2_matrix :
+    image2_matrix : np.ndarray
         A raster image matrix to be aligned with the first image. The alignment takes place via the creation of an image
         transform for the second matrix. The transform of the first image has to be supplied. Thus, the first image is
         assumed to be correctly georeferenced.
-    image_transform :
+    image_transform : Affine
         An object of the class Affine as provided by the rasterio package. The two images are assumed to be aligned
         (for example as a result of align_images) and therefore have the same transform.
     reference_area : gpd.GeoDataFrame
         A single-element GeoDataFrame, containing a polygon for specifying the reference area used for the alignment.
         This is the area, where no movement is suspected.
-    alignment_parameters: AlignmentParameters
+    alignment_parameters : AlignmentParameters
         The alignment parameters used for alignment, e.g. control_search_size_px
+    
     Returns
-    ----------
-    [image1_matrix, new_matrix2]: The two matrices representing the raster image as numpy arrays. As the two matrices
-    are aligned, they possess the same transformation. You can therefore assume that
+    -------
+    list
+        [image1_matrix, new_matrix2, tracked_control_pixels_valid]: The two matrices representing the raster image
+        as numpy arrays. As the two matrices are aligned, they possess the same transformation. The third element
+        is a GeoDataFrame containing the tracked control points used for alignment.
+    
+    Raises
+    ------
+    ValueError
+        If no polygon is provided in the reference area, if no points pass the cross-correlation threshold,
+        or if the alignment produces invalid results (all NaN, all zeros, or very low variance).
     """
 
     if len(reference_area) == 0:
@@ -143,8 +151,19 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         for line in lines:
             console.print(line, color='dim')
     console.processing("Resampling second image.")
-    moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
-        image1_matrix.shape)
+    try:
+        moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
+            image1_matrix.shape)
+    except ValueError as e:
+        # Provide user-friendly error message for scipy interpolation errors
+        if "dimension" in str(e) or "same number of elements" in str(e):
+            raise ValueError(
+                "Alignment failed: The calculated transformation is invalid. "
+                "This typically means the images do not have enough matching features for alignment. "
+                "Please check your input images or adjust the alignment parameters."
+            ) from e
+        else:
+            raise
     console.success("Second image resampled.")
 
     # Validate the aligned image - check for empty or invalid results

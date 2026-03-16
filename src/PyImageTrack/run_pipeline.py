@@ -1,28 +1,35 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Orchestrator: align, track, filter, plot, save with caching.
+PyImageTrack Pipeline Orchestrator
+
+This module provides the main pipeline orchestrator for PyImageTrack, which:
+- Loads configuration from TOML files
+- Aligns image pairs using cross-correlation
+- Tracks movement between images
+- Filters outliers and calculates level of detection
+- Generates plots and saves results
+- Supports caching for improved performance
+
+The main entry point is `run_from_config()` which processes all image pairs
+specified in the configuration file.
 """
 
 import argparse
 import csv
 import os
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 
-
-try:
-    import tomllib
-except ModuleNotFoundError as exc:
-    raise ModuleNotFoundError(
-        "tomllib is required to read TOML configs. Use Python 3.11+ or install tomli."
-    ) from exc
+import tomllib
 
 import geopandas as gpd
 import numpy as np
+import pandas as pd
 import rasterio
 from pyproj import CRS as PyprojCRS
 
@@ -47,6 +54,22 @@ from .ConsoleOutput import ConsoleOutput, get_console, reset_console
 
 
 def _resolve_config_path(path: str) -> Path:
+    """
+    Resolve a configuration file path to an absolute path.
+
+    For relative paths, resolves from the repository root (where pyproject.toml
+    is located) to keep CLI behavior stable regardless of current working directory.
+
+    Parameters
+    ----------
+    path : str
+        Path to the configuration file (can be relative or absolute).
+
+    Returns
+    -------
+    Path
+        Absolute path to the configuration file.
+    """
     path_obj = Path(path)
     if not path_obj.is_absolute():
         # Resolve relative config paths from the repo root to keep CLI stable.
@@ -58,6 +81,24 @@ def _resolve_config_path(path: str) -> Path:
 
 
 def _load_config(path: str | Path) -> dict:
+    """
+    Load a TOML configuration file.
+
+    Parameters
+    ----------
+    path : str or Path
+        Path to the TOML configuration file.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the parsed configuration.
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file does not exist.
+    """
     path_obj = Path(path).expanduser()
     if not path_obj.is_absolute():
         path_obj = path_obj.resolve()
@@ -68,18 +109,73 @@ def _load_config(path: str | Path) -> dict:
 
 
 def _get(cfg: dict, section: str, key: str, default=None):
+    """
+    Get a configuration value with optional default.
+
+    Parameters
+    ----------
+    cfg : dict
+        Configuration dictionary.
+    section : str
+        Configuration section name.
+    key : str
+        Configuration key within the section.
+    default : any, optional
+        Default value to return if the key is not found. Default is None.
+
+    Returns
+    -------
+    any
+        The configuration value or the default if not found.
+    """
     if section not in cfg or key not in cfg[section]:
         return default
     return cfg[section][key]
 
 
 def _require(cfg: dict, section: str, key: str):
+    """
+    Get a required configuration value.
+
+    Parameters
+    ----------
+    cfg : dict
+        Configuration dictionary.
+    section : str
+        Configuration section name.
+    key : str
+        Configuration key within the section.
+
+    Returns
+    -------
+    any
+        The configuration value.
+
+    Raises
+    ------
+    KeyError
+        If the configuration value is not found.
+    """
     if section not in cfg or key not in cfg[section]:
         raise KeyError(f"Missing required config value: [{section}] {key}")
     return cfg[section][key]
 
 
 def _as_optional_value(value):
+    """
+    Convert a value to None if it represents an empty or null value.
+
+    Parameters
+    ----------
+    value : any
+        Value to check.
+
+    Returns
+    -------
+    any or None
+        None if the value is None, empty string, "none", or "null" (case-insensitive).
+        Otherwise returns the original value.
+    """
     if value is None:
         return None
     if isinstance(value, str) and value.strip().lower() in ("", "none", "null"):
@@ -88,6 +184,21 @@ def _as_optional_value(value):
 
 
 def _resolve_path(value, base_dir: Path):
+    """
+    Resolve a path relative to a base directory.
+
+    Parameters
+    ----------
+    value : str or None
+        Path to resolve. If None, returns None.
+    base_dir : Path
+        Base directory for resolving relative paths.
+
+    Returns
+    -------
+    str or None
+        Absolute path as string, or None if value is None.
+    """
     if value is None:
         return None
     path_obj = Path(value)
@@ -96,77 +207,109 @@ def _resolve_path(value, base_dir: Path):
     return str(path_obj)
 
 
-def _resolve_input_file(file_path: Optional[str | Path],
-                        input_folder: str | Path,
-                        config_dir: Path,
-                        file_type_description: str) -> Optional[str]:
+def _resolve_input_path(value: str | None, input_folder: str, config_dir: Path) -> str | None:
     """
-    Resolve input file paths using a three-priority system:
+    Resolve an input file path, searching in input_folder first, then config_dir.
     
-    Priority 1: Absolute path
-        If file_path is absolute, use it as-is (no verification).
+    This function implements the following resolution strategy:
+    1. If the path is absolute, use it as-is
+    2. If the path is relative:
+       a. First, try to find it in input_folder
+       b. If not found, resolve it relative to config_dir (fallback)
     
-    Priority 2: Relative to input_folder
-        If file_path relative and exists in input_folder, use it.
-    
-    Priority 3: Relative to config directory (fallback)
-        If file_path relative and exists in config_dir, use it.
-    
-    Args:
-        file_path: Path from config (can be None, "none", "null", absolute, or relative)
-        input_folder: The input folder path
-        config_dir: Directory containing the config file
-        file_type_description: Description for error messages (e.g., "CSV file", "Shapefile")
-    
-    Returns:
-        Resolved absolute path as string, or None if file_path is None/"none"/"null"/""
-    
-    Raises:
-        FileNotFoundError: If file is required but not found in any location
+    Parameters
+    ----------
+    value : str or None
+        Path to resolve. If None, returns None.
+    input_folder : str
+        The input folder where files are searched first.
+    config_dir : Path
+        The directory containing the config file (fallback for relative paths).
+
+    Returns
+    -------
+    str or None
+        Absolute path as string, or None if value is None.
     """
-    # Handle None and special "none" values
-    if file_path is None:
-        return None
-    if isinstance(file_path, str) and file_path.strip().lower() in ("", "none", "null"):
+    if value is None:
         return None
     
-    path_obj = Path(file_path)
+    path_obj = Path(value)
     
-    # Priority 1: Absolute path
+    # If absolute path, use it directly
     if path_obj.is_absolute():
-        absolute_path = path_obj.resolve()
-        return str(absolute_path)
+        return str(path_obj)
     
-    # Priority 2: Relative to input_folder
-    input_path = (Path(input_folder) / path_obj).resolve()
+    # Try input_folder first
+    input_path = Path(input_folder) / path_obj
     if input_path.exists():
-        return str(input_path)
+        return str(input_path.resolve())
     
-    # Priority 3: Relative to config directory (fallback)
-    config_path = (config_dir / path_obj).resolve()
-    if config_path.exists():
-        return str(config_path)
-    
-    # File not found - provide helpful error
-    raise FileNotFoundError(
-        f"{file_type_description} '{file_path}' not found. "
-        f"Searched in:\n"
-        f"  1. input_folder: {input_path}\n"
-        f"  2. config directory: {config_path}"
-    )
+    # Fallback: resolve relative to config_dir (original behavior)
+    return str((config_dir / path_obj).resolve())
 
 
 def _crs_label(crs) -> str:
+    """
+    Get a string label for a coordinate reference system.
+
+    Parameters
+    ----------
+    crs : any
+        Coordinate reference system object or None.
+
+    Returns
+    -------
+    str
+        String representation of the CRS, or "none" if CRS is None.
+    """
     return "none" if crs is None else str(crs)
 
 
 def _normalize_crs(crs):
+    """
+    Normalize a coordinate reference system to a pyproj CRS object.
+
+    Parameters
+    ----------
+    crs : any
+        Coordinate reference system in any format accepted by pyproj.
+
+    Returns
+    -------
+    PyprojCRS or None
+        Normalized CRS object, or None if input is None.
+    """
     if crs is None:
         return None
     return PyprojCRS.from_user_input(crs)
 
 
 def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
+    """
+    Resolve and validate the common coordinate reference system for images and polygons.
+
+    Ensures that both images have the same CRS and that it matches the polygon CRS.
+
+    Parameters
+    ----------
+    polygons_crs : any
+        Coordinate reference system of the polygons.
+    image_path_1 : str
+        Path to the first image.
+    image_path_2 : str
+        Path to the second image.
+
+    Returns
+    -------
+    any
+        The common CRS, or None if both images and polygons have no CRS.
+
+    Raises
+    ------
+    ValueError
+        If CRS mismatch is detected between images or between images and polygons.
+    """
     with rasterio.open(image_path_1, "r") as file1, rasterio.open(image_path_2, "r") as file2:
         image_crs_1 = file1.crs
         image_crs_2 = file2.crs
@@ -199,29 +342,87 @@ def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
     return image_crs
 
 
+def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
+    """
+    Convert delta-per-year extents into effective absolute extents.
 
+    Converts user-specified delta extents (posx,negx,posy,negy) into effective
+    absolute extents by adding half the template size per side and scaling
+    deltas by the time between observations.
 
-def _recompute_lod_from_points(image_pair, filter_params) -> bool:
-    points = getattr(image_pair, "level_of_detection_points", None)
-    if points is None or len(points) == 0:
-        return False
-    quantile = filter_params.level_of_detection_quantile
-    
-    # Determine the displacement column name based on output_units_mode
-    displacement_column_name = image_pair.displacement_column_name
-    
-    if quantile is None or displacement_column_name not in points.columns:
-        return False
-    image_pair.level_of_detection = np.nanquantile(points[displacement_column_name], quantile)
-    unit_name = points.crs.axis_info[0].unit_name if points.crs is not None else "pixel"
-    unit_suffix = "/year" if "per_year" in displacement_column_name else ""
-    console.info(f"Level of detection (quantile {quantile}): {np.round(image_pair.level_of_detection, decimals=5)} {unit_name}{unit_suffix}")
-    return True
+    Parameters
+    ----------
+    deltas : tuple
+        A 4-element tuple (dx+, dx-, dy+, dy-) representing extra pixels beyond
+        half the template per year. Format: (positive_x, negative_x, positive_y, negative_y).
+    cell_size : int or float
+        The movement_cell_size or control_cell_size (template size).
+    years_between : float, optional
+        Time span in years between the two images. Default is 1.0.
+    cap_per_side : int, optional
+        Optional maximum value to clamp each side (to keep windows bounded).
+        If None, no clamping is applied. Default is None.
 
+    Returns
+    -------
+    tuple
+        A 4-element tuple (posx, negx, posy, negy) of effective extents as integers,
+        each >= half the cell size.
+    """
+    half = int(cell_size) // 2
+    def one(v):
+        eff = half + int(round(float(v) * float(years_between)))
+        if cap_per_side is not None:
+            eff = min(int(cap_per_side), eff)
+        return max(half, eff)
+    px, nx, py, ny = deltas
+    return (one(px), one(nx), one(py), one(ny))
 
 
 def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False,
-                    use_colors: bool = True, log_file: str = None):
+                    use_colors: bool = True, log_file: str = None,
+                    log_level: str = 'INFO', log_max_bytes: int = 10 * 1024 * 1024,
+                    log_backup_count: int = 5, identifier: Optional[str] = None):
+    """
+    Run the PyImageTrack pipeline from a configuration file.
+
+    This is the main entry point for the PyImageTrack pipeline. It processes
+    all image pairs specified in the configuration file, performing alignment,
+    tracking, filtering, and output generation as configured.
+
+    Parameters
+    ----------
+    config_path : str
+        Path to the TOML configuration file.
+    verbose : bool, optional
+        Enable verbose output with more detailed information. Default is False.
+    quiet : bool, optional
+        Enable quiet mode with minimal output. Default is False.
+    use_colors : bool, optional
+        Use ANSI colors in terminal output. Default is True.
+    log_file : str, optional
+        Path to log file. If None or "auto", uses "pyimagetrack.log" in the
+        output folder. Default is None.
+    log_level : str, optional
+        Logging level for file output. Must be one of: "DEBUG", "INFO",
+        "WARNING", "ERROR", "CRITICAL". Default is "INFO".
+    log_max_bytes : int, optional
+        Maximum size of log file before rotation in bytes. Default is 10MB.
+    log_backup_count : int, optional
+        Number of backup log files to keep. Default is 5.
+    identifier : Optional[str], optional
+        If provided, only process files matching this identifier. Used in batch mode.
+        Default is None (single mode, processes all files).
+
+    Raises
+    ------
+    FileNotFoundError
+        If the configuration file or input folder does not exist.
+    PermissionError
+        If input/output folders are not accessible.
+    ValueError
+        If configuration values are invalid.
+    """
     # ==============================
     # CONFIG (TOML)
     # ==============================
@@ -234,36 +435,66 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     input_folder = _resolve_path(_require(cfg, "paths", "input_folder"), config_dir)
     output_folder = _resolve_path(_require(cfg, "paths", "output_folder"), config_dir)
 
+    # Validate input and output folders
+    if not os.path.isdir(input_folder):
+        raise FileNotFoundError(f"Input folder does not exist or is not a directory: {input_folder}")
+    if not os.access(input_folder, os.R_OK):
+        raise PermissionError(f"Input folder is not readable: {input_folder}")
+    
+    # Create output folder if it doesn't exist
+    os.makedirs(output_folder, exist_ok=True)
+    if not os.access(output_folder, os.W_OK):
+        raise PermissionError(f"Output folder is not writable: {output_folder}")
+    
+    # If identifier is provided, create identifier subfolder
+    if identifier is not None:
+        output_folder = os.path.join(output_folder, identifier)
+        os.makedirs(output_folder, exist_ok=True)
+
     # Setup log file path
     if log_file is None or log_file == "auto":
-        log_file_path = Path(output_folder) / f"pyimagetrack_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+        # Use a single rotating log file instead of timestamped files
+        log_file_path = Path(output_folder) / "pyimagetrack.log"
     else:
         log_file_path = Path(log_file)
 
     # Initialize global console instance with correct settings for use in other modules
     from .ConsoleOutput import get_console
-    get_console(verbose=verbose, quiet=quiet, use_colors=use_colors, log_file=log_file_path)
+    get_console(verbose=verbose, quiet=quiet, use_colors=use_colors, log_file=log_file_path,
+                log_level=log_level, log_max_bytes=log_max_bytes, log_backup_count=log_backup_count)
     
     console = ConsoleOutput(
         verbose=verbose,
         quiet=quiet,
         use_colors=use_colors,
-        log_file=log_file_path
+        log_file=log_file_path,
+        log_level=log_level,
+        log_max_bytes=log_max_bytes,
+        log_backup_count=log_backup_count
     )
 
     # Show banner
     console.show_banner()
     console.config_loaded("Loaded configuration from", config_path)
 
-    # Resolve CSV paths with priority: absolute -> input_folder -> config_dir
-    date_csv_raw = _get(cfg, "paths", "date_csv_path")
-    date_csv_path = _resolve_input_file(date_csv_raw, input_folder, config_dir, "CSV file (image_dates)")
-    
-    pairs_csv_raw = _get(cfg, "paths", "pairs_csv_path")
-    pairs_csv_path = _resolve_input_file(pairs_csv_raw, input_folder, config_dir, "CSV file (image_pairs)")
+    date_csv_path = _resolve_input_path(_as_optional_value(_get(cfg, "paths", "date_csv_path")), input_folder, config_dir)
+    pairs_csv_path = _resolve_input_path(_as_optional_value(_get(cfg, "paths", "pairs_csv_path")), input_folder, config_dir)
 
     poly_outside_filename = _get(cfg, "polygons", "stable_area_filename", "none")
     poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
+    moving_id_column = _get(cfg, "polygons", "moving_id_column", "moving_id")
+    
+    # Replace wildcard in polygon filenames with identifier if provided
+    if identifier is not None:
+        if '*' in poly_outside_filename:
+            poly_outside_filename = poly_outside_filename.replace('*', identifier)
+        if '*' in poly_inside_filename:
+            poly_inside_filename = poly_inside_filename.replace('*', identifier)
+    elif '*' in poly_outside_filename or '*' in poly_inside_filename:
+        raise ValueError(
+            "Wildcard pattern (*) in polygon filenames is only allowed when identifier is specified. "
+            "Please provide an identifier or remove the wildcard from the polygon filename."
+        )
 
     pairing_mode = _require(cfg, "pairing", "mode")
 
@@ -301,8 +532,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
     do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
     do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
-    do_plotting = bool(_get(cfg, "flags", "do_plotting", True))
     do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
+    display_plots = bool(_get(cfg, "output", "display_plots", False))
 
     use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
     use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
@@ -331,6 +562,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
         "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
         "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
+        "image_bands": image_bands
     })
 
     tracking_params = TrackingParameters({
@@ -342,6 +574,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         # usually this refers to the offset in px between the images,
         # but if the adaptive mode is used, this means the expected offset in px per year
         "search_extent_px": tuple(_require(cfg, "tracking", "search_extent_px")),
+        "initial_shift_values": _as_optional_value(_get(cfg, "tracking", "initial_shift_values")),
+        "initial_estimate_mode": _get(cfg, "tracking", "initial_estimate_mode", "count"),
+        "nb_initial_estimate_peaks": _get(cfg, "tracking", "nb_initial_estimate_peaks", 1),
+        "correlation_threshold_initial_estimates": _get(cfg, "tracking", "correlation_threshold_initial_estimates",None),
+        "min_distance_initial_estimates": _get(cfg, "tracking", "min_distance_initial_estimates", 1),
     })
 
     filter_params = FilterParameters({
@@ -378,40 +615,85 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # SAVE OPTIONS (final outputs)
     # ==============================
     save_files = list(_require(cfg, "save", "files"))
+    if not save_files:
+        raise ValueError("save_files list cannot be empty. At least one output file type must be specified.")
 
     # Allow JPG/JPEG only if explicitly opted into fake georeferencing
     extensions = (".tif", ".tiff") if not use_no_georeferencing else (".tif", ".tiff", ".jpg", ".jpeg")
 
-    year_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
-        input_folder=input_folder,
-        date_csv_path=date_csv_path,
-        pairs_csv_path=pairs_csv_path,
-        pairing_mode=pairing_mode,
-        extensions=extensions
-    )
+    # Collect pairs, optionally filtering by identifier
+    if identifier is not None:
+        year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier = collect_pairs(
+            input_folder=input_folder,
+            date_csv_path=date_csv_path,
+            pairs_csv_path=pairs_csv_path,
+            pairing_mode=pairing_mode,
+            extensions=extensions,
+            identifier=identifier
+        )
+    else:
+        year_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
+            input_folder=input_folder,
+            date_csv_path=date_csv_path,
+            pairs_csv_path=pairs_csv_path,
+            pairing_mode=pairing_mode,
+            extensions=extensions
+        )
 
     console.info(f"Image pairs to process ({pairing_mode}): {len(year_pairs)}")
 
-    # Load polygons - resolve paths with priority: absolute -> input_folder -> config_dir
-    poly_inside_path = _resolve_input_file(poly_inside_filename, input_folder, config_dir, "Shapefile (moving_area)")
-    polygon_inside = gpd.read_file(poly_inside_path)
-    if use_no_georeferencing:
-        polygon_inside = polygon_inside.set_crs(None, allow_override=True)
-    
-    # stable_area is optional ("none" allowed)
+    # Load polygons
     poly_outside = None
     poly_outside_filename_resolved = _as_optional_value(poly_outside_filename)
     if poly_outside_filename_resolved is not None:
+        # Resolve polygon path: check input_folder first, then support absolute paths
+        poly_outside_path = _resolve_input_path(poly_outside_filename_resolved, input_folder, config_dir)
         try:
-            poly_outside_path = _resolve_input_file(poly_outside_filename_resolved, input_folder, config_dir, "Shapefile (stable_area)")
             poly_outside = gpd.read_file(poly_outside_path)
             if use_no_georeferencing:
                 poly_outside = poly_outside.set_crs(None, allow_override=True)
+            # Allow multiple features: combine to one reference polygon
+            if len(poly_outside) > 0:
+                poly_outside = gpd.GeoDataFrame(
+                    geometry=[poly_outside.unary_union],
+                    crs=poly_outside.crs,
+                )
         except Exception as e:
             console.warning(f"Could not load stable area file '{poly_outside_filename_resolved}': {e}")
             console.warning("Using fallback mode (image_bounds minus moving_area as stable area).")
             poly_outside = None
     
+    # Resolve polygon path: check input_folder first, then support absolute paths
+    polygon_inside_path = _resolve_input_path(poly_inside_filename, input_folder, config_dir)
+    if not os.path.exists(polygon_inside_path):
+        raise FileNotFoundError(f"Moving area polygon file does not exist: {polygon_inside_path}")
+    polygon_inside = gpd.read_file(polygon_inside_path)
+    if len(polygon_inside) == 0:
+        raise ValueError(f"Moving area polygon file is empty: {polygon_inside_path}")
+    if use_no_georeferencing:
+        polygon_inside = polygon_inside.set_crs(None, allow_override=True)
+
+    # Ensure moving ID column exists and is filled (single- or multi-feature shapefiles)
+    _missing_col = moving_id_column not in polygon_inside.columns
+    if _missing_col:
+        polygon_inside[moving_id_column] = pd.Series([None] * len(polygon_inside))
+    missing_id_mask = polygon_inside[moving_id_column].isna() | (polygon_inside[moving_id_column].astype(str).str.strip() == "")
+    if missing_id_mask.any():
+        console.warning(
+            f"Moving area polygons missing '{moving_id_column}' values. Filling with row indices as strings."
+        )
+        polygon_inside.loc[missing_id_mask, moving_id_column] = (
+            polygon_inside.loc[missing_id_mask].index.astype(str)
+        )
+
+    # Group moving polygons by ID and dissolve geometry per ID
+    moving_groups = []
+    for id_value, group_df in polygon_inside.groupby(moving_id_column):
+        union_geom = group_df.unary_union
+        moving_groups.append(
+            (str(id_value), gpd.GeoDataFrame(geometry=[union_geom], crs=group_df.crs))
+        )
+
     # CRS validation
     if poly_outside is not None:
         poly_outside_crs = poly_outside.crs
@@ -465,8 +747,15 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             label_1 = _fmt_label(year1, dt1)
             label_2 = _fmt_label(year2, dt2)
             
+            # Extract date tokens (years) from IDs for display and paths
+            # IDs are now in format "date_token_identifier" or "date_token"
+            date_token_1 = year1.split('_')[0] if '_' in year1 else year1
+            date_token_2 = year2.split('_')[0] if '_' in year2 else year2
+            
             # Image pair header
-            pair_id_short = f"{year1} -> {year2}"
+            pair_id_short = f"{date_token_1} -> {date_token_2}"
+            if identifier is not None:
+                pair_id_short += f"; id: {identifier}"
             console.section_header("PREPROCESSING", "Loading and preparing images", f"({pair_id_short})", level=2)
             console.info_verbose(f"File 1: {filename_1}")
             console.info_verbose(f"File 2: {filename_2}")
@@ -476,20 +765,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 # compute years_between (hour-precise)
                 delta_hours = (dt2 - dt1).total_seconds() / 3600.0
                 years_between = delta_hours / (24.0 * 365.25)
-                # Format time with largest unit and next smaller unit (total)
-                if delta_hours < 24:
-                    console.info_verbose(f"Time between observations: {delta_hours:.1f} hours")
-                elif delta_hours < 24 * 30:
-                    days = int(delta_hours // 24)
-                    console.info_verbose(f"Time between observations: {days} day{'s' if days != 1 else ''}")
-                elif delta_hours < 24 * 365.25:
-                    months = int(delta_hours // (24 * 30.44))  # Average days per month
-                    total_days = int(delta_hours // 24)
-                    console.info_verbose(f"Time between observations: {months} month{'s' if months != 1 else ''} ({total_days} days)")
-                else:
-                    years = int(delta_hours // (24 * 365.25))
-                    total_days = int(delta_hours // 24)
-                    console.info_verbose(f"Time between observations: {years} year{'s' if years != 1 else ''} ({total_days} days)")
+                console.info_verbose(f"Time between observations: {ConsoleOutput.format_duration(delta_hours)}")
 
 
             # alignment: convert user-entered deltas -> effective extents
@@ -559,7 +835,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 filter_code = "F_none"
 
             # Directories
-            base_pair_dir = os.path.join(output_folder, f"{year1}_{year2}")
+            # Use only date tokens for directory names (not the full ID with identifier)
+            base_pair_dir = os.path.join(output_folder, f"{date_token_1}_{date_token_2}")
             enhancement_dir = os.path.join(base_pair_dir, enhancement_code)
             align_dir  = os.path.join(enhancement_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
@@ -595,6 +872,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["output_units_mode"]                = output_units_mode
 
             param_dict["crs"]                               = image_crs
+            param_dict["moving_id_column"]                  = moving_id_column
  
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
@@ -611,14 +889,14 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
             # alignment with cache
             if do_alignment:
+                console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
                 used_cache_alignment = False
                 if use_alignment_cache:
                     used_cache_alignment = load_alignment_cache(image_pair, align_dir, year1, year2)
                     if used_cache_alignment:
-                        console.cache_info("loaded", align_dir, f"{year1}->{year2}", cache_type="alignment")
+                        console.cache_info("loaded", align_dir, f"{date_token_1}->{date_token_2}", cache_type="alignment")
 
                 if not used_cache_alignment:
-                    console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
                     console.parameter_summary({
                         "Number of control points": alignment_params.number_of_control_points,
                         "Control cell size": f"{alignment_params.control_cell_size} px",
@@ -630,9 +908,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     # When poly_outside is None, align_images will use image_bounds minus polygon_inside
                     try:
                         with console.timer("Alignment", verbose=True):
-                            image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
+                                image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
                     except ValueError as e:
-                        console.error(f"Alignment failed for pair {year1} -> {year2}: {e}")
+                        console.error(f"Alignment failed for pair {date_token_1} -> {date_token_2}: {e}")
                         console.error("Skipping this pair. Please check your alignment parameters or input data.")
                         skipped.append((year1, year2, f"Alignment failed: {str(e)}"))
                         continue
@@ -640,17 +918,17 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     if not image_pair.valid_alignment_possible:
                         skipped.append((year1, year2, "Alignment not possible"))
                         continue
-                    
-                    # Only save alignment results if they were NOT loaded from cache
-                    if not used_cache_alignment:
-                        save_alignment_cache(
-                            image_pair, align_dir, year1, year2,
-                            align_params=alignment_params.__dict__,
-                            filenames={year1: filename_1, year2: filename_2},
-                            dates={year1: date_1, year2: date_2},
-                            save_truecolor_aligned=write_truecolor_aligned,
-                        )
-                        console.cache_info("saved", align_dir, f"{year1}->{year2}", cache_type="alignment")
+                
+                # Save alignment results only if not loaded from cache
+                if not used_cache_alignment:
+                    save_alignment_cache(
+                        image_pair, align_dir, year1, year2,
+                        align_params=alignment_params.__dict__,
+                        filenames={year1: filename_1, year2: filename_2},
+                        dates={year1: date_1, year2: date_2},
+                        save_truecolor_aligned=write_truecolor_aligned,
+                    )
+                    console.cache_info("saved", align_dir, f"{date_token_1}->{date_token_2}", cache_type="alignment")
 
             else:
                 console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
@@ -665,6 +943,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # ==============================
             used_cache_tracking = False
             if do_tracking:
+                console.section_header("TRACKING", "Detecting movement between images", f"({pair_id_short})", level=2)
                 if use_tracking_cache:
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
                     if used_cache_tracking:
@@ -673,12 +952,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             image_pair.tracking_results = None
                             console.warning("CRS not compatible with no-georef; recomputing.")
                         else:
-                            console.cache_info("loaded", track_dir, f"{year1}->{year2}", cache_type="tracking")
+                            console.cache_info("loaded", track_dir, f"{date_token_1}->{date_token_2}", cache_type="tracking")
 
 
                 if not used_cache_tracking:
-                    console.section_header("TRACKING", "Detecting movement between images", f"({pair_id_short})", level=2)
-                    
                     adaptive_info = f" (scaled by {years_between:.3f} years)" if use_adaptive_tracking_window else " (disabled)"
                     console.parameter_summary({
                         "Image bands": tracking_params.image_bands,
@@ -692,10 +969,15 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     # Track points regardless of alignment status
                     # If images are not aligned, track_points() will issue a warning
                     with console.timer("Tracking", verbose=True):
-                        tracked_points = image_pair.track_points(tracking_area=polygon_inside)
+                        tracked_points_list = []
+                        for moving_id_value, moving_gdf in moving_groups:
+                            tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
+                            tracked_sub[moving_id_column] = moving_id_value
+                            tracked_points_list.append(tracked_sub)
+                        tracked_points = pd.concat(tracked_points_list, ignore_index=True)
                     image_pair.tracking_results = tracked_points
                 
-                # Only save tracking results if they were NOT loaded from cache
+                # Save tracking results only if not loaded from cache
                 if not used_cache_tracking:
                     save_tracking_cache(
                         image_pair,
@@ -706,7 +988,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         filenames={year1: filename_1, year2: filename_2},
                         dates={year1: date_1, year2: date_2},
                     )
-                    console.cache_info("saved", track_dir, f"{year1}->{year2}", cache_type="tracking")
+                    console.cache_info("saved", track_dir, f"{date_token_1}->{date_token_2}", cache_type="tracking")
             else:
                 console.info("Tracking is disabled (alignment-only run).")
 
@@ -716,7 +998,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # ==============================
             if do_tracking:
                 if do_filtering:
-                    # Load LoD cache FIRST, before filtering
+                    console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
+                    
+                    # First: Load or calculate Level of Detection
                     used_cache_lod = False
                     if use_lod_cache:
                         used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
@@ -726,7 +1010,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                                 image_pair.level_of_detection_points = None
                                 console.warning("CRS not compatible with no-georef; recomputing.")
                             else:
-                                console.cache_info("loaded", track_dir, f"{year1}->{year2}", cache_type="LoD")
+                                console.cache_info("loaded", track_dir, f"{date_token_1}->{date_token_2}", cache_type="LoD")
 
                     if not used_cache_lod:
                         if poly_outside is not None:
@@ -748,7 +1032,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             )
                         image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                     
-                    # Only save LoD results if they were NOT loaded from cache
+                    # Save LoD results only if not loaded from cache
                     if not used_cache_lod:
                         save_lod_cache(
                             image_pair,
@@ -758,31 +1042,36 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             filenames={year1: filename_1, year2: filename_2},
                             dates={year1: date_1, year2: date_2},
                         )
-                        console.cache_info("saved", track_dir, f"{year1}->{year2}", cache_type="LoD")
+                        console.cache_info("saved", track_dir, f"{date_token_1}->{date_token_2}", cache_type="LoD")
 
-                    # NOW do the outlier filtering (after LoD is loaded/calculated)
-                    image_pair.filter_outliers(filter_parameters=filter_params)
+                    # Second: Apply LoD filtering (remove points below detection threshold)
                     image_pair.filter_lod_points()
+                    
+                    # Third: Apply outlier filtering (statistical filters on remaining points)
+                    image_pair.filter_outliers(filter_parameters=filter_params)
                 else:
                     console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
                     console.info("Filtering is disabled (skipping this step).")
 
-                if do_plotting:
-                    with console.timer("Plotting", verbose=True):
-                        image_pair.plot_tracking_results_with_valid_mask()
-                else:
-                    console.info("Plotting is disabled (skipping this step).")
+                if display_plots:
+                    image_pair.plot_tracking_results_with_valid_mask()
 
                 # write a small CSV with valid fraction
                 try:
-                    valid_fraction = float(image_pair.tracking_results["valid"].mean())
+                    df_vf = image_pair.tracking_results
+                    if moving_id_column in df_vf.columns:
+                        grouped = df_vf.groupby(moving_id_column)["valid"].mean()
+                        valid_rows = [(f"{date_token_1}_{date_token_2}", str(k), float(v)) for k, v in grouped.items()]
+                    else:
+                        valid_rows = [(f"{date_token_1}_{date_token_2}", "all", float(df_vf["valid"].mean()))]
                 except Exception:
-                    valid_fraction = None
+                    valid_rows = [(f"{date_token_1}_{date_token_2}", "all", None)]
                 valid_csv = os.path.join(filter_dir, "valid_results_fraction.csv")
                 with open(valid_csv, "w", newline="", encoding="utf-8") as f:
                     w = csv.writer(f)
-                    w.writerow(["pair", "valid_fraction"])
-                    w.writerow([f"{year1}_{year2}", valid_fraction if valid_fraction is not None else "NA"])
+                    w.writerow(["pair", moving_id_column, "valid_fraction"])
+                    for pair_label, id_val, vf in valid_rows:
+                        w.writerow([pair_label, id_val, vf if vf is not None else "NA"])
 
                 # final results go to the filter level
                 console.section_header("OUTPUT", "Saving results", f"({pair_id_short})", level=2)
@@ -797,7 +1086,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             else:
                 console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
                 console.info("Filtering is disabled (skipping this step).")
-                console.info("Plotting is disabled (skipping this step).")
                 console.section_header("OUTPUT", "Saving results", f"({pair_id_short})", level=2)
                 console.info("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
                 # Alignment-only outputs exist in align_dir:
@@ -806,7 +1094,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 # - alignment_meta_<year1>_<year2>.json
                         # Mark this pair as successfully processed
 
-            successes.append((year1, year2))
+            # Extract identifier from year IDs for summary display
+            identifier_from_id = None
+            if '_' in year1:
+                identifier_from_id = year1.split('_')[1]
+            successes.append((date_token_1, date_token_2, identifier_from_id))
 
     # Print summary with total elapsed time
     total_elapsed = time.time() - start_time
@@ -818,16 +1110,41 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 # MAIN
 # ==============================
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="PyImageTrack pipeline")
+    """
+    Command-line interface entry point for PyImageTrack.
+
+    Parses command-line arguments and runs the pipeline.
+
+    Parameters
+    ----------
+    argv : list, optional
+        Command-line arguments. If None, uses sys.argv. Default is None.
+    """
+    parser = argparse.ArgumentParser(
+        description="PyImageTrack: Image alignment and movement tracking pipeline"
+    )
     parser.add_argument("--config", required=True, help="Path to TOML config file")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose output")
     parser.add_argument("--quiet", action="store_true", help="Enable quiet mode (minimal output)")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
     parser.add_argument("--log-file", type=str, default=None,
-                       help="Path to log file (default: auto-generated in output folder)")
+                       help="Path to log file (default: pyimagetrack.log in output folder)")
+    parser.add_argument("--log-level", type=str, default="INFO",
+                       choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+                       help="Logging level for file output (default: INFO)")
+    parser.add_argument("--log-max-bytes", type=int, default=10 * 1024 * 1024,
+                       help="Maximum log file size before rotation (default: 10MB)")
+    parser.add_argument("--log-backup-count", type=int, default=5,
+                       help="Number of backup log files to keep (default: 5)")
     args = parser.parse_args()
-    run_from_config(args.config, verbose=args.verbose, quiet=args.quiet,
-                    use_colors=not args.no_color, log_file=args.log_file)
+    try:
+        run_from_config(args.config, verbose=args.verbose, quiet=args.quiet,
+                        use_colors=not args.no_color, log_file=args.log_file,
+                        log_level=args.log_level, log_max_bytes=args.log_max_bytes,
+                        log_backup_count=args.log_backup_count)
+    except Exception as e:
+        sys.stderr.write(f"\nERROR: {e}\n")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

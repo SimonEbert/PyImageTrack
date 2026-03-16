@@ -1,5 +1,5 @@
-import logging
 import os
+import warnings
 
 import geopandas as gpd
 import numpy as np
@@ -13,7 +13,6 @@ from scipy.sparse.csgraph import depth_first_tree
 from shapely.geometry import box
 import scipy
 import sklearn
-
 from ..Utils import make_effective_extents_from_deltas
 
 # Parameter classes
@@ -37,7 +36,14 @@ from ..DataProcessing.DataPostprocessing import (
     filter_outliers_full,
 )
 # DataPreProcessing
-from ..DataProcessing.ImagePreprocessing import equalize_adapthist_images, undistort_camera_image, convert_float_to_uint
+from ..DataProcessing.ImagePreprocessing import (
+    equalize_adapthist_images,
+    undistort_camera_image,
+    convert_float_to_uint,
+    harmonize_dtypes,
+    harmonize_resolution,
+    check_channels_compatible
+)
 from .AlignImages import align_images_lsm_scarce
 # Plotting
 from ..Plots.MakePlots import (
@@ -50,6 +56,57 @@ from ..ConsoleOutput import get_console
 
 
 class ImagePair:
+    """
+    Main class for processing and tracking movement between two images.
+
+    Workflow:
+    - Load and preprocess images (georeferenced or non-georeferenced/fake georef)
+    - Align images (cross-correlation / LSM)
+    - Track movement between images
+    - Filter outliers and compute level of detection (LoD)
+    - Save results (vector/raster products, masks, statistics)
+
+    Supported modes include optional camera undistortion, fake georeferencing with
+    synthetic pixel size, CLAHE enhancement, downsampling, and 3D displacement from
+    depth images. Output units can be yearly or total.
+
+    Parameters
+    ----------
+    parameter_dict : dict, optional
+        Configuration for alignment, tracking, filtering, output units, georeferencing
+        mode (real vs fake), pixel size overrides, downsample factor, CLAHE settings,
+        camera calibration, and 3D displacement.
+
+    Attributes
+    ----------
+    images_aligned : bool
+        Whether the two images have been aligned.
+    valid_alignment_possible : bool or None
+        Whether a valid alignment was possible.
+    image1_matrix : np.ndarray
+        Matrix of the first (reference) image.
+    image1_transform : Affine
+        Transform of the first image.
+    image1_observation_date : datetime
+        Observation date of the first image.
+    image2_matrix : np.ndarray
+        Matrix of the second (aligned) image.
+    image2_transform : Affine
+        Transform of the second image.
+    image2_observation_date : datetime
+        Observation date of the second image.
+    image_bounds : gpd.GeoDataFrame
+        Bounds of the images as a GeoDataFrame.
+    tracked_control_points : gpd.GeoDataFrame
+        Control points used for alignment.
+    tracking_results : gpd.GeoDataFrame
+        Results of movement tracking.
+    level_of_detection : float
+        Calculated level of detection.
+    level_of_detection_points : gpd.GeoDataFrame
+        Points used for LoD calculation.
+    """
+
     def __init__(self, parameter_dict: dict = None):
         self.images_aligned = False
         self.valid_alignment_possible = None
@@ -77,6 +134,8 @@ class ImagePair:
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
         self.filter_parameters = None
         self.alignment_parameters = AlignmentParameters(parameter_dict=parameter_dict)
+        # Moving-area ID column name (propagated to outputs)
+        self.moving_id_column = parameter_dict.get("moving_id_column", "moving_id") if parameter_dict else "moving_id"
         # Fake georef switches (fed via run_pipeline param_dict)
         self.use_no_georeferencing = bool(
             parameter_dict.get("use_no_georeferencing", False)) if parameter_dict else False
@@ -84,13 +143,6 @@ class ImagePair:
         self.downsample_factor = int(parameter_dict.get("downsample_factor", 1)) if parameter_dict else 1
         if self.downsample_factor < 1:
             self.downsample_factor = 1
-        
-        # Adaptive tracking window setting
-        self.use_adaptive_tracking_window = bool(
-            parameter_dict.get("use_adaptive_tracking_window", False)) if parameter_dict else False
-        
-        # Image bands
-        self.image_bands = None
 
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
@@ -121,7 +173,17 @@ class ImagePair:
                 self.displacement_column_name = "movement_distance_per_year"
 
     def _effective_pixel_size(self) -> float:
-        """CRS units per pixel (assumes square pixels)."""
+        """
+        Calculate the effective pixel size in CRS units.
+
+        Assumes square pixels and returns the maximum of the absolute values
+        of the transform's a and e coefficients.
+
+        Returns
+        -------
+        float
+            Pixel size in CRS units, or 1.0 if no transform is available.
+        """
         if self.image1_transform is None:
             return 1.0
         a = float(self.image1_transform.a)
@@ -129,6 +191,21 @@ class ImagePair:
         return max(abs(a), abs(e))
 
     def _downsample_array(self, arr: np.ndarray, factor: int) -> np.ndarray:
+        """
+        Downsample an array by a given factor.
+
+        Parameters
+        ----------
+        arr : np.ndarray
+            Array to downsample (2D or 3D).
+        factor : int
+            Downsampling factor (must be >= 1).
+
+        Returns
+        -------
+        np.ndarray
+            Downsampled array.
+        """
         if factor <= 1:
             return arr
         if arr.ndim == 3:
@@ -136,12 +213,36 @@ class ImagePair:
         return arr[::factor, ::factor]
 
     def _downsample_transform(self, transform, factor: int):
+        """
+        Downsample an affine transform by a given factor.
+
+        Parameters
+        ----------
+        transform : Affine
+            Affine transform to downsample.
+        factor : int
+            Downsampling factor (must be >= 1).
+
+        Returns
+        -------
+        Affine
+            Downsampled transform.
+        """
         if factor <= 1:
             return transform
         from affine import Affine
         return transform * Affine.scale(factor, factor)
 
-    def select_image_channels(self, selected_channels: int = None):
+    def select_image_channels(self, selected_channels=None):
+        """
+        Select specific image channels from multi-band images.
+
+        Parameters
+        ----------
+        selected_channels : int | list[int] | tuple[int] | None, optional
+            Channel index/indices to select. ``None`` defaults to ``[0, 1, 2]``.
+            Only applied when images are 3D (bands, height, width).
+        """
         if selected_channels is None:
             selected_channels = [0, 1, 2]
         if len(self.image1_matrix.shape) == 3:
@@ -149,30 +250,52 @@ class ImagePair:
             self.image2_matrix = self.image2_matrix[selected_channels, :, :]
 
     def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
-                              selected_channels: int = None, NA_value: float = None):
+                              selected_channels=None, NA_value: float = None):
         """
-        Loads two image files from the respective file paths. The order of the provided image paths is expected to
-        align with the observation order, that is the first image is assumed to be the earlier observation. The two
-        images are cropped to the same geospatial extent, assuming they are given in the same coordinate reference
-        system. Optionally image channels can be provided which will be selected during data loading. Selects by default
-        the first 3 image channels for tracking.
+        Load two image files, crop/align extents, harmonize dtypes/resolution, and store metadata.
+
+        Behavior depends on georeferencing:
+        - Georeferenced: validates CRS match; crops to intersection; checks channel compatibility;
+          harmonizes dtype/resolution; optional downsample; sets buffered ``image_bounds``.
+        - Fake georeferencing (missing CRS or ``use_no_georeferencing``): reads arrays, optional camera
+          undistortion, converts to uint16, optional depth image loading, top-left crops to common size,
+          creates synthetic transform, checks channels, harmonizes dtype/resolution, optional downsample;
+          sets bounds in pixel space.
+
+        Common steps: parse observation dates, replace ``NA_value`` with 0 if provided, store originals
+        (for true-color outputs), and select channels.
+
         Parameters
         ----------
-        filename_1: str
-            The filename of the first image
-        observation_date_1: str
-            The observation date of the first image in format %d-%m-%Y
-        filename_2: str
-            The filename of the second image
-        observation_date_2: str
-            The observation date of the second image in format %d-%m-%Y
-        selected_channels: list[int]
-            The image channels to be selected. Defaults to [0,1,2]
+        filename_1 : str
+            Path to the first image (assumed earlier observation).
+        observation_date_1 : str
+            Observation date of the first image (ISO-style, multiple formats accepted by ``parse_date``).
+        filename_2 : str
+            Path to the second image.
+        observation_date_2 : str
+            Observation date of the second image.
+        selected_channels : int | list[int] | tuple[int] | None, optional
+            Channels to select from 3D inputs. Defaults to ``[0, 1, 2]`` when None.
+        NA_value : float, optional
+            If provided, pixels equal to this value are set to 0 in both images.
+
         Returns
         -------
+        None
         """
-        file1 = rasterio.open(filename_1, 'r')
-        file2 = rasterio.open(filename_2, 'r')
+        # Validate file existence before opening
+        if not os.path.exists(filename_1):
+            raise FileNotFoundError(f"Image file does not exist: {filename_1}")
+        if not os.path.exists(filename_2):
+            raise FileNotFoundError(f"Image file does not exist: {filename_2}")
+        
+        # Suppress NotGeoreferencedWarning when opening non-georeferenced images
+        # This is expected behavior when use_no_georeferencing = true
+        with warnings.catch_warnings():
+            warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
+            file1 = rasterio.open(filename_1, 'r')
+            file2 = rasterio.open(filename_2, 'r')
 
         # Choose path: true georef vs fake georef
         no_crs_either = (file1.crs is None) or (file2.crs is None)
@@ -199,15 +322,22 @@ class ImagePair:
             ([self.image1_matrix, self.image1_transform],
              [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
-            # Automatically convert float images to uint16 for better alignment
-            self.image1_matrix = convert_float_to_uint(self.image1_matrix)
-            self.image2_matrix = convert_float_to_uint(self.image2_matrix)
+            # Check channel compatibility
+            check_channels_compatible(self.image1_matrix, self.image2_matrix)
+
+            # Harmonize datatypes
+            self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
+
+            # Harmonize resolution if necessary
+            self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
+                self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform)
 
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
                 self.image1_transform = self._downsample_transform(self.image1_transform, factor)
                 self.image2_transform = self._downsample_transform(self.image2_transform, factor)
+            
 
             # Keep search windows inside valid area
             px_size = max(-file1.transform[4], file1.transform[0]) * factor  # pixel size (>0)
@@ -222,7 +352,6 @@ class ImagePair:
             image_bounds = image_bounds.rename(columns={0: "geometry"})
             image_bounds.set_geometry("geometry", inplace=True)
             self.image_bounds = image_bounds
-            
             # Store bounds polygon for safe bounds calculation (will be computed after else block)
             bounds_poly = intersection
 
@@ -255,6 +384,13 @@ class ImagePair:
                                                  + "_depth.tiff")
                 depth_image2_path = os.path.join(os.path.dirname(filename_2), "Depth_images", basename2
                                                  + "_depth.tiff")
+                
+                # Validate depth image files exist
+                if not os.path.exists(depth_image1_path):
+                    raise FileNotFoundError(f"Depth image file does not exist: {depth_image1_path}")
+                if not os.path.exists(depth_image2_path):
+                    raise FileNotFoundError(f"Depth image file does not exist: {depth_image2_path}")
+                
                 depth_image1 = rasterio.open(depth_image1_path, 'r').read()
                 depth_image2 = rasterio.open(depth_image2_path, 'r').read()
                 depth_image1 = squeeze(depth_image1)
@@ -274,6 +410,23 @@ class ImagePair:
                 self.image1_matrix[:h, :w]
             self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
                 self.image2_matrix[:h, :w]
+
+            # Create synthetic transform first (needed for harmonize_resolution)
+            from affine import Affine
+            px = float(self.fake_pixel_size)
+            tform = Affine(px, 0, 0, 0, -px, 0)  # x = px*col ; y = -px*row
+            self.image1_transform = tform
+            self.image2_transform = tform
+
+            # Check channel compatibility for non-georeferenced images
+            check_channels_compatible(self.image1_matrix, self.image2_matrix)
+            
+            # Harmonize dtypes (may already be uint16, but verifies)
+            self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
+            
+            # Harmonize resolution if necessary (before applying downsample_factor)
+            self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
+                self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform)
 
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
@@ -369,24 +522,33 @@ class ImagePair:
 
     def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
                                               image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
-                                              selected_channels: int = None):
+                                              selected_channels=None):
         """
-        Loads two images from two matrices, which are assumed to have the same image transform. For more details cf
-        load_images_from_file
+        Load two images from matrices with a common transform.
+
+        Stores the matrices, dates, CRS/transform, copies originals, builds bounds,
+        and optionally selects channels. No file I/O is performed.
+
         Parameters
         ----------
-        image1_matrix
-        observation_date_1
-        image2_matrix
-        observation_date_2
-        image_transform
-        crs
-        bounds
-        selected_channels
+        image1_matrix : np.ndarray
+            Matrix of the first image.
+        observation_date_1 : str
+            Observation date of the first image. Multiple ISO-like formats accepted by ``parse_date``.
+        image2_matrix : np.ndarray
+            Matrix of the second image.
+        observation_date_2 : str
+            Observation date of the second image.
+        image_transform : Affine
+            Common transform for both images.
+        crs : any
+            Coordinate reference system.
+        selected_channels : int | list[int] | tuple[int] | None, optional
+            Channels to select from 3D inputs. Defaults to no selection when ``None``.
 
         Returns
         -------
-
+        None
         """
         self.image1_matrix = image1_matrix
         self.image1_transform = image_transform
@@ -434,23 +596,50 @@ class ImagePair:
         safe_image_bounds_alignment = safe_image_bounds_alignment.rename(columns={0: "geometry"})
         safe_image_bounds_alignment.set_geometry("geometry", inplace=True)
         self.safe_image_bounds_alignment = safe_image_bounds_alignment
-
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
-        Aligns the two images based on matching the given reference area. The number of tracked points created in the
-        reference area is determined by the tracking parameters. Assumes the image transform of the first matrix is
-        correct so that the two image matrices have the same image transform. Therefore, the values of image2_matrix
-        and image2_transform are updated by this function.
+        Align images by tracking control points in a stable reference area.
+
+        Re-checks channel compatibility, harmonizes dtype/resolution, validates CRSs,
+        and intersects the reference area with ``image_bounds``. If ``reference_area`` is
+        ``None``, uses ``image_bounds`` minus ``polygon_inside`` (must be provided).
+        Updates ``image2_matrix`` and ``image2_transform`` and stores georeferenced
+        control points.
+
         Parameters
         ----------
-        reference_area: gpd.GeoDataFrame or None
-            A one-element GeoDataFrame containing the area in which the points are defined to align the two images.
-            If None, will use image_bounds minus polygon_inside as the stable area.
-        polygon_inside: gpd.GeoDataFrame, optional
-            The moving area polygon. Required when reference_area is None.
+        reference_area : gpd.GeoDataFrame or None
+            Stable area used for alignment. If None, computed from ``image_bounds`` and
+            ``polygon_inside``.
+        polygon_inside : gpd.GeoDataFrame, optional
+            Moving area polygon, required when ``reference_area`` is None.
+
         Returns
         -------
+        None
         """
+        console = get_console()
+
+        # Harmonization checks - performed during alignment, not during load, to avoid
+        # unnecessary processing when alignment is loaded from cache
+        
+        # Check channel compatibility
+        check_channels_compatible(self.image1_matrix, self.image2_matrix)
+        
+        # Harmonize datatypes
+        self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
+        
+        # Harmonize resolution if necessary
+        self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
+            self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform)
+        
+        # Validate reference_area if provided
+        if reference_area is not None:
+            if len(reference_area) == 0:
+                raise ValueError("Reference area GeoDataFrame is empty.")
+            if 'geometry' not in reference_area.columns:
+                raise ValueError("Reference area GeoDataFrame must contain a 'geometry' column.")
+        
         # Handle fallback mode when reference_area is None
         if reference_area is None:
             if polygon_inside is None:
@@ -463,8 +652,8 @@ class ImagePair:
             )
             reference_area = reference_area.rename(columns={0: 'geometry'})
             reference_area.set_geometry('geometry', inplace=True)
-            logging.warning(
-                "[FALLBACK] Using image_bounds minus moving_area as stable area. "
+            console.warning(
+                "Using image_bounds minus moving_area as stable area. "
                 "This may result in slightly lower alignment quality. "
                 "Consider increasing number_of_control_points to compensate."
             )
@@ -528,17 +717,20 @@ class ImagePair:
         self.images_aligned = True
 
         # Optionally derive a true-color aligned image (if original data are available)
-        try:
-            self.compute_truecolor_aligned_from_control_points()
-        except Exception as e:
-            logging.warning(f"Could not compute true-color aligned image: {e}")
+        self.compute_truecolor_aligned_from_control_points()
 
     def compute_truecolor_aligned_from_control_points(self):
-        """rebuild a true-color aligned version of image2 using the alignment control points.
+        """
+        Rebuild a true-color aligned version of image2 using alignment control points.
 
-        this uses the same least-squares affine model + spline resampling approach
-        as in alignimages.align_images_lsm_scarce, but applies it to the original
+        This method uses the same least-squares affine model and spline resampling
+        approach as in align_images_lsm_scarce, but applies it to the original
         (potentially multi-band) second image.
+
+        Raises
+        ------
+        ValueError
+            If no tracked control points are available or no original second image is stored.
         """
         if self.tracked_control_points is None or len(self.tracked_control_points) == 0:
             raise ValueError("no tracked control points available – cannot compute true-color alignment.")
@@ -632,13 +824,20 @@ class ImagePair:
         -------
         georeferenced_tracked_points: gpd.GeoDataFrame
         """
+        # Validate tracking_area
+        if len(tracking_area) == 0:
+            raise ValueError("Tracking area GeoDataFrame is empty.")
+        if 'geometry' not in tracking_area.columns:
+            raise ValueError("Tracking area GeoDataFrame must contain a 'geometry' column.")
+        
         console = get_console()
         if tracking_area.crs != self.crs:
             raise ValueError("Got tracking area with crs " + str(tracking_area.crs) + " and images with crs "
                              + str(self.crs) + ". Tracking area and images are supposed to have the same crs.")
 
         if not self.images_aligned:
-            logging.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
+            console = get_console()
+            console.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
 
         # spacing in px -> recalculate into CRS
         px_size = self._effective_pixel_size()
@@ -686,14 +885,17 @@ class ImagePair:
 
     def perform_point_tracking(self, reference_area: gpd.GeoDataFrame, tracking_area: gpd.GeoDataFrame) -> None:
         """
-        Performs the necessary tracking steps. This method is designed as a helper method to facilitate tracking and
-        writes the results directly to the respective object of the ImagePair class
+        Perform alignment (if needed) and movement tracking in one call.
+
+        Runs ``align_images`` if not yet aligned, then ``track_points`` on the
+        supplied tracking area and stores results in ``tracking_results``.
+
         Parameters
         ----------
-        reference_area: gpd.GeoDataFrame
-            Area used for alignment of the two images. Needs to have the same crs as the two image files.
-        tracking_area: gpd.GeoDataFrame
-            Area used for creating the tracking point grid. Needs to have the same crs as the two image files.
+        reference_area : gpd.GeoDataFrame
+            Area used for alignment (must share CRS with the images).
+        tracking_area : gpd.GeoDataFrame
+            Area used to generate the tracking point grid (must share CRS).
 
         Returns
         -------
@@ -708,7 +910,11 @@ class ImagePair:
 
     def plot_images(self) -> None:
         """
-        Plots the two raster images separately to the current canvas.
+        Plot the two raster images separately.
+
+        Displays both images on the current matplotlib canvas with their
+        observation dates as titles.
+
         Returns
         -------
         None
@@ -720,45 +926,53 @@ class ImagePair:
 
     def plot_tracking_results(self) -> None:
         """
-        Plots the first raster image and the movement of points in a single figure
+        Plot the first raster image with movement vectors.
+
+        Displays the first image with tracked points and their movement
+        vectors overlaid.
+
         Returns
         -------
         None
         """
-        if self.tracking_results is not None:
-            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results)
-        else:
-            logging.warning("No results calculated yet. Plot not provided")
+        plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results)
 
     def plot_tracking_results_with_valid_mask(self) -> None:
         """
-        Plots the first raster image and the movement of points in a single figure. Every point that has 0 movement rate
-        is shown in gray
+        Plot the first raster image with movement vectors and validity mask.
+
+        Displays the first image with tracked points and their movement vectors.
+        Points with zero movement rate (below LoD) are shown in gray.
+
         Returns
         -------
+        None
         """
-        if self.tracking_results is not None:
-            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
-        else:
-            logging.warning("No results calculated yet. Plot not provided")
+        plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
 
     def filter_outliers(self, filter_parameters: FilterParameters):
         """
-        Filters outliers based on the filter_parameters
+        Filter outliers from tracking results.
+
+        Runs all outlier filters independently on the original tracking_results snapshot
+        and combines masks at the end (no sequential dependency between filters).
+
         Parameters
         ----------
-        filter_parameters: FilterParameters
-            The Parameters used for Filtering. If some of the parameters are set to None, the respective filtering
-            will not be performed
+        filter_parameters : FilterParameters
+            Parameters for filtering. Includes settings for:
+            - Level of detection calculation
+            - Movement bearing outlier filtering
+            - Movement rate outlier filtering
+
         Returns
         -------
-
+        None
         """
         if not self.valid_alignment_possible:
             return
         console = get_console()
         console.processing("Filtering outliers. This may take a moment.")
-
         self.filter_parameters = filter_parameters
         self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
                                                      self.displacement_column_name)
@@ -767,15 +981,21 @@ class ImagePair:
     def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame,
                          years_between_observations) -> gpd.GeoDataFrame:
         """
-        Performs tracking on given stable points (for calculating an LoD)
+        Track movement on stable points for level of detection calculation.
+
+        Performs tracking on points in an area assumed to be stable (no real
+        movement) to calculate the level of detection.
+
         Parameters
         ----------
-        points_for_lod_calculation
-        years_between_observations
+        points_for_lod_calculation : gpd.GeoDataFrame
+            Points in the stable area for calculating the level of detection.
+        years_between_observations : float
+            Time span in years between the two observations.
 
         Returns
         -------
-        tracked_points: gpd.GeoDataFrame
+        tracked_points : gpd.GeoDataFrame
             The tracked points which can be used for calculating the LoD.
         """
         points = points_for_lod_calculation
@@ -821,17 +1041,23 @@ class ImagePair:
     def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame,
                       filter_parameters: FilterParameters = None) -> None:
         """
-        Calculates the Level of Detection of a matching between two images. For calculating the LoD a specified number
-        of points are generated randomly in some reference area, which is assumed to be stable. The level of detection
-        is defined as some quantile of the movement rates of these points. The quantile can be set in the
-        tracking parameters. This method sets the value of the lod as self.level_of_detection. The level of detection is
-        given in movement per year.
+        Calculate the Level of Detection (LoD) for the image pair.
+
+        The LoD is calculated by tracking movement in a stable area (assumed
+        to have no real movement) and computing a quantile of the observed
+        movement rates. This represents the minimum detectable movement
+        given the image quality and processing parameters.
+
         Parameters
         ----------
-        points_for_lod_calculation: gpd.GeoDataFrame
-            The points in the area (no motion assumed) for calculating the level of detection. Since for image alignment an evenly spaced grid is used and here, a random distribution of
-            points is advisable, such that it is possible to use the same reference area for both tasks.
-        filter_parameters
+        points_for_lod_calculation : gpd.GeoDataFrame
+            Points in the stable area for calculating the level of detection.
+            A random distribution is recommended to avoid bias from the
+            evenly-spaced grid used for alignment.
+        filter_parameters : FilterParameters, optional
+            Filter parameters containing the quantile for LoD calculation.
+            If None, uses the filter_parameters already set on the object.
+
         Returns
         -------
         None
@@ -869,20 +1095,24 @@ class ImagePair:
         self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[self.displacement_column_name],
                                                  level_of_detection_quantile)
 
-        console = get_console()
         if points_for_lod_calculation.crs is not None:
             unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
         else:
             unit_name = "pixel"
-        console.info(f"Found level of detection with quantile {level_of_detection_quantile} as "
-              f"{np.round(self.level_of_detection, decimals=5)} {unit_name}/year")
+        console = get_console()
+        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=5)} {unit_name}/year")
 
     def filter_lod_points(self) -> None:
         """
-        Sets the movement distance of all points that fall below the calculated level of detection to 0 and their
-        movement bearing to NaN. Note that this directly affects the dataframe self.tracking_results.
+        Filter points below the level of detection.
+
+        Sets the movement distance of all points that fall below the calculated
+        level of detection to 0 and their movement bearing to NaN. This
+        directly modifies the tracking_results dataframe.
+
         Returns
         -------
+        None
         """
 
         if not self.valid_alignment_possible:
@@ -891,6 +1121,25 @@ class ImagePair:
                                                   self.displacement_column_name)
 
     def full_filter(self, reference_area, filter_parameters: FilterParameters):
+        """
+        Perform complete filtering workflow.
+
+        This method:
+        1. Filters outliers from tracking results
+        2. Calculates the level of detection
+        3. Filters points below the level of detection
+
+        Parameters
+        ----------
+        reference_area : gpd.GeoDataFrame
+            Reference area for generating LoD calculation points.
+        filter_parameters : FilterParameters
+            Parameters for filtering and LoD calculation.
+
+        Returns
+        -------
+        None
+        """
         points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
                                                                         filter_parameters.number_of_points_for_level_of_detection)
         self.filter_outliers(filter_parameters)
@@ -898,6 +1147,16 @@ class ImagePair:
         self.filter_lod_points()
 
     def equalize_adapthist_images(self):
+        """
+        Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) in-place.
+
+        Uses ``enhancement_kernel_size`` and ``enhancement_clip_limit`` on
+        ``image1_matrix`` and ``image2_matrix``. Mutates the stored matrices.
+
+        Returns
+        -------
+        None
+        """
         self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
                                                        kernel_size=self.enhancement_kernel_size,
                                                        clip_limit=self.enhancement_clip_limit)
@@ -907,21 +1166,23 @@ class ImagePair:
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """
-        Saves tracking outputs (GeoJSON, GeoTIFFs, masks, stats) into `folder_path`.
+        Save tracking outputs (vectors, rasters, masks, statistics) into ``folder_path``.
 
         Notes / conventions:
-        - "valid" points are those marked True in tracking_results["valid"].
-        - "LoD-filtered" rasters include ALL points above LoD (i.e., is_below_LoD == False), regardless of outlier flags.
-        - "all" rasters include ALL tracked points without any filtering.
-        - "outlier-filtered" rasters exclude ONLY outliers (keep LoD-below points unless your 'valid' flag already removes them).
-        - New outlier masks write value 1 at locations of the specific outlier reason (0/NaN elsewhere).
+        - "valid" points are those marked True in ``tracking_results['valid']``.
+        - "LoD-filtered" rasters keep all points above LoD (``is_below_LoD == False``), regardless of outlier flags.
+        - "all" rasters include every tracked point without filtering.
+        - "outlier-filtered" rasters exclude only outliers; LoD-below points remain unless excluded by ``valid``.
+        - Outlier masks write value 1 where the specific outlier reason is true (0/NaN elsewhere).
+        - Vector outputs use FlatGeobuf; rasters use GTiff (masks/metrics) or JPEG (raw images).
+        - Statistics text is written when ``"statistical_parameters_txt"`` is requested.
 
         Parameters
         ----------
         folder_path : str
-            The folder where all results will be saved.
+            Target folder for all outputs.
         save_files : list
-            A list of tokens that control what is saved. Supported tokens include:
+            Tokens controlling what to save. Supported tokens include:
             - "first_image_matrix", "second_image_matrix"
             - "movement_bearing_valid_tif", "movement_rate_valid_tif"
             - "movement_bearing_outlier_filtered_tif", "movement_rate_outlier_filtered_tif"
@@ -931,6 +1192,10 @@ class ImagePair:
             - "mask_outlier_md_tif", "mask_outlier_msd_tif", "mask_outlier_bd_tif", "mask_outlier_bsd_tif"
             - "LoD_points_geojson", "control_points_geojson"
             - "statistical_parameters_txt"
+
+        Returns
+        -------
+        None
         """
         os.makedirs(folder_path, exist_ok=True)
 
@@ -943,6 +1208,7 @@ class ImagePair:
 
         # --- Prepare common subsets and guards ---
         tr_all = self.tracking_results
+        moving_id_col = self.moving_id_column if self.moving_id_column in tr_all.columns else None
         tr_valid = tr_all.loc[tr_all["valid"]].copy()
 
         has_lod_col = "is_below_LoD" in tr_all.columns
@@ -1243,7 +1509,7 @@ class ImagePair:
                         "\t\t" + str(int(tr_all[
                                              "is_movement_rate_standard_deviation_outlier"].sum())) + " movement rate standard deviation outliers\n"
                     )
-                if getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None):
+                if getattr(self.filter_parameters,"maximal_fraction_depth_change_of_3d_displacement"):
                     statistics_file.write(
                         "\t\t" + str(int(tr_all["is_depth_fraction_outlier"].sum())) + " depth fraction outliers\n"
                     )
@@ -1258,46 +1524,132 @@ class ImagePair:
                 def _fmt(x):
                     return "NA" if x is None or np.isnan(x) else f"{x:.2f}"
 
+                # Per-polygon breakdown if available
+                if moving_id_col is not None:
+                    statistics_file.write(f"\nPer polygon statistics (by '{moving_id_col}'):\n")
+
+                    def _pct(num, denom):
+                        return f"{(num / denom * 100):.2f}%" if denom else "0.00%"
+
+                    for id_val, df_id_all in tr_all.groupby(moving_id_col):
+                        df_id_no_out = df_id_all
+                        if moving_id_col in tr_without_outliers.columns:
+                            df_id_no_out = tr_without_outliers[tr_without_outliers[moving_id_col] == id_val]
+                        df_id_valid = df_id_all
+                        if moving_id_col in tr_valid.columns:
+                            df_id_valid = tr_valid[tr_valid[moving_id_col] == id_val]
+                        df_id_above_lod = df_id_all
+                        if moving_id_col in tr_above_lod.columns:
+                            df_id_above_lod = tr_above_lod[tr_above_lod[moving_id_col] == id_val]
+
+                        n_total = len(df_id_all)
+                        n_valid = len(df_id_valid)
+                        n_below_lod = int(df_id_all["is_below_LoD"].sum()) if has_lod_col and "is_below_LoD" in df_id_all.columns else 0
+                        n_outliers = int(is_outlier.loc[df_id_all.index].sum()) if not is_outlier.empty else 0
+
+                        statistics_file.write(
+                            f"  polygon={id_val} | total: {n_total} | valid: {n_valid} ({_pct(n_valid, n_total)})"
+                            + (f" | below LoD: {n_below_lod} ({_pct(n_below_lod, n_total)})" if has_lod_col else "")
+                            + f" | outliers: {n_outliers} ({_pct(n_outliers, n_total)})\n"
+                        )
+
+                        def _stat_block(df_ref, title):
+                            statistics_file.write(
+                                f"    {title}:\n"
+                                + f"      Mean: {_fmt(np.nanmean(df_ref[self.displacement_column_name]))}\n"
+                                + f"      Median: {_fmt(np.nanmedian(df_ref[self.displacement_column_name]))}\n"
+                                + f"      Standard deviation: {_fmt(np.nanstd(df_ref[self.displacement_column_name]))}\n"
+                                + f"      Q90: {_fmt(np.nanquantile(df_ref[self.displacement_column_name], 0.9))}\n"
+                                + f"      Q99: {_fmt(np.nanquantile(df_ref[self.displacement_column_name], 0.99))}\n"
+                            )
+
+                        # Movement including points below LoD (outliers removed when available)
+                        df_poly_including = df_id_no_out if not df_id_no_out.empty else df_id_all
+                        _stat_block(df_poly_including, f"Movement ({unit_label}) including points below LoD")
+
+                        # Movement excluding points below LoD
+                        df_poly_excluding = df_id_valid if not df_id_valid.empty else df_id_above_lod
+                        _stat_block(df_poly_excluding, f"Movement ({unit_label}) excluding points below LoD")
+
+                        # Movement of LoD points for this polygon (if available)
+                        df_poly_lod = None
+                        if hasattr(self, "level_of_detection_points") and self.level_of_detection_points is not None:
+                            if moving_id_col in self.level_of_detection_points.columns:
+                                df_poly_lod = self.level_of_detection_points[
+                                    self.level_of_detection_points[moving_id_col] == id_val
+                                ]
+                        if df_poly_lod is not None and len(df_poly_lod) > 0:
+                            used_lod_points = int(df_poly_lod["valid"].sum()) if "valid" in df_poly_lod.columns else len(df_poly_lod)
+                            statistics_file.write(
+                                f"    Movement ({unit_label}) of LoD points:\n"
+                                + f"      Mean: {_fmt(np.nanmean(df_poly_lod[self.displacement_column_name]))}\n"
+                                + f"      Median: {_fmt(np.nanmedian(df_poly_lod[self.displacement_column_name]))}\n"
+                                + f"      Standard deviation: {_fmt(np.nanstd(df_poly_lod[self.displacement_column_name]))}\n"
+                                + f"      Q90: {_fmt(np.nanquantile(df_poly_lod[self.displacement_column_name], 0.9))}\n"
+                                + f"      Q99: {_fmt(np.nanquantile(df_poly_lod[self.displacement_column_name], 0.99))}\n"
+                                + f"      Used points: {used_lod_points} points\n"
+                            )
+
+                        # Total movement between images
+                        distance_series_id = None
+                        if not df_id_valid.empty and "movement_distance" in df_id_valid.columns:
+                            distance_series_id = df_id_valid["movement_distance"]
+                        elif "movement_distance" in df_id_all.columns:
+                            distance_series_id = df_id_all["movement_distance"]
+
+                        statistics_file.write(
+                            "    Total movement between images:\n"
+                            + f"      Mean: {_fmt(_nan_stat(distance_series_id, np.nanmean))}\n"
+                            + f"      Median: {_fmt(_nan_stat(distance_series_id, np.nanmedian))}\n"
+                            + f"      Standard deviation: {_fmt(_nan_stat(distance_series_id, np.nanstd))}\n"
+                            + f"      Q90: {_fmt(_nan_stat(distance_series_id, lambda s: np.nanquantile(s, 0.9)))}\n"
+                            + f"      Q99: {_fmt(_nan_stat(distance_series_id, lambda s: np.nanquantile(s, 0.99)))}\n"
+                        )
+
+                        statistics_file.write("\n")
+
+                statistics_file.write("Overall statistics (all polygons combined):\n")
+
                 ref_df1 = tr_without_outliers if not tr_without_outliers.empty else tr_all
                 statistics_file.write(
-                    f"Movement ({unit_label}) with points below LoD:\n"
-                    + f"\tMean: {_fmt(np.nanmean(ref_df1[self.displacement_column_name]))}\n"
-                    + f"\tMedian: {_fmt(np.nanmedian(ref_df1[self.displacement_column_name]))}\n"
-                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df1[self.displacement_column_name]))}\n"
-                    + f"\tQ90: {_fmt(np.nanquantile(ref_df1[self.displacement_column_name], 0.9))}\n"
-                    + f"\tQ99: {_fmt(np.nanquantile(ref_df1[self.displacement_column_name], 0.99))}\n"
+                    f"  Movement ({unit_label}) including points below LoD:\n"
+                    + f"    Mean: {_fmt(np.nanmean(ref_df1[self.displacement_column_name]))}\n"
+                    + f"    Median: {_fmt(np.nanmedian(ref_df1[self.displacement_column_name]))}\n"
+                    + f"    Standard deviation: {_fmt(np.nanstd(ref_df1[self.displacement_column_name]))}\n"
+                    + f"    Q90: {_fmt(np.nanquantile(ref_df1[self.displacement_column_name], 0.9))}\n"
+                    + f"    Q99: {_fmt(np.nanquantile(ref_df1[self.displacement_column_name], 0.99))}\n"
                 )
 
                 ref_df2 = tr_valid if not tr_valid.empty else tr_above_lod
                 statistics_file.write(
-                    f"Movement ({unit_label}) without points below LoD:\n"
-                    + f"\tMean: {_fmt(np.nanmean(ref_df2[self.displacement_column_name]))}\n"
-                    + f"\tMedian: {_fmt(np.nanmedian(ref_df2[self.displacement_column_name]))}\n"
-                    + f"\tStandard deviation: {_fmt(np.nanstd(ref_df2[self.displacement_column_name]))}\n"
-                    + f"\tQ90: {_fmt(np.nanquantile(ref_df2[self.displacement_column_name], 0.9))}\n"
-                    + f"\tQ99: {_fmt(np.nanquantile(ref_df2[self.displacement_column_name], 0.99))}\n"
+                    f"  Movement ({unit_label}) excluding points below LoD:\n"
+                    + f"    Mean: {_fmt(np.nanmean(ref_df2[self.displacement_column_name]))}\n"
+                    + f"    Median: {_fmt(np.nanmedian(ref_df2[self.displacement_column_name]))}\n"
+                    + f"    Standard deviation: {_fmt(np.nanstd(ref_df2[self.displacement_column_name]))}\n"
+                    + f"    Q90: {_fmt(np.nanquantile(ref_df2[self.displacement_column_name], 0.9))}\n"
+                    + f"    Q99: {_fmt(np.nanquantile(ref_df2[self.displacement_column_name], 0.99))}\n"
                 )
 
                 if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None
                 ) and len(self.level_of_detection_points) > 0:
                     statistics_file.write(
-                        f"Movement ({unit_label}) of LoD points:\n"
-                        + f"\tMean: {_fmt(np.nanmean(self.level_of_detection_points[self.displacement_column_name]))}\n"
-                        + f"\tMedian: {_fmt(np.nanmedian(self.level_of_detection_points[self.displacement_column_name]))}\n"
-                        + f"\tStandard deviation: {_fmt(np.nanstd(self.level_of_detection_points[self.displacement_column_name]))}\n"
-                        + f"\tQ90: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.9))}\n"
-                        + f"\tQ99: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.99))}\n"
-                        + f"\tUsed points: {valid_lod_points} points\n"
+                        f"  Movement ({unit_label}) of LoD points:\n"
+                        + f"    Mean: {_fmt(np.nanmean(self.level_of_detection_points[self.displacement_column_name]))}\n"
+                        + f"    Median: {_fmt(np.nanmedian(self.level_of_detection_points[self.displacement_column_name]))}\n"
+                        + f"    Standard deviation: {_fmt(np.nanstd(self.level_of_detection_points[self.displacement_column_name]))}\n"
+                        + f"    Q90: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.9))}\n"
+                        + f"    Q99: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.99))}\n"
+                        + f"    Used points: {valid_lod_points} points\n"
                     )
 
                 distance_series = ref_df2.get("movement_distance")
                 statistics_file.write(
-                    "Total movement between images:\n"
-                    + f"\tMean: {_fmt(_nan_stat(distance_series, np.nanmean))}\n"
-                    + f"\tMedian: {_fmt(_nan_stat(distance_series, np.nanmedian))}\n"
-                    + f"\tStandard deviation: {_fmt(_nan_stat(distance_series, np.nanstd))}\n"
-                    + f"\tQ90: {_fmt(_nan_stat(distance_series, lambda s: np.nanquantile(s, 0.9)))}\n"
-                    + f"\tQ99: {_fmt(_nan_stat(distance_series, lambda s: np.nanquantile(s, 0.99)))}\n"
+                    "  Total movement between images:\n"
+                    + f"    Mean: {_fmt(_nan_stat(distance_series, np.nanmean))}\n"
+                    + f"    Median: {_fmt(_nan_stat(distance_series, np.nanmedian))}\n"
+                    + f"    Standard deviation: {_fmt(_nan_stat(distance_series, np.nanstd))}\n"
+                    + f"    Q90: {_fmt(_nan_stat(distance_series, lambda s: np.nanquantile(s, 0.9)))}\n"
+                    + f"    Q99: {_fmt(_nan_stat(distance_series, lambda s: np.nanquantile(s, 0.99)))}\n"
                 )
 
         # --- Parameter logs ---
@@ -1349,6 +1701,20 @@ class ImagePair:
             )
 
     def load_results(self, file_path, reference_area):
+        """
+        Load previously saved tracking results from a file.
+
+        Parameters
+        ----------
+        file_path : str
+            Path to the file containing saved tracking results.
+        reference_area : gpd.GeoDataFrame
+            Reference area for alignment (required for proper coordinate handling).
+
+        Returns
+        -------
+        None
+        """
         saved_tracking_results = gpd.read_file(file_path)
         saved_tracking_results = saved_tracking_results.loc[
             :, ["row", "column", "movement_row_direction", "movement_column_direction",

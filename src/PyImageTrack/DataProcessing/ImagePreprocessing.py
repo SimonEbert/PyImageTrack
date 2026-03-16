@@ -1,21 +1,38 @@
-import logging
 import skimage
 import numpy as np
+import scipy.ndimage
 
 from ..ConsoleOutput import get_console
 
+
 def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
-    equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix.astype(int), kernel_size=kernel_size,
+    """
+    Applies adaptive histogram equalization to enhance image contrast.
+    
+    This function uses Contrast Limited Adaptive Histogram Equalization (CLAHE)
+    to improve local contrast while limiting noise amplification.
+    
+    Parameters
+    ----------
+    image_matrix : np.ndarray
+        The input image matrix to be enhanced.
+    kernel_size : tuple or int
+        Defines the shape of contextual regions used for local contrast
+        enhancement. If tuple, should be (height, width). If int, a square
+        kernel of that size is used.
+    clip_limit : float
+        Contrast limiting threshold. Higher values allow more contrast
+        enhancement but may increase noise. Typical values are between 0.0
+        and 1.0.
+    
+    Returns
+    -------
+    np.ndarray
+        The contrast-enhanced image matrix.
+    """
+    equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix.astype(np.uint16), kernel_size=kernel_size,
                                                           clip_limit=clip_limit)
     return equalized_image
-
-# image1_matrix = skimage.exposure.equalize_adapthist(image=image1_matrix.astype(int),
-# kernel_size=movement_tracking_area_size, clip_limit=0.9)
-# image2_matrix = skimage.exposure.equalize_adapthist(image=image2_matrix.astype(int),
-# kernel_size=movement_tracking_area_size, clip_limit=0.9)
-# rasterio.plot.show(image1_matrix)
-# rasterio.plot.show(image2_matrix)
-
 
 
 def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, distortion_coefficients: np.ndarray)\
@@ -33,8 +50,8 @@ def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, di
     image_matrix: np.ndarray
         The array representing the distorted image.
     camera_intrinsic_matrix: np.ndarray
-        The intrinsic matrix of the camera. Assumed to have the format [[f_x, s, c_x],\n
-                                                                        [0, f_y, c_y],\n
+        The intrinsic matrix of the camera. Assumed to have the format [[f_x, s, c_x],\
+                                                                        [0, f_y, c_y],\
                                                                         [0, 0, 1]]
     distortion_coefficients: np.ndarray
         Distortion coefficients of the camera as a one-dimensional np.array. The format is as required by opencv, i.e.
@@ -82,8 +99,32 @@ def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, di
 
 def convert_float_to_uint(image_matrix: np.ndarray) -> np.ndarray:
     """
-    Automatically converts float32 or float64 images to uint16 for better alignment results.
-    Float images can cause numerical precision issues in cross-correlation based alignment algorithms.
+    Convert any input image to ``uint16`` (wrapper around :func:`convert_to_uint16`).
+
+    Historically intended for float inputs, this now delegates to
+    :func:`convert_to_uint16` which supports a wide range of dtypes (ints, floats,
+    bool) and handles NaNs by replacing them with 0 before scaling. Floats and
+    signed integers are scaled into the full ``uint16`` range; unsigned integers
+    are scaled/clamped as appropriate; booleans map to {0, 65535}.
+
+    Parameters
+    ----------
+    image_matrix : np.ndarray
+        Input image matrix (2D or 3D) of any dtype supported by
+        :func:`convert_to_uint16`.
+
+    Returns
+    -------
+    np.ndarray
+        ``uint16`` image matrix.
+    """
+    return convert_to_uint16(image_matrix)
+
+
+def convert_to_uint16(image_matrix: np.ndarray) -> np.ndarray:
+    """
+    Converts an image matrix to uint16 for optimal alignment results.
+    Supports various input dtypes: uint8, uint16, uint32, int8, int16, int32, int64, float32, float64, bool.
     
     Parameters
     ----------
@@ -93,29 +134,252 @@ def convert_float_to_uint(image_matrix: np.ndarray) -> np.ndarray:
     Returns
     -------
     np.ndarray
-        The converted image matrix as uint16. If input is not float, returns unchanged.
+        The converted image matrix as uint16.
     """
-    # Check if conversion is needed
-    if image_matrix.dtype not in ['float32', 'float64']:
+    console = get_console()
+    
+    # If already uint16, return as-is
+    if image_matrix.dtype == np.uint16:
         return image_matrix
     
-    console = get_console()
-    console.success(f"Converted image from {image_matrix.dtype} to uint16 for alignment.")
-
     # Handle NaN values by replacing them with 0
-    nan_mask = np.isnan(image_matrix)
-    if np.any(nan_mask):
-        console.warning(f"Found {np.sum(nan_mask)} NaN values in float image. Replaced with 0.")
-        image_matrix = np.where(nan_mask, 0, image_matrix)
+    nan_count = 0
+    if np.issubdtype(image_matrix.dtype, np.floating):
+        nan_mask = np.isnan(image_matrix)
+        nan_count = np.sum(nan_mask)
+        if nan_count > 0:
+            image_matrix = np.where(nan_mask, 0, image_matrix)
     
-    # Scale from min-max to 0-65535
     data_min = np.min(image_matrix)
     data_max = np.max(image_matrix)
     
-    if data_max > data_min:
-        data_scaled = ((image_matrix - data_min) / (data_max - data_min) * 65535).astype(np.uint16)
-    else:
-        # All values are the same
-        data_scaled = np.zeros_like(image_matrix, dtype=np.uint16)
+    # Conversion strategies based on dtype
+    orig_dtype = str(image_matrix.dtype)
     
-    return data_scaled
+    if image_matrix.dtype == np.uint8:
+        # Scale up: uint8 range (0-255) -> uint16 range (0-65535)
+        result = image_matrix.astype(np.uint16) * 256
+        return result
+        
+    elif image_matrix.dtype == np.uint32:
+        # Scale down: clamp values > 65535 to 65535
+        result = np.clip(image_matrix, 0, 65535).astype(np.uint16)
+        if data_max > 65535:
+            console.warning(f"Clamped {orig_dtype} values > 65535 to uint16 range. Some precision lost.")
+        return result
+        
+    elif np.issubdtype(image_matrix.dtype, np.signedinteger):
+        # SIGNED integers: shift and scale to uint16
+        if data_max > data_min:
+            result = ((image_matrix.astype(np.float64) - data_min) / (data_max - data_min) * 65535).astype(np.uint16)
+        else:
+            result = np.zeros_like(image_matrix, dtype=np.uint16)
+        return result
+        
+    elif np.issubdtype(image_matrix.dtype, np.floating):
+        # FLOAT inputs: scale to uint16 range
+        if data_max > data_min:
+            result = ((image_matrix - data_min) / (data_max - data_min) * 65535).astype(np.uint16)
+        else:
+            result = np.zeros_like(image_matrix, dtype=np.uint16)
+        if nan_count > 0:
+            console.success(f"Converted {orig_dtype} to uint16 (replaced {nan_count} NaN values with 0).")
+        else:
+            console.success(f"Converted {orig_dtype} to uint16.")
+        return result
+        
+    elif image_matrix.dtype == np.bool_:
+        # Boolean: 0/1 -> 0/65535
+        result = (image_matrix.astype(np.uint16) * 65535)
+        return result
+        
+    else:
+        # Unknown dtype: attempt direct conversion with clamping
+        console.warning(f"Unexpected dtype {orig_dtype}. Attempting direct conversion to uint16.")
+        result = np.clip(image_matrix, 0, 65535).astype(np.uint16)
+    
+    return result
+
+
+def harmonize_dtypes(image1_matrix: np.ndarray, image2_matrix: np.ndarray):
+    """
+    Ensures both images have the same dtype by converting to uint16 if needed.
+    
+    Parameters
+    ----------
+    image1_matrix : np.ndarray
+        First image matrix.
+    image2_matrix : np.ndarray
+        Second image matrix.
+    
+    Returns
+    -------
+    tuple
+        (image1_matrix, image2_matrix) with matching dtypes.
+    """
+    console = get_console()
+    
+    if image1_matrix.dtype == image2_matrix.dtype:
+        # Already matching - nothing to do
+        return image1_matrix, image2_matrix
+    
+    dt1 = str(image1_matrix.dtype)
+    dt2 = str(image2_matrix.dtype)
+    
+    console.warning(f"Datatype mismatch: {dt1} vs {dt2} - harmonizing to uint16")
+    
+    # Convert both to uint16
+    image1_converted = convert_to_uint16(image1_matrix)
+    image2_converted = convert_to_uint16(image2_matrix)
+    
+    return image1_converted, image2_converted
+
+
+def harmonize_resolution(image1_matrix: np.ndarray, image2_matrix: np.ndarray,
+                         image1_transform, image2_transform):
+    """
+    Match resolutions by downsampling to the smaller common shape.
+
+    The function computes target height/width as the minimum of both images and
+    uses cubic interpolation to downsample either image that exceeds the target
+    in any dimension. Affine transforms are scaled accordingly. If a transform
+    is ``None``, a fallback pixel size of 1.0 is assumed for logging.
+
+    Parameters
+    ----------
+    image1_matrix : np.ndarray
+        First image matrix.
+    image2_matrix : np.ndarray
+        Second image matrix.
+    image1_transform : rasterio.transform.Affine
+        Transform of the first image (or ``None``).
+    image2_transform : rasterio.transform.Affine
+        Transform of the second image (or ``None``).
+
+    Returns
+    -------
+    tuple
+        (image1_matrix, image2_matrix, image1_transform, image2_transform) with matching resolution.
+    """
+    console = get_console()
+    
+    # Check if shapes already match
+    if image1_matrix.shape == image2_matrix.shape:
+        return image1_matrix, image2_matrix, image1_transform, image2_transform
+    
+    # Calculate pixel sizes in meters from transforms
+    if image1_transform is not None:
+        px_size1 = max(abs(image1_transform.a), abs(image1_transform.e))
+    else:
+        px_size1 = 1.0  # fallback
+    
+    if image2_transform is not None:
+        px_size2 = max(abs(image2_transform.a), abs(image2_transform.e))
+    else:
+        px_size2 = 1.0  # fallback
+    
+    # Only warn when resolutions differ meaningfully
+    if not np.isclose(px_size1, px_size2, rtol=1e-6, atol=1e-6):
+        console.warning(f"Resolution mismatch: {px_size1:.3f}m/px vs {px_size2:.3f}m/px")
+    
+    # Determine which image has higher resolution
+    h1, w1 = image1_matrix.shape[-2], image1_matrix.shape[-1]
+    h2, w2 = image2_matrix.shape[-2], image2_matrix.shape[-1]
+    
+    # Use the smaller dimensions as the target
+    target_h = min(h1, h2)
+    target_w = min(w1, w2)
+    
+    # Downsampling factors
+    factor1_h = h1 / target_h
+    factor1_w = w1 / target_w
+    factor2_h = h2 / target_h
+    factor2_w = w2 / target_w
+    
+    from affine import Affine
+    
+    # Convert image1 if needed
+    if factor1_h > 1.0 or factor1_w > 1.0:
+        zoom_factors = (1.0 / factor1_h, 1.0 / factor1_w)
+        
+        if len(image1_matrix.shape) == 3:
+            # 3D case (bands, height, width)
+            bands, height, width = image1_matrix.shape
+            image1_down = np.zeros((bands, target_h, target_w), dtype=image1_matrix.dtype)
+            for b in range(bands):
+                image1_down[b] = scipy.ndimage.zoom(image1_matrix[b], zoom_factors, order=3, mode='constant', cval=0)
+            image1_matrix = image1_down
+        else:
+            # 2D case
+            image1_matrix = scipy.ndimage.zoom(image1_matrix, zoom_factors, order=3, mode='constant', cval=0)
+        
+        image1_transform = image1_transform * Affine.scale(factor1_w, factor1_h)
+    
+    # Convert image2 if needed
+    if factor2_h > 1.0 or factor2_w > 1.0:
+        zoom_factors = (1.0 / factor2_h, 1.0 / factor2_w)
+        
+        if len(image2_matrix.shape) == 3:
+            # 3D case (bands, height, width)
+            bands, height, width = image2_matrix.shape
+            image2_down = np.zeros((bands, target_h, target_w), dtype=image2_matrix.dtype)
+            for b in range(bands):
+                image2_down[b] = scipy.ndimage.zoom(image2_matrix[b], zoom_factors, order=3, mode='constant', cval=0)
+            image2_matrix = image2_down
+        else:
+            # 2D case
+            image2_matrix = scipy.ndimage.zoom(image2_matrix, zoom_factors, order=3, mode='constant', cval=0)
+        
+        image2_transform = image2_transform * Affine.scale(factor2_w, factor2_h)
+        new_px_size = px_size2 * max(factor2_h, factor2_w)
+        console.success(f"Downsampled image2 by {max(factor2_h, factor2_w):.2f}x to {new_px_size:.3f}m/px")
+    
+    return image1_matrix, image2_matrix, image1_transform, image2_transform
+
+
+def check_channels_compatible(image1_matrix: np.ndarray, image2_matrix: np.ndarray) -> None:
+    """
+    Checks if the two images have compatible channel configurations.
+    Raises ValueError if incompatible.
+    
+    Parameters
+    ----------
+    image1_matrix : np.ndarray
+        First image matrix.
+    image2_matrix : np.ndarray
+        Second image matrix.
+    
+    Raises
+    ------
+    ValueError
+        If the images have incompatible channel configurations (different dimensions
+        or different number of bands).
+    """
+    ndim1 = image1_matrix.ndim
+    ndim2 = image2_matrix.ndim
+    
+    # Both 2D: OK
+    if ndim1 == 2 and ndim2 == 2:
+        return
+    
+    # Both 3D: check number of bands
+    if ndim1 == 3 and ndim2 == 3:
+        bands1 = image1_matrix.shape[0]
+        bands2 = image2_matrix.shape[0]
+        if bands1 != bands2:
+            raise ValueError(
+                f"Incompatible number of channels between images. "
+                f"Image 1 has {bands1} channel(s) (shape: {image1_matrix.shape}), "
+                f"Image 2 has {bands2} channel(s) (shape: {image2_matrix.shape}). "
+                f"Cannot process images with different channel configurations."
+            )
+        return
+    
+    # Mixed 2D and 3D: error
+    raise ValueError(
+        f"Incompatible channel dimensions between images. "
+        f"Image 1 has shape {image1_matrix.shape} ({ndim1}D), "
+        f"Image 2 has shape {image2_matrix.shape} ({ndim2}D). "
+        f"Cannot process images with different channel configurations. "
+        f"Both images must have the same dimensionality (both 2D or both 3D)."
+    )

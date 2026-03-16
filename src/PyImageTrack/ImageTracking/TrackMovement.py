@@ -1,4 +1,3 @@
-import logging
 import multiprocessing
 from functools import partial
 from multiprocessing import shared_memory
@@ -349,7 +348,8 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
         
         # Check for NaN values before fitting
         if np.any(np.isnan(X)) or np.any(np.isnan(y)):
-            logging.info("NaN values detected in LSM optimization. Skipping this point.")
+            console = get_console()
+            console.info_verbose("NaN values detected in LSM optimization. Skipping this point.")
             return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                    tracking_success=False)
         
@@ -379,7 +379,6 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
         iteration += 1
 
     if iteration == 50:
-        logging.info("Did not converge after 50 iterations.")
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                tracking_success=False)
 
@@ -657,11 +656,15 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         tracked_pixels["movement_distance_pixels"] = np.linalg.norm(
             tracked_pixels.loc[:, ["movement_row_direction", "movement_column_direction"]], axis=1)
     if "movement_bearing_pixels" in save_columns:
+        # Calculate bearing in radians (mathematical convention: 0° = East)
         tracked_pixels["movement_bearing_pixels"] = np.arctan2(-tracked_pixels["movement_row_direction"],
                                                                tracked_pixels["movement_column_direction"])
         tracked_pixels.loc[tracked_pixels['movement_bearing_pixels'] < 0, 'movement_bearing_pixels'] \
             = tracked_pixels['movement_bearing_pixels'] + 2 * np.pi
+        # Convert to degrees
         tracked_pixels['movement_bearing_pixels'] = np.degrees(tracked_pixels['movement_bearing_pixels'])
+        # Convert from mathematical convention (0° = East) to geographic convention (0° = North)
+        tracked_pixels['movement_bearing_pixels'] = (90 - tracked_pixels['movement_bearing_pixels']) % 360
     if "transformation_matrix" in save_columns:
         tracked_pixels["transformation_matrix"] = [results.transformation_matrix for results in tracking_results]
 
@@ -677,4 +680,12 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
     if "correlation_coefficient" not in save_columns and "correlation_coefficient" in tracked_pixels_above_cc_threshold.columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
+    
+    # Report tracking statistics (only in verbose mode)
+    console = get_console()
+    failed_count = sum(1 for result in tracking_results if not result.tracking_success)
+    total_count = len(tracking_results)
+    if failed_count > 0:
+        console.info_verbose(f"Tracking: {failed_count}/{total_count} points failed (no positive correlation or did not converge).")
+    
     return tracked_pixels_above_cc_threshold

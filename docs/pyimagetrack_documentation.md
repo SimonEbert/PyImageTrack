@@ -4,7 +4,7 @@ Version: 0.2
 Date: 2026-02-18
 
 ## Overview
-PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and plotting.
+PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and output visualization.
 The main entry point is the CLI command `pyimagetrack-run`, configured via TOML files in `configs/`.
 
 ## Running The Pipeline
@@ -14,13 +14,167 @@ pyimagetrack-run --config configs/example_config.toml
 Config paths are resolved relative to the repo root.
 The CLI invokes `PyImageTrack.run_pipeline:main` under the hood.
 
+## Command-Line Interface Options
+
+The `pyimagetrack-run` command provides several options for controlling output verbosity and logging.
+
+### Basic Options
+
+- `--config` (required): Path to TOML configuration file
+
+### Output Control
+
+- `--verbose`: Enable verbose output with detailed information about processing steps
+- `--quiet`: Enable quiet mode with minimal output (only essential messages)
+- `--no-color`: Disable colored terminal output
+
+### Logging Options
+
+- `--log-file PATH`: Specify a custom log file path. If not provided, logs are written to `pyimagetrack.log` in the output folder.
+- `--log-level LEVEL`: Set the logging level for file output. Available levels: DEBUG, INFO, WARNING, ERROR, CRITICAL. Default: INFO.
+- `--log-max-bytes BYTES`: Maximum size of log file before rotation. Default: 10MB.
+- `--log-backup-count COUNT`: Number of backup log files to keep. Default: 5.
+
+### Verbose Mode
+
+Enable verbose output with `--verbose` to see detailed information about:
+- Parameter values being used
+- Cache operations (loading/saving)
+- File paths and pair identifiers
+- Timing information for each processing step
+
+### Quiet Mode
+
+Enable quiet mode with `--quiet` to minimize console output. In quiet mode:
+- Only essential messages are displayed (success, warning, error)
+- Section headers and informational messages are suppressed
+- All messages are still written to the log file
+
+### Color Output
+
+Use `--no-color` to disable ANSI color codes in terminal output. This is useful for:
+- Non-terminal environments (e.g., CI/CD pipelines)
+- Log files that should be plain text
+- Terminals that don't support color
+
+### Example Usage
+
+```bash
+# Verbose run with debug logging
+pyimagetrack-run --config configs/example_config.toml --verbose --log-level DEBUG
+
+# Quiet run with custom log file
+pyimagetrack-run --config configs/example_config.toml --quiet --log-file /path/to/custom.log
+
+# Disable colors for CI/CD
+pyimagetrack-run --config configs/example_config.toml --no-color
+```
+
+## Batch Processing
+
+PyImageTrack supports batch processing of multiple configurations with automatic filtering based on identifiers extracted from filenames. This is useful when processing multiple rock glaciers or similar datasets.
+
+### Command-Line Interface
+
+The `pyimagetrack-batch` command processes multiple configurations using two CSV tables:
+
+```bash
+pyimagetrack-batch --table-a table_a.csv --config-col config_name --class-col-a class \
+                  --table-b table_b.csv --identifier-col identifier --class-col-b class
+```
+
+### Table A (Config Mapping)
+
+Table A maps configuration files to classes. Each row specifies which configuration file should be used for a given class.
+
+| config_name | class |
+|-------------|-------|
+| config_large.toml | large |
+| config_medium.toml | medium |
+| config_small.toml | small |
+
+### Table B (Identifier Classification)
+
+Table B maps identifiers to classes. Each row specifies which class an identifier belongs to.
+
+| identifier | class |
+|------------|-------|
+| 9109 | large |
+| 9110 | medium |
+| 9111 | small |
+
+### How Batch Processing Works
+
+1. The batch processor reads both tables
+2. For each configuration in Table A:
+   - Gets the class associated with the configuration
+   - Filters Table B to find all identifiers with that class
+   - Filters identifiers to only those present in the input folder
+   - Processes each identifier separately using the configuration
+   - Replaces wildcards in shapefile names with the identifier
+
+### Identifier Extraction
+
+Identifiers are extracted from filenames using the pattern `id<identifier>` where:
+- `id` is a literal prefix
+- `<identifier>` is an alphanumeric sequence (letters and numbers)
+- The identifier ends at a separator (`-`, `_`, `.`) or end of filename
+
+Examples:
+- `2008_id9109_az315.tif` → identifier: `9109`
+- `2008_id9110_az315.tif` → identifier: `9110`
+- `2008_id9111_az315.tif` → identifier: `9111`
+
+### Wildcard Support in Shapefiles
+
+Shapefile names in configuration files can include a wildcard (`*`) that gets replaced with the identifier during processing:
+
+```toml
+[polygons]
+stable_area_filename = "stable_area_*.shp"
+moving_area_filename = "moving_area_*.shp"
+```
+
+When processing identifier `9109`, these become:
+- `stable_area_9109.shp`
+- `moving_area_9109.shp`
+
+**Stable / Moving Areas:**
+- Stable-area shapefiles can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area shapefiles can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
+- Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
+
+### Batch Processing Options
+
+- `--table-a PATH`: Path to Table A CSV file (config mapping)
+- `--config-col NAME`: Column name in Table A containing configuration file names (default: config_name)
+- `--class-col-a NAME`: Column name in Table A containing class names (default: class)
+- `--table-b PATH`: Path to Table B CSV file (identifier classification)
+- `--identifier-col NAME`: Column name in Table B containing identifiers (default: identifier)
+- `--class-col-b NAME`: Column name in Table B containing class names (default: class)
+- `--verbose`: Enable verbose output
+- `--quiet`: Enable quiet mode
+- `--no-color`: Disable colored output
+- `--log-file PATH`: Path to log file
+- `--log-level LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+- `--log-max-bytes BYTES`: Maximum log file size before rotation (default: 10MB)
+- `--log-backup-count COUNT`: Number of backup log files (default: 5)
+
+### Important Notes
+
+- In single config mode (`pyimagetrack-run`), identifiers are completely ignored - the system works as before
+- Only images with the same identifier can be processed together in batch mode
+- Files without identifiers are skipped in batch mode
+- The batch processor automatically looks for config files in the `configs/` folder if not found at the specified path
+- Only identifiers that actually exist in the input folder are processed
+
 ## Entry point for Python Scripts
-The package provides the possibility of accessing the tracking routine from another Python script. This is done using 
+The package provides the possibility of accessing the tracking routine from another Python script. This is done using
 the `run_from_config` function that can be imported by
 ```
 from PyImageTrack import run_from_config
 ```
-IMPORTANT: When calling the tracking routine from within another Python Script or Project, the process must always be 
+IMPORTANT: When calling the tracking routine from within another Python Script or Project, the process must always be
 guarded in the following way
 ```
 if __name__ == "__main__":
@@ -28,6 +182,57 @@ if __name__ == "__main__":
 ```
 This is due to the tracking routine making use of the multiprocessing package for parallelization and without this
 safety measure, the tracking routine will be called several times with identical parameters.
+
+### Programmatic Usage with Output Control
+
+When calling `run_from_config()` from Python scripts, you can pass the same options as the CLI:
+
+```python
+from PyImageTrack import run_from_config
+
+if __name__ == "__main__":
+    run_from_config(
+        config_path="configs/example_config.toml",
+        verbose=True,
+        quiet=False,
+        use_colors=True,
+        log_file="my_tracking.log",
+        log_level="DEBUG",
+        log_max_bytes=10 * 1024 * 1024,
+        log_backup_count=5
+    )
+```
+
+For batch processing with identifier filtering:
+
+```python
+from PyImageTrack import run_from_config
+
+if __name__ == "__main__":
+    run_from_config(
+        config_path="configs/example_config.toml",
+        identifier="9109",  # Only process files with id9109
+        verbose=True,
+        quiet=False,
+        use_colors=True,
+        log_file="my_tracking.log",
+        log_level="DEBUG",
+        log_max_bytes=10 * 1024 * 1024,
+        log_backup_count=5
+    )
+```
+
+### Parameters
+
+- `config_path` (str): Path to TOML configuration file
+- `verbose` (bool): Enable verbose output. Default: False
+- `quiet` (bool): Enable quiet mode. Default: False
+- `use_colors` (bool): Use ANSI colors in terminal output. Default: True
+- `log_file` (str): Path to log file. Default: None (uses `pyimagetrack.log` in output folder)
+- `log_level` (str): Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Default: INFO
+- `log_max_bytes` (int): Maximum log file size before rotation in bytes. Default: 10MB
+- `log_backup_count` (int): Number of backup log files to keep. Default: 5
+- `identifier` (str, optional): Identifier for batch processing. Only images with matching identifiers are processed. Default: None (single mode)
 
 ## Configuration Files (TOML)
 Configs are TOML files and share the same structure. Use `configs/example_config.toml` as a template.
@@ -38,17 +243,17 @@ Configs are TOML files and share the same structure. Use `configs/example_config
 - `[pairing]`: pairing mode (`all`, `first_to_all`, `successive`, `custom`).
 - `[no_georef]`: enable for non-ortho images (e.g., JPGs) and configure fake georeferencing and depth-image options.
 - `[downsampling]`: optional downsampling for fast smoke tests.
-- `[flags]`: alignment/tracking/filtering/plotting toggles.
+- `[flags]`: alignment/tracking/filtering toggles.
 - `[image_enhancement]`: optional image enhancement (CLAHE) configuration.
 - `[cache]`: caching and recompute flags.
-- `[output]`: optional outputs such as true-color alignment.
+- `[output]`: optional outputs such as true-color alignment and interactive plot display.
 - `[output_units]`: **required** - specifies whether movement values are normalized per year or reported as total displacement.
 - `[adaptive_tracking_window]`: when enabled, search extent scales by time span between images. The `search_extent_px` parameter then represents the expected movement per year, and the actual search window is calculated as `search_extent_px * years_between_observations`.
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
 
 ### Stable Area Fallback Mode
-The `[polygons]` section supports an optional fallback mode for defining the stable area. If `stable_area_filename` is set to `"none"` or the specified file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable.
+The `[polygons]` section supports an optional fallback mode for defining the stable area. If `stable_area_filename` is set to `"none"` or the specified file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable. The resulting stable area is treated like the merged reference area described above.
 
 **Note**: This fallback mode may result in slightly lower alignment quality compared to using a properly defined stable area polygon. To compensate, consider increasing the `number_of_control_points` parameter in the `[alignment]` section.
 
@@ -184,6 +389,56 @@ Converts per-year delta extents into effective search extents by adding half-cel
 ``extents`` : tuple
     (posx, negx, posy, negy) effective extents in pixels.
 
+### run_from_config(config_path: str, verbose: bool = False, quiet: bool = False, use_colors: bool = True, log_file: str = None, log_level: str = 'INFO', log_max_bytes: int = 10 * 1024 * 1024, log_backup_count: int = 5, identifier: Optional[str] = None)
+Runs the full PyImageTrack pipeline from a configuration file.
+
+This function orchestrates the complete processing workflow:
+- Collects image pairs from input folder/CSV
+- Loads polygons
+- Builds per-pair directories and codes
+- Loads images (with optional downsampling)
+- Aligns and tracks with cache support
+- Filters, displays interactive plots (optional), saves outputs and summary statistics
+
+#### Parameters
+``config_path`` : str
+    Path to TOML configuration file.
+
+``verbose`` : bool
+    Enable verbose output. Default is False.
+
+``quiet`` : bool
+    Enable quiet mode. Default is False.
+
+``use_colors`` : bool
+    Use ANSI colors in terminal output. Default is True.
+
+``log_file`` : str or None
+    Path to log file. Default is None (uses `pyimagetrack.log` in output folder).
+
+``log_level`` : str
+    Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL). Default is 'INFO'.
+
+``log_max_bytes`` : int
+    Maximum log file size before rotation in bytes. Default is 10MB.
+
+``log_backup_count`` : int
+    Number of backup log files. Default is 5.
+
+``identifier`` : str or None
+    Optional identifier for batch processing. When provided, only images with matching identifiers are processed.
+    Identifiers are extracted from filenames using the pattern `id<identifier>`.
+    When an identifier is provided, the output folder includes an identifier subfolder and wildcards in shapefile names are replaced with the identifier.
+
+#### Returns
+``None``
+
+#### Notes
+- When `identifier` is None (default), the pipeline works in single mode and identifiers are completely ignored.
+- When `identifier` is provided, the pipeline processes only images with matching identifiers.
+- See `extract_identifier()` documentation for identifier extraction pattern.
+- See `collect_pairs()` documentation for how identifiers affect image pairing.
+
 ### main()
 Orchestrates the full pipeline:
 - Collects image pairs from input folder/CSV
@@ -191,24 +446,21 @@ Orchestrates the full pipeline:
 - Builds per-pair directories and codes
 - Loads images (with optional downsampling)
 - Aligns and tracks with cache support
-- Filters, plots, saves outputs and summary statistics
+- Filters, displays interactive plots (optional), saves outputs and summary statistics
 
 ## Module: Utils.py
-### _round_to_nearest_hour(dt: datetime) -> datetime
-Rounds a datetime to the nearest hour (>=30 min rounds up).
-
-#### Parameters
-``dt`` : datetime
-    Input datetime.
-
-#### Returns
-``dt_rounded`` : datetime
-    Rounded datetime.
-
 ### parse_date(s: str) -> datetime
-Parses flexible date/time strings from filenames or plain text. Supports:
-- YYYYMMDD-HHMMSS, YYYYMMDD, YYYY-MM-DD
-- YYYY-MM-DD HH:MM[:SS] and DD-MM-YYYY variants
+Parses ISO-standard date strings with flexible separators.
+
+Only accepts dates starting with year (YY or YYYY). Supports separators: '-', '_', or none.
+Missing or invalid parts default to first standard (month=01, day=01, hour=00, minute=00, second=00).
+No rounding - exact values are used.
+
+#### Supported Formats
+- Year only: 2024, 24
+- Year-Month: 2024-09, 2024_09, 202409, 24-09, 24_09, 2409
+- Year-Month-Day: 2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901
+- With time: 2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045
 
 #### Parameters
 ``s`` : str
@@ -216,21 +468,48 @@ Parses flexible date/time strings from filenames or plain text. Supports:
 
 #### Returns
 ``dt`` : datetime
-    Parsed datetime.
+    Parsed datetime with exact values (no rounding).
 
-### collect_pairs(input_folder, date_csv_path=None, pairs_csv_path=None, pairing_mode="all", extensions=None)
-Builds image pairs and returns:
+#### Note
+If a part is present but invalid (e.g., month=13, day=47, hour=99), it is
+ignored and the default value is used. This allows filenames like "2008_9109"
+to be parsed as year-only (2008-01-01), or "2024_09_47" to be parsed as
+year-month (2024-09-01).
+
+### extract_identifier(filename: str) -> Optional[str]
+Extracts an identifier from a filename using the pattern `id<identifier>`.
+
+The identifier is extracted from filenames that contain the pattern `id<identifier>` where:
+- `id` is a literal prefix
+- `<identifier>` is an alphanumeric sequence (letters and numbers)
+- The identifier ends at a separator (`-`, `_`, `.`) or end of filename
+
+#### Parameters
+``filename`` : str
+    Input filename.
+
+#### Returns
+``identifier`` : str or None
+    The extracted identifier, or None if no identifier is found.
+
+#### Examples
+- `2008_id9109_az315.tif` → `9109`
+- `2008_id9110_az315.tif` → `9110`
+- `2008_id9111_az315.tif` → `9111`
+- `2008_9109_az315.tif` → `None` (no `id` prefix)
+
+### collect_pairs(input_folder, date_csv_path=None, pairs_csv_path=None, pairing_mode="all", extensions=None, identifier=None)
+Builds image pairs from filenames and returns:
 - year_pairs: list of (id1, id2)
 - id_to_file: id -> file path
 - id_to_date: id -> date string
-- id_hastime_from_filename: id -> bool
 
 #### Parameters
 ``input_folder`` : str
-    Folder containing images.
+    Folder containing images. Filenames must contain date tokens in ISO format (year-first).
 
 ``date_csv_path`` : str or None
-    Optional CSV with `year`/`date` for ambiguous filenames (YYYY or YYYY-MM).
+    Optional CSV with `date` column for resolving dates from filenames. Dates in CSV use the same format as filename dates.
 
 ``pairs_csv_path`` : str or None
     Optional CSV specifying custom pairs (date_earlier/date_later).
@@ -240,6 +519,10 @@ Builds image pairs and returns:
 
 ``extensions`` : tuple or None
     Allowed extensions; defaults to (".tif", ".tiff").
+
+``identifier`` : str or None
+    Optional identifier to filter images. Only images with matching identifiers will be paired.
+    Identifiers are extracted from filenames using the pattern `id<identifier>`.
 
 #### Returns
 ``year_pairs`` : list[tuple]
@@ -251,8 +534,12 @@ Builds image pairs and returns:
 ``id_to_date`` : dict
     Mapping from id to date string.
 
-``id_hastime_from_filename`` : dict
-    Mapping from id to bool (time was encoded in filename).
+#### Notes
+- Date tokens in filenames are extracted using the same `parse_date()` function as CSV dates.
+- All dates must start with year (YY or YYYY) and use ISO-standard format.
+- See `parse_date()` documentation for supported date formats.
+- When `identifier` is provided, only images with matching identifiers are paired.
+- See `extract_identifier()` documentation for identifier extraction pattern.
 
 ### ensure_dir(path: str)
 Creates a directory if missing.
@@ -434,11 +721,11 @@ Returns paths for LoD points GeoJSON and metadata JSON.
     Output paths.
 
 ### save_lod_cache(image_pair, track_dir, year1, year2, filenames, dates, version="v1")
-Writes LoD points GeoJSON and metadata JSON.
+Writes LoD points GeoJSON and metadata JSON. The metadata includes the calculated level of detection value.
 
 #### Parameters
 ``image_pair`` : ImagePair
-    Pair object with LoD points.
+    Pair object with LoD points and level_of_detection value.
 
 ``track_dir`` : str
     Tracking folder.
@@ -459,7 +746,7 @@ Writes LoD points GeoJSON and metadata JSON.
 ``None``
 
 ### load_lod_cache(image_pair, track_dir, year1, year2) -> bool
-Loads LoD points into an ImagePair.
+Loads LoD points and the level of detection value from cache into an ImagePair.
 
 #### Parameters
 ``image_pair`` : ImagePair
@@ -473,7 +760,7 @@ Loads LoD points into an ImagePair.
 
 #### Returns
 ``success`` : bool
-    True if cache was loaded.
+    True if cache was loaded. The level_of_detection value is restored from the cache metadata.
 
 ### save_alignment_cache(image_pair, align_dir, year1, year2, align_params, filenames, dates, version="v1", save_truecolor_aligned=False)
 Writes aligned raster (and optional true-color raster), control points, and metadata JSON.
@@ -1189,7 +1476,13 @@ Loads and crops images to the intersection, handles fake georeferencing and down
     File paths.
 
 ``observation_date_1``, ``observation_date_2`` : str
-    Dates for the observations.
+    Dates for the observations. Supported formats (ISO standard, year-first):
+    Year only: 2024, 24
+    Year-Month: 2024-09, 2024_09, 202409, 24-09, 24_09, 2409
+    Year-Month-Day: 2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901
+    With time: 2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045
+    Separators: '-', '_', or none. Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00.
+    Invalid parts (e.g., month=13, day=47) are ignored and replaced with defaults.
 
 ``selected_channels`` : list[int] or int or None
     Channels to use for tracking.
@@ -1208,7 +1501,13 @@ Loads pre-supplied matrices with a shared transform and CRS.
     Image matrices.
 
 ``observation_date_1``, ``observation_date_2`` : str
-    Observation dates.
+    Observation dates. Supported formats (ISO standard, year-first):
+    Year only: 2024, 24
+    Year-Month: 2024-09, 2024_09, 202409, 24-09, 24_09, 2409
+    Year-Month-Day: 2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901
+    With time: 2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045
+    Separators: '-', '_', or none. Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00.
+    Invalid parts (e.g., month=13, day=47) are ignored and replaced with defaults.
 
 ``image_transform`` : Affine
     Shared transform for both matrices.
@@ -1267,7 +1566,7 @@ Plots the two raster images.
 Plots movement vectors on the first image.
 
 #### plot_tracking_results_with_valid_mask()
-Plots valid vs invalid points on the first image.
+Plots valid vs invalid points on the first image. This method is called when `display_plots = true` in the `[output]` section of the config file to show interactive plots during processing.
 
 #### filter_outliers(filter_parameters)
 Applies outlier filtering using FilterParameters.
@@ -1493,15 +1792,15 @@ Removes outliers based on movement rate difference vs local neighborhood.
 ``tracking_results`` : gpd.GeoDataFrame
     Updated tracking results with outliers marked as invalid.
 
-### filter_outliers_movement_rate_standard_deviation(tracking_results, filter_parameters, displacement_column_name)
-Removes outliers based on movement rate standard deviation in a neighborhood.
+### filter_outliers_movement_rate_mad(tracking_results, filter_parameters, displacement_column_name)
+Removes outliers based on a modified Z-score approach using the median and Median Absolute Deviation (MAD) of movement rates in a neighborhood. A point is marked as an outlier if its modified Z-score (absolute deviation from the median divided by MAD) exceeds the threshold.
 
 #### Parameters
 ``tracking_results`` : gpd.GeoDataFrame
     Tracking results GeoDataFrame.
 
 ``filter_parameters`` : FilterParameters
-    Filter parameters containing threshold and window size.
+    Filter parameters where the threshold represents the number of MADs (modified Z-score) above which a point is considered an outlier. Common values are 2 or 3.
 
 ``displacement_column_name`` : str
     Name of the displacement column ('movement_distance_per_year' for georeferenced images, '3d_displacement_distance_per_year' for non-georeferenced images with 3D displacements).
@@ -1509,6 +1808,37 @@ Removes outliers based on movement rate standard deviation in a neighborhood.
 #### Returns
 ``tracking_results`` : gpd.GeoDataFrame
     Updated tracking results with outliers marked as invalid.
+
+#### Notes
+- The threshold parameter represents the modified Z-score, not a raw movement rate value.
+- For example, with threshold=2, points more than 2 MADs from the neighborhood median are filtered.
+- If the neighborhood MAD is 0, no points are filtered (to avoid division by zero).
+- MAD is more robust to outliers than standard deviation, making this filter less sensitive to extreme values.
+
+### filter_outliers_movement_rate_standard_deviation(tracking_results, filter_parameters, displacement_column_name)
+**DEPRECATED**: This function has been replaced by `filter_outliers_movement_rate_mad` for improved robustness to outliers. The old implementation using mean and standard deviation is kept commented out in the source code for reference.
+
+Removes outliers based on a Z-score approach using the mean and standard deviation of movement rates in a neighborhood. A point is marked as an outlier if its Z-score (absolute deviation from the mean divided by the standard deviation) exceeds the threshold.
+
+#### Parameters
+``tracking_results`` : gpd.GeoDataFrame
+    Tracking results GeoDataFrame.
+
+``filter_parameters`` : FilterParameters
+    Filter parameters where the threshold represents the number of standard deviations (Z-score) above which a point is considered an outlier. Common values are 2 or 3.
+
+``displacement_column_name`` : str
+    Name of the displacement column ('movement_distance_per_year' for georeferenced images, '3d_displacement_distance_per_year' for non-georeferenced images with 3D displacements).
+
+#### Returns
+``tracking_results`` : gpd.GeoDataFrame
+    Updated tracking results with outliers marked as invalid.
+
+#### Notes
+- The threshold parameter represents the Z-score, not a raw movement rate value.
+- For example, with threshold=2, points more than 2 standard deviations from the neighborhood mean are filtered.
+- If the neighborhood standard deviation is 0, no points are filtered (to avoid division by zero).
+- This filter is more sensitive to outliers than the MAD-based filter.
 
 ### filter_outliers_full(tracking_results, filter_parameters, displacement_column_name)
 Applies all outlier filters in sequence.
@@ -1526,6 +1856,11 @@ Applies all outlier filters in sequence.
 #### Returns
 ``tracking_results`` : gpd.GeoDataFrame
     Updated tracking results with all outlier filters applied.
+
+#### Note on Filtering Order
+The pipeline applies filters in the following order:
+1. **Level of Detection (LoD) filtering**: Points with movement below the detection threshold are marked as invalid first. This removes noise before statistical calculations.
+2. **Outlier filtering**: Statistical filters (bearing difference, bearing standard deviation, rate difference, rate standard deviation) are then applied to the remaining points above the LoD threshold.
 
 ## Module: Plots/MakePlots.py
 ### plot_raster_and_geometry(raster_matrix, raster_transform, geometry, alpha=0.6)
@@ -1568,7 +1903,7 @@ Plots tracked point movement with optional masking and saving.
 ``None``
 
 ### plot_movement_of_points_with_valid_mask(raster_matrix, raster_transform, point_movement, save_path=None)
-Plots valid vs invalid points in different colors.
+Plots valid vs invalid points in different colors. When `save_path` is provided, saves the plot to a file. When `save_path` is None, displays the plot interactively (requires a graphical display).
 
 #### Parameters
 ``raster_matrix`` : np.ndarray
@@ -1578,6 +1913,7 @@ Plots valid vs invalid points in different colors.
 ``point_movement`` : gpd.GeoDataFrame
 
 ``save_path`` : str or None
+    If provided, saves the plot to this path. If None, displays the plot interactively.
 
 #### Returns
 ``None``
