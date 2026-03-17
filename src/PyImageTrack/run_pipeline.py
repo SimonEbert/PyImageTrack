@@ -682,9 +682,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         polygon_inside[moving_id_column] = pd.Series([None] * len(polygon_inside))
     missing_id_mask = polygon_inside[moving_id_column].isna() | (polygon_inside[moving_id_column].astype(str).str.strip() == "")
     if missing_id_mask.any():
-        console.warning(
-            f"Moving area polygons missing '{moving_id_column}' values. Filling with row indices as strings."
-        )
+        # Only warn if there are multiple polygons (single polygon doesn't need differentiation)
+        if len(polygon_inside) > 1:
+            console.warning(
+                f"Moving area polygons missing '{moving_id_column}' values. Filling with row indices as strings."
+            )
+        # Always fill missing values so the grouping doesn't fail
         polygon_inside.loc[missing_id_mask, moving_id_column] = (
             polygon_inside.loc[missing_id_mask].index.astype(str)
         )
