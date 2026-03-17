@@ -326,6 +326,10 @@ class ImagePair:
             ([self.image1_matrix, self.image1_transform],
              [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
+            # Store original matrices for true-color alignment output (before harmonization)
+            self.image1_matrix_original = self.image1_matrix.copy()
+            self.image2_matrix_original = self.image2_matrix.copy()
+
             # Check channel compatibility
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
 
@@ -380,6 +384,10 @@ class ImagePair:
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2
+
+            # Store original matrices for true-color alignment output (before harmonization)
+            self.image1_matrix_original = arr1.copy()
+            self.image2_matrix_original = arr2.copy()
 
             if self.convert_to_3d_displacement:
                 basename1 = os.path.splitext(os.path.basename(filename_1))[0]
