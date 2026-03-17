@@ -1,6 +1,7 @@
 import geopandas as gpd
 import numpy as np
 import scipy
+import scipy.ndimage
 import sklearn
 
 from ..CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
@@ -8,6 +9,56 @@ from .TrackMovement import move_indices_from_transformation_matrix
 from .TrackMovement import track_movement_lsm
 from ..Parameters.AlignmentParameters import AlignmentParameters
 from ..ConsoleOutput import get_console
+from .ImageInterpolator import ImageInterpolator
+
+
+def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformation: np.ndarray, target_shape=None):
+    """
+    Apply a transformation matrix to an image using spline interpolation.
+    
+    Parameters
+    ----------
+    image_matrix : np.ndarray
+        The image matrix to transform.
+    transformation : np.ndarray
+        A 2x3 affine transformation matrix.
+    target_shape : tuple, optional
+        The shape of the output image. If None, uses the input image shape.
+    
+    Returns
+    -------
+    np.ndarray
+        The transformed image matrix.
+    """
+
+    if target_shape is None:
+        target_shape = image_matrix.shape
+
+    indices = np.array(np.meshgrid(np.arange(0, target_shape[-2]), np.arange(0, target_shape[-1]))
+                       ).T.reshape(-1, 2).T
+    moved_indices = move_indices_from_transformation_matrix(transformation, indices)
+
+    # Check if there are NaNs available
+    image_contains_nans = np.isnan(image_matrix).any()
+    if image_contains_nans:
+        # Interpolate NaNs as closest value in the image (for valid spline interpolation)
+        nan_mask = np.isnan(image_matrix)
+        indices_nearest_values = scipy.ndimage.distance_transform_edt(nan_mask, return_distances=False,
+                                                                      return_indices=True)
+        image_matrix = image_matrix[tuple(indices_nearest_values)]
+
+    image_matrix_spline = ImageInterpolator(image_matrix)
+    
+    if len(image_matrix.shape) == 2:
+        moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
+            target_shape)
+    else:
+        moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :], shape=target_shape)
+
+    # Put NaN values back into the image at the positions, where they were before the transformation
+    if image_contains_nans:
+        moved_image_matrix[nan_mask] = np.nan
+    return moved_image_matrix
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
@@ -134,12 +185,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
          [transformation_linear_model.coef_[1, 0], transformation_linear_model.coef_[1, 1],
           transformation_linear_model.intercept_[1]]])
 
-    indices = np.array(np.meshgrid(np.arange(0, image1_matrix.shape[0]), np.arange(0, image1_matrix.shape[1]))
-                       ).T.reshape(-1, 2).T
-    moved_indices = move_indices_from_transformation_matrix(sampling_transformation_matrix, indices)
-    image2_matrix_spline = scipy.interpolate.RectBivariateSpline(np.arange(0, image2_matrix.shape[0]),
-                                                                 np.arange(0, image2_matrix.shape[1]),
-                                                                 image2_matrix)
     # Show transformation matrix only in verbose mode (before resampling message)
     if console.verbose:
         console.info("Transformation matrix:")
@@ -150,20 +195,11 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
             lines[i] = '    ' + lines[i]
         for line in lines:
             console.print(line, color='dim')
-    console.processing("Resampling second image.")
-    try:
-        moved_image2_matrix = image2_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
-            image1_matrix.shape)
-    except ValueError as e:
-        # Provide user-friendly error message for scipy interpolation errors
-        if "dimension" in str(e) or "same number of elements" in str(e):
-            raise ValueError(
-                "Alignment failed: The calculated transformation is invalid. "
-                "This typically means the images do not have enough matching features for alignment. "
-                "Please check your input images or adjust the alignment parameters."
-            ) from e
-        else:
-            raise
+    
+    console.processing("Resampling second image matrix with transformation matrix\n" + str(sampling_transformation_matrix) +
+          "\nThis may take some time.")
+    moved_image2_matrix = move_image_matrix_from_transformation(image2_matrix, sampling_transformation_matrix,
+                                                                target_shape=image1_matrix.shape)
     console.success("Second image resampled.")
 
     # Validate the aligned image - check for empty or invalid results
