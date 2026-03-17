@@ -981,6 +981,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
                             tracked_sub[moving_id_column] = moving_id_value
                             tracked_points_list.append(tracked_sub)
+                        if not tracked_points_list:
+                            raise ValueError("No tracking points found. track_points() returned empty results for all moving areas.")
                         tracked_points = pd.concat(tracked_points_list, ignore_index=True)
                     image_pair.tracking_results = tracked_points
                 
