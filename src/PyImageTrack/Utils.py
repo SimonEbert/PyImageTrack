@@ -150,8 +150,8 @@ def extract_date_token(s: str) -> Optional[str]:
     Extract the complete date token from a string.
     
     Normalizes the string by replacing underscores with hyphens and extracts
-    the leading date token starting with a year (YY or YYYY). The token includes
-    the year and any following date/time parts with separators.
+    the date token starting with a year (YY or YYYY) from anywhere in the string.
+    The token includes the year and any following date/time parts with separators.
     
     This is used in conjunction with parse_date() to ensure consistent token
     extraction across the codebase. The extraction stops when an invalid part
@@ -199,9 +199,9 @@ def extract_date_token(s: str) -> Optional[str]:
     # Normalize: replace underscores with hyphens for consistent parsing
     normalized = s.replace('_', '-')
     
-    # Extract leading numeric token starting with year (YY or YYYY)
+    # Extract date token starting with year (YY or YYYY) anywhere in the string
     # The token may include separators and continues while the pattern makes sense for dates
-    match = re.match(r'^(\d{2,4})', normalized)
+    match = re.search(r'(\d{2,4})', normalized)
     if not match:
         return None
     
