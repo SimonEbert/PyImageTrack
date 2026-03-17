@@ -237,6 +237,8 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
     if "is_bearing_difference_outlier" not in tracking_results.columns:
         tracking_results["is_bearing_difference_outlier"] = False
     
+    tracking_results_prepared = prepare_tracking_results_for_filtering(tracking_results)
+
     for i in list(tracking_results.index.values):
         list_is_within_current_point = tracking_results.dwithin(tracking_results.geometry[i],
                                                                      inclusion_distance)
@@ -433,13 +435,14 @@ def filter_outliers_depth_change_fraction(tracking_results: gpd.GeoDataFrame,fil
         raise ValueError("Trying to filter based on the fraction of depth change compared to 3d displacement, but "
                          "no 3d displacement column is available in the tracking results.")
 
-    if filter_parameters.maximal_fraction_depth_change_of_3d_displacement is None:
+    maximal_fraction = getattr(filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None)
+    if maximal_fraction is None:
         return tracking_results
 
     tracking_results_prepared = prepare_tracking_results_for_filtering(tracking_results)
 
     tracking_results_prepared["is_depth_fraction_outlier"] = (
-            filter_parameters.maximal_fraction_depth_change_of_3d_displacement <
+            maximal_fraction <
             tracking_results_prepared["depth_change"] / tracking_results_prepared["3d_displacement_distance_per_year"])
     tracking_results_prepared["is_outlier"] = (tracking_results_prepared["is_outlier"]
                                                | tracking_results_prepared["is_depth_fraction_outlier"])
@@ -646,7 +649,7 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     def _mask_from(df: gpd.GeoDataFrame, col: str) -> np.ndarray:
         if col not in df.columns:
             return np.zeros(len(df), dtype=bool)
-        return df[col].fillna(False).astype(bool).to_numpy()
+        return np.where(df[col].isna(), False, df[col]).astype(bool)
 
     bd_df = filter_outliers_movement_bearing_difference(base_df.copy(), filter_parameters)
     bsd_df = filter_outliers_movement_bearing_standard_deviation(base_df.copy(), filter_parameters)
