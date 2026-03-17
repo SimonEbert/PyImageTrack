@@ -448,54 +448,59 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
     """
     # Get matrices from shared memory
     shm1 = multiprocessing.shared_memory.SharedMemory(name=shm1_name)
-    shared_image_matrix1 = np.ndarray(shape1, dtype=dtype, buffer=shm1.buf)
-
     shm2 = multiprocessing.shared_memory.SharedMemory(name=shm2_name)
-    shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
+    
+    try:
+        shared_image_matrix1 = np.ndarray(shape1, dtype=dtype, buffer=shm1.buf)
+        shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
 
-    # Extract the tracked (template) cell from image1
-    track_cell1 = get_submatrix_symmetric(
-        central_index=central_index,
-        shape=(tracked_cell_size, tracked_cell_size),
-        matrix=shared_image_matrix1
-    )
-
-    # Build the search window from extents
-    if control_search_extents is not None:
-        # Alignment mode
-        search_area2, center_in_search = get_submatrix_rect_from_extents(
-            central_index=np.array(central_index),
-            extents=control_search_extents,
-            matrix=shared_image_matrix2
-        )
-        search_center = center_in_search
-    elif search_extents is not None:
-        # Movement mode
-        search_area2, center_in_search = get_submatrix_rect_from_extents(
-            central_index=np.array(central_index),
-            extents=search_extents,
-            matrix=shared_image_matrix2
-        )
-        search_center = center_in_search
-    else:
-        # No extents configured (should be prevented earlier)
-        return TrackingResults(
-            movement_rows=np.nan, movement_cols=np.nan,
-            tracking_method="least-squares",
-            transformation_matrix=None, tracking_success=False
+        # Extract the tracked (template) cell from image1
+        track_cell1 = get_submatrix_symmetric(
+            central_index=central_index,
+            shape=(tracked_cell_size, tracked_cell_size),
+            matrix=shared_image_matrix1
         )
 
-    # Guard against empty windows (e.g., near borders)
-    if getattr(search_area2, "size", 0) == 0:
-        return TrackingResults(
-            movement_rows=np.nan, movement_cols=np.nan,
-            tracking_method="least-squares",
-            transformation_matrix=None, tracking_success=False
-        )
-    tracking_results = track_cell_lsm(track_cell1, search_area2, search_center=search_center,
-                                       initial_shift_values=initial_shift_values,
-                                      tracking_parameters=tracking_parameters)
-    return tracking_results
+        # Build the search window from extents
+        if control_search_extents is not None:
+            # Alignment mode
+            search_area2, center_in_search = get_submatrix_rect_from_extents(
+                central_index=np.array(central_index),
+                extents=control_search_extents,
+                matrix=shared_image_matrix2
+            )
+            search_center = center_in_search
+        elif search_extents is not None:
+            # Movement mode
+            search_area2, center_in_search = get_submatrix_rect_from_extents(
+                central_index=np.array(central_index),
+                extents=search_extents,
+                matrix=shared_image_matrix2
+            )
+            search_center = center_in_search
+        else:
+            # No extents configured (should be prevented earlier)
+            return TrackingResults(
+                movement_rows=np.nan, movement_cols=np.nan,
+                tracking_method="least-squares",
+                transformation_matrix=None, tracking_success=False
+            )
+
+        # Guard against empty windows (e.g., near borders)
+        if getattr(search_area2, "size", 0) == 0:
+            return TrackingResults(
+                movement_rows=np.nan, movement_cols=np.nan,
+                tracking_method="least-squares",
+                transformation_matrix=None, tracking_success=False
+            )
+        tracking_results = track_cell_lsm(track_cell1, search_area2, search_center=search_center,
+                                           initial_shift_values=initial_shift_values,
+                                          tracking_parameters=tracking_parameters)
+        return tracking_results
+    finally:
+        # Close shared memory handles (don't unlink - only creator does that)
+        shm1.close()
+        shm2.close()
 
 
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
@@ -631,18 +636,18 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
             )
     except Exception as e:
         get_console().warning("Failed to assemble multiprocessing. Error: " + str(e))
-    # finally:
-    #     # Clean-up image matrices from shared memory - always execute, even on error
-    #     try:
-    #         shared_memory_image1.close()
-    #         shared_memory_image1.unlink()
-    #     except Exception:
-    #         pass  # Ignore cleanup errors
-    #     try:
-    #         shared_memory_image2.close()
-    #         shared_memory_image2.unlink()
-    #     except Exception:
-    #         pass  # Ignore cleanup errors
+    finally:
+        # Clean-up image matrices from shared memory - always execute, even on error
+        try:
+            shared_memory_image1.close()
+            shared_memory_image1.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
+        try:
+            shared_memory_image2.close()
+            shared_memory_image2.unlink()
+        except Exception:
+            pass  # Ignore cleanup errors
 
     # access the respective tracked point coordinates and its movement
     movement_row_direction = [results.movement_rows for results in tracking_results]
