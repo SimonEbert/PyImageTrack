@@ -36,7 +36,7 @@ dependencies = [
 
 [project.scripts]
 pyimagetrack-run = "PyImageTrack.run_pipeline:main"
-pyimagetrack-batch = "PyImageTrack.batch_processor:main"
+pyimagetrack-batch = "PyImageTrack.BatchProcessor:main"
 
 [tool.setuptools]
 include-package-data = true
