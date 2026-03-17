@@ -7,6 +7,6 @@ def __getattr__(name: str):
         from .run_pipeline import run_from_config
         return run_from_config
     if name == "run_batch":
-        from .batch_processor import run_batch
+        from .BatchProcessor import run_batch
         return run_batch
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
