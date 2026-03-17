@@ -869,6 +869,8 @@ class ImagePair:
                             (image_bounds_values.maxy >= points_to_be_tracked.geometry.y))
 
         points_to_be_tracked = points_to_be_tracked[within_image_mask]
+        if len(points_to_be_tracked) == 0:
+            console.warning("No tracking points fall within image bounds!")
 
 
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
