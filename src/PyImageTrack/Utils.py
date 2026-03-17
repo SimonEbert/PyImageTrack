@@ -199,30 +199,25 @@ def extract_date_token(s: str) -> Optional[str]:
     # Normalize: replace underscores with hyphens for consistent parsing
     normalized = s.replace('_', '-')
     
-    # Extract the first occurrence of a year (YY or YYYY) anywhere in the string
-    match = re.search(r'(\d{2,4})', normalized)
+    # Extract leading numeric token starting with year (YY or YYYY)
+    # The token may include separators and continues while the pattern makes sense for dates
+    match = re.match(r'^(\d{2,4})', normalized)
     if not match:
         return None
     
     year_part = match.group(1)
-    year_idx = match.start()
-    
-    # Extract the part before the year to check for leading non-digits
-    # We need to find the start of the date portion
-    prefix = normalized[:year_idx]
-    
-    # If there's a prefix (like "HS-", "image-"), we need to start from the year
     token = year_part
-    remaining = normalized[year_idx + len(year_part):]
+    remaining = normalized[len(year_part):]
     
     # Check if original has separator (hyphen or underscore) immediately after the year
     # This determines whether we use separated format (2023-03-16)
     # or compact format (20230316)
+    year_idx = original.find(year_part)
     has_separator = False
-    if year_idx + len(year_part) < len(normalized):
-        next_char = normalized[year_idx + len(year_part)]
+    if year_idx >= 0 and year_idx + len(year_part) < len(original):
+        next_char = original[year_idx + len(year_part)]
         has_separator = next_char in ('-', '_')
-
+    
     # Progressive extraction: build token incrementally and validate completeness
     # Stop when adding more parts makes the date incomplete or invalid
     
