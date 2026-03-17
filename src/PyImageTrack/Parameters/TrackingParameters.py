@@ -59,6 +59,7 @@ class TrackingParameters:
         self.distance_of_tracked_points_px = parameter_dict.get("distance_of_tracked_points_px")
         self.search_extent_px = parameter_dict.get("search_extent_px")  # e.g., (60, 20, 40, 10)
         self.search_extent_deltas = parameter_dict.get("search_extent_deltas", self.search_extent_px)
+        self.search_extent_full_cell = None  # Will be computed during tracking
         self.movement_cell_size = parameter_dict.get("movement_cell_size")
         self.cross_correlation_threshold_movement = parameter_dict.get("cross_correlation_threshold_movement")
         self.initial_shift_values = parameter_dict.get("initial_shift_values")
@@ -143,7 +144,8 @@ class TrackingParameters:
             Dictionary with tracking parameters.
         """
         return {
-            "used_image_bands": self.image_bands,
+            "image_bands": self.image_bands,
+            "used_image_bands": self.image_bands,  # legacy key name
             "movement_cell_size": self.movement_cell_size,
             "cross_correlation_threshold_movement": self.cross_correlation_threshold_movement,
             "distance_of_tracked_points_px": self.distance_of_tracked_points_px,

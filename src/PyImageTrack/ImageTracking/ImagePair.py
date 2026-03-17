@@ -159,6 +159,10 @@ class ImagePair:
         self.enhancement_type = parameter_dict.get("enhancement_type", "none")
         self.enhancement_kernel_size = parameter_dict.get("enhancement_kernel_size", 50)
         self.enhancement_clip_limit = parameter_dict.get("enhancement_clip_limit", 0.9)
+        # Image bands (delegates to tracking_parameters.image_bands)
+        self.image_bands = parameter_dict.get("image_bands")
+        # Adaptive tracking window
+        self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         # Output units mode
         self.output_units_mode = parameter_dict.get("output_units_mode", "per_year")
         if self.convert_to_3d_displacement:

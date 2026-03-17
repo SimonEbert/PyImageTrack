@@ -555,6 +555,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # PARAMETERS (alignment, tracking, filter)
     # ==============================
+    # Get image_bands from tracking configuration (used by both alignment and tracking)
+    image_bands = _require(cfg, "tracking", "image_bands")
+    
     alignment_params = AlignmentParameters({
         "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
         # search extent tuple: (right, left, down, up) in pixels around the control cell
@@ -566,7 +569,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     })
 
     tracking_params = TrackingParameters({
-        "image_bands": _require(cfg, "tracking", "image_bands"),
+        "image_bands": image_bands,
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
@@ -870,6 +873,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
             # Output units mode
             param_dict["output_units_mode"]                = output_units_mode
+            # Adaptive tracking window
+            param_dict["use_adaptive_tracking_window"]     = use_adaptive_tracking_window
+            # Image bands (ensure both key names are available for compatibility)
+            param_dict["image_bands"]                      = tracking_params.image_bands
 
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column

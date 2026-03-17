@@ -49,6 +49,8 @@ class AlignmentParameters:
             "image_alignment_control_cell_size")
         self.cross_correlation_threshold_alignment = parameter_dict.get("cross_correlation_threshold_alignment")
         self.maximal_alignment_movement = parameter_dict.get("maximal_alignment_movement")
+        self.control_search_extent_full_cell = None  # Will be computed during alignment
+        self.image_bands = parameter_dict.get("image_bands")
         
         # Validate parameters
         self._validate()
