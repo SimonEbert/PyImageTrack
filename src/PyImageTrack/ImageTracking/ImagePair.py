@@ -1521,7 +1521,7 @@ class ImagePair:
                         "\t\t" + str(int(tr_all[
                                              "is_movement_rate_standard_deviation_outlier"].sum())) + " movement rate standard deviation outliers\n"
                     )
-                if getattr(self.filter_parameters,"maximal_fraction_depth_change_of_3d_displacement"):
+                if getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None):
                     statistics_file.write(
                         "\t\t" + str(int(tr_all["is_depth_fraction_outlier"].sum())) + " depth fraction outliers\n"
                     )
