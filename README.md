@@ -102,6 +102,16 @@ identifier,class
 9111,small
 ```
 
+### Filename Pattern for Batch Processing
+
+**Important:** For batch processing to work, your input image filenames must contain an identifier in the format `id<identifier>`, followed by a date token. Examples:
+
+- `id9109_2024-06-09.tif` → identifier: `9109`, date: `2024-06-09`
+- `id9110_HS_2025-07-01.tif` → identifier: `9110`, date: `2025-07-01`
+- `id9111_20240901.tif` → identifier: `9111`, date: `20240901`
+
+The identifier can appear anywhere in the filename, but must be preceded by `id`. The date token is extracted as described in the "CSV File Formats" section below.
+
 ### How Batch Processing Works
 
 1. Reads Table A and Table B
@@ -223,7 +233,7 @@ pyimagetrack-run --config configs/your_config.toml --quiet
   and keeps project files (docs/configs) clearly separated from Python package code.
 
 ## Acknowledgment
-The code in this respository is written by Lisa Rehn and Simon Ebert and maintained by Lisa Rehn. Its first version is
+The code in this respository is written by Lisa Rehn and Simon Ebert and maintained by Simon Ebert and Lisa Rehn. Its first version is
 based on the master thesis "Comparison and Python Implementation of Different Image Tracking Approaches Using the Example
 of the Kaiserberg Rock Glacier" by Simon Ebert.
 

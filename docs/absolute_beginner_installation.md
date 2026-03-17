@@ -213,3 +213,90 @@ Date tokens in filenames and CSV files are parsed flexibly:
 **Separators:** `-`, `_`, or none
 
 **Default values:** Missing parts default to: month=01, day=01, hour=00, minute=00, second=00
+
+---
+
+## Batch Processing Mode
+
+For processing multiple configurations with automatic filtering based on identifiers, use the batch processing command:
+
+```bash
+pyimagetrack-batch \
+  --table-a path/to/table_a.csv \
+  --config-col config_name \
+  --class-col-a class \
+  --table-b path/to/table_b.csv \
+  --identifier-col identifier \
+  --class-col-b class
+```
+
+### Table A (Config Mapping)
+
+Maps configuration files to classes.
+
+**Required columns:**
+- `config_name`: Path to the TOML configuration file
+- `class`: Class name for grouping
+
+**Example:**
+```csv
+config_name,class
+configs/example_large.toml,large
+configs/example_small.toml,medium
+```
+
+### Table B (Identifier Classification)
+
+Maps identifiers to classes.
+
+**Required columns:**
+- `identifier`: Identifier extracted from filenames (**pattern: `id<identifier>`**)
+- `class`: Class name for grouping
+
+**Example:**
+```csv
+identifier,class
+9109,large
+9110,large
+9111,small
+```
+
+### Filename Pattern for Batch Processing
+
+**Important:** For batch processing to work, your input image filenames must contain an identifier in the format `id<identifier>`, followed by a date token. Examples:
+
+- `id9109_2024-06-09.tif` → identifier: `9109`, date: `2024-06-09`
+- `id9110_HS_2025-07-01.tif` → identifier: `9110`, date: `2025-07-01`
+- `id9111_20240901.tif` → identifier: `9111`, date: `20240901`
+
+The identifier can appear anywhere in the filename, but must be preceded by `id`. The date token is still extracted as usual (see "Supported Date Token Formats" above).
+
+### Shapefile Wildcards in Batch Mode
+
+Configuration files support wildcard patterns for shapefile names. The `*` wildcard is replaced with the actual identifier during batch processing.
+
+**Example configuration:**
+```toml
+[polygons]
+stable_area_filename = "stable_area_*.shp"
+moving_area_filename = "moving_area_*.shp"
+```
+
+For identifier `9109`, this will load `stable_area_9109.shp` and `moving_area_9109.shp`.
+
+**Note:** Wildcard patterns are only valid when processing in batch mode with an identifier specified.
+
+### How Batch Processing Works
+
+1. Reads Table A and Table B
+2. For each configuration in Table A:
+   - Gets the class associated with the config
+   - Filters Table B to find all identifiers with that class
+   - Filters identifiers to only those present in the input folder (by checking for filenames containing `id<identifier>`)
+   - Processes each identifier separately using the configuration
+   - Replaces wildcards (`*`) in shapefile names with the identifier
+
+**Stable / Moving Areas:**
+- Stable-area shapefiles can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area shapefiles can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
+- Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
