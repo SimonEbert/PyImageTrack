@@ -161,15 +161,20 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
 
     min_distance_initial_estimates = getattr(tracking_parameters, "min_distance_initial_estimates", 1)
     nb_initial_estimates = getattr(tracking_parameters, "nb_initial_estimate_peaks", 1)
-    if tracking_parameters.initial_estimate_mode == "count":
-       peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
-                              min_distance=min_distance_initial_estimates)
-    elif tracking_parameters.initial_estimate_mode == "threshold":
-        peaks = peak_local_max(corr_map,
-                               threshold_abs=tracking_parameters.correlation_threshold_initial_estimates,
-                               min_distance=min_distance_initial_estimates)
-    else:
-        raise ValueError("Unknown initial estimates mode " + tracking_parameters.initial_estimate_mode)
+    # Check if tracking parameters are given
+    if tracking_parameters is not None:
+        if tracking_parameters.initial_estimate_mode == "count":
+           peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
+                                  min_distance=min_distance_initial_estimates)
+        elif tracking_parameters.initial_estimate_mode == "threshold":
+            peaks = peak_local_max(corr_map,
+                                   threshold_abs=tracking_parameters.correlation_threshold_initial_estimates,
+                                   min_distance=min_distance_initial_estimates)
+        else:
+            raise ValueError("Unknown initial estimates mode " + tracking_parameters.initial_estimate_mode)
+    else:# Default fallback when tracking parameters are not given (this happens normally in alignment mode)
+        peaks = peak_local_max(corr_map, num_peaks=1,
+                               min_distance=1)
 
     # --- Convert top-left index to center coordinates ---
     template_center_row = tracked.shape[-2] // 2
