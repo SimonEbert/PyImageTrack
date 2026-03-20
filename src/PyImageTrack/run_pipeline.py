@@ -758,6 +758,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             date_token_1 = year1.split('_')[0] if '_' in year1 else year1
             date_token_2 = year2.split('_')[0] if '_' in year2 else year2
             
+            # Use the already-parsed dates for folder naming (guaranteed correct)
+            # This avoids malformed tokens from extraction issues
+            folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
+            folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
+            
             # Image pair header
             pair_id_short = f"{date_token_1} -> {date_token_2}"
             if identifier is not None:
@@ -841,8 +846,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 filter_code = "F_none"
 
             # Directories
-            # Use only date tokens for directory names (not the full ID with identifier)
-            base_pair_dir = os.path.join(output_folder, f"{date_token_1}_{date_token_2}")
+            # Use formatted dates for directory names (guaranteed correct, handles all date formats)
+            base_pair_dir = os.path.join(output_folder, f"{folder_date_1}_{folder_date_2}")
             enhancement_dir = os.path.join(base_pair_dir, enhancement_code)
             align_dir  = os.path.join(enhancement_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
