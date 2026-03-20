@@ -570,6 +570,74 @@ def _successive_pairs(sorted_years):
     return [(sorted_years[i], sorted_years[i + 1]) for i in range(len(sorted_years) - 1)]
 
 
+def find_files_recursive_with_duplicates(base_folder: str, extensions: tuple):
+    """
+    Recursively find all files with specified extensions and check for duplicates.
+    
+    Parameters
+    ----------
+    base_folder : str
+        The base folder to search in.
+    extensions : tuple
+        Tuple of file extensions to filter by (e.g., (".tif", ".tiff")).
+    
+    Returns
+    -------
+    dict
+        A dictionary mapping filenames to their full paths.
+    
+    Raises
+    ------
+    ValueError
+        If duplicate filenames are found in different subfolders.
+    """
+    console = get_console()
+    
+    # Dictionary to track seen filenames and their paths
+    filename_to_paths = {}
+    # Dictionary to return: filename -> (full path)
+    result = {}
+    
+    # Recursively walk through all subdirectories
+    for root, dirs, files in os.walk(base_folder):
+        for filename in files:
+            # Check if file has one of the allowed extensions
+            if filename.lower().endswith(extensions):
+                full_path = os.path.join(root, filename)
+                
+                if filename in filename_to_paths:
+                    # Duplicate found - add to list of paths for this filename
+                    filename_to_paths[filename].append(full_path)
+                else:
+                    filename_to_paths[filename] = [full_path]
+    
+    # Check for duplicates and build result
+    duplicates_found = []
+    for filename, paths in filename_to_paths.items():
+        if len(paths) > 1:
+            duplicates_found.append((filename, paths))
+        else:
+            # Only one file, add to result
+            result[filename] = paths[0]
+    
+    # If duplicates found, raise error with detailed information
+    if duplicates_found:
+        error_msg = "Duplicate filenames found in input folder subdirectories:\n"
+        for filename, paths in duplicates_found:
+            error_msg += f"\n  {filename} found at:\n"
+            for path in paths:
+                error_msg += f"    - {path}\n"
+        console.error(error_msg)
+        raise ValueError(
+            f"Found {len(duplicates_found)} file(s) with duplicate filenames. "
+            "Please ensure each file has a unique name within the input folder and its subdirectories. "
+            f"See console output for details."
+        )
+    
+    console.info_verbose(f"Found {len(result)} files with extensions {extensions} in {base_folder}")
+    return result
+
+
 def collect_pairs(input_folder: str,
                   date_csv_path: Optional[str] = None,
                   pairs_csv_path: Optional[str] = None,
@@ -642,13 +710,14 @@ def collect_pairs(input_folder: str,
     elif date_csv_path is not None:
         pass
 
-    # 2) Collect all files with allowed extensions
+    # 2) Collect all files with allowed extensions (recursive search with duplicate detection)
     if extensions is None:
         extensions = (".tif", ".tiff")
     exts = tuple(e.lower() for e in extensions)
 
-    img_files = [f for f in os.listdir(input_folder) if f.lower().endswith(exts)]
-    console.info_verbose(f"Found {len(img_files)} image files in {input_folder}")
+    # Use recursive search to find all image files in subdirectories
+    filename_to_path = find_files_recursive_with_duplicates(input_folder, exts)
+    img_files = list(filename_to_path.keys())
 
     id_to_file = {}
     id_to_date = {}
@@ -660,7 +729,8 @@ def collect_pairs(input_folder: str,
         if lead is None:
             continue
         
-        path = os.path.join(input_folder, f)
+        # Use the full path from recursive search
+        path = filename_to_path[f]
         
         # Parse the date token
         try:

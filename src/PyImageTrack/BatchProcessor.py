@@ -197,7 +197,7 @@ def get_input_folder_from_config(config_path: str) -> str:
 
 def get_identifiers_in_folder(input_folder: str) -> set:
     """
-    Get all identifiers present in the input folder.
+    Get all identifiers present in the input folder and its subfolders.
 
     Parameters
     ----------
@@ -207,17 +207,19 @@ def get_identifiers_in_folder(input_folder: str) -> set:
     Returns
     -------
     set
-        Set of identifiers found in the folder.
+        Set of identifiers found in the folder and its subfolders.
     """
     identifiers = set()
     
     if not os.path.isdir(input_folder):
         return identifiers
     
-    for filename in os.listdir(input_folder):
-        identifier = extract_identifier(filename)
-        if identifier:
-            identifiers.add(identifier)
+    # Recursively search all subdirectories
+    for root, dirs, files in os.walk(input_folder):
+        for filename in files:
+            identifier = extract_identifier(filename)
+            if identifier:
+                identifiers.add(identifier)
     
     return identifiers
 
