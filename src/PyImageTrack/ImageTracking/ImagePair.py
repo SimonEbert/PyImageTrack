@@ -1189,7 +1189,7 @@ class ImagePair:
         - "outlier-filtered" rasters exclude only outliers; LoD-below points remain unless excluded by ``valid``.
         - Outlier masks write value 1 where the specific outlier reason is true (0/NaN elsewhere).
         - Vector outputs use FlatGeobuf; rasters use GTiff (masks/metrics) or JPEG (raw images).
-        - Statistics text is written when ``"statistical_parameters_txt"`` is requested.
+        - Statistics text is written when ``"statistical_results_txt"`` is requested.
 
         Parameters
         ----------
@@ -1197,15 +1197,34 @@ class ImagePair:
             Target folder for all outputs.
         save_files : list
             Tokens controlling what to save. Supported tokens include:
-            - "first_image_matrix", "second_image_matrix"
-            - "movement_bearing_valid_tif", "movement_rate_valid_tif"
-            - "movement_bearing_outlier_filtered_tif", "movement_rate_outlier_filtered_tif"
-            - "movement_bearing_LoD_filtered_tif", "movement_rate_LoD_filtered_tif"
-            - "movement_bearing_all_tif", "movement_rate_all_tif"
-            - "mask_invalid_tif", "mask_LoD_tif"
-            - "mask_outlier_md_tif", "mask_outlier_msd_tif", "mask_outlier_bd_tif", "mask_outlier_bsd_tif"
-            - "LoD_points_geojson", "control_points_geojson"
-            - "statistical_parameters_txt"
+
+            Movement results (by processing level):
+            - "L0_movement-bearing_raw_tif"    - All tracked points, no filters
+            - "L0_movement-rate_raw_tif"       - All tracked points, no filters
+            - "L1_movement-bearing_above-LoD_tif" - Points above LoD (includes outliers)
+            - "L1_movement-rate_above-LoD_tif"    - Points above LoD (includes outliers)
+            - "L2_movement-bearing_above-LoD_filtered_tif" - Fully validated (above LoD AND no outliers)
+            - "L2_movement-rate_above-LoD_filtered_tif"    - Fully validated (above LoD AND no outliers)
+
+            Result outputs:
+            - "tracking_results_fgb"        - Full tracking results per point (.fgb)
+            - "tracking_results_figure_jpg" - Tracking visualization plot (.jpg)
+            - "statistical_results_txt"     - Summary statistics (.txt)
+
+            Masks (show which points passed/failed each filter):
+            - "mask_invalid_tif"     - Invalid points (failed cross-correlation)
+            - "mask_LoD_tif"         - Points below Level of Detection
+            - "mask_outlier_md_tif"  - Outliers by mean difference filter
+            - "mask_outlier_msd_tif" - Outliers by mean standard deviation filter
+            - "mask_outlier_bd_tif"  - Outliers by bearing difference filter
+            - "mask_outlier_bsd_tif" - Outliers by bearing standard deviation filter
+
+            Diagnostics:
+            - "parameters_txt"             - All configuration parameters (.txt)
+            - "first_image_matrix_jpg"     - Raw first image matrix (.jpg)
+            - "second_image_matrix_jpg"    - Raw second image matrix (.jpg)
+            - "LoD_points_fgb"             - Level of Detection points (.fgb)
+            - "alignment_points_fgb"       - Alignment control points (.fgb)
 
         Returns
         -------
@@ -1213,12 +1232,12 @@ class ImagePair:
         """
         os.makedirs(folder_path, exist_ok=True)
 
-        # --- Always save the full tracking results GeoJSON ---
-
-        self.tracking_results.to_file(
-            f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
-            driver="FlatGeobuf"
-        )
+        # --- Save full tracking results if requested ---
+        if "tracking_results_fgb" in save_files:
+            self.tracking_results.to_file(
+                f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
+                driver="FlatGeobuf"
+            )
 
         # --- Prepare common subsets and guards ---
         tr_all = self.tracking_results
@@ -1312,7 +1331,7 @@ class ImagePair:
 
                 # --- Save input images if requested ---
 
-        if "first_image_matrix" in save_files:
+        if "first_image_matrix_jpg" in save_files:
             _save_raster_as_tif(
                 path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
                 raster=self.image1_matrix.astype(np.uint8),
@@ -1321,7 +1340,7 @@ class ImagePair:
                 driver="JPEG"
             )
 
-        if "second_image_matrix" in save_files:
+        if "second_image_matrix_jpg" in save_files:
             _save_raster_as_tif(
                 path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
                 raster=self.image2_matrix.astype(np.uint8),
@@ -1341,71 +1360,54 @@ class ImagePair:
 
         # --- Save requested rasters ---
 
-        # Valid rasters
+        # L2: Fully validated rasters (above LoD AND no outliers)
         if raster_valid is not None:
-            if "movement_bearing_valid_tif" in save_files:
+            if "L2_movement-bearing_above-LoD_filtered_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_valid_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L2_movement-bearing_above-LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_valid["raster"]["movement_bearing_pixels"],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
                 )
 
-            if "movement_rate_valid_tif" in save_files:
+            if "L2_movement-rate_above-LoD_filtered_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_valid_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L2_movement-rate_above-LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_valid["raster"][self.displacement_column_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
                 )
 
-        # Outlier-filtered rasters (exclude outliers, keep everything else)
-        if raster_outlier_filtered is not None:
-            if "movement_bearing_outlier_filtered_tif" in save_files:
-                _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_outlier_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
-                    raster=raster_outlier_filtered["raster"]["movement_bearing_pixels"],
-                    transform=raster_outlier_filtered["transform"],
-                    crs=raster_outlier_filtered["crs"]
-                )
-            if "movement_rate_outlier_filtered_tif" in save_files:
-                _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_outlier_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
-                    raster=raster_outlier_filtered["raster"][self.displacement_column_name],
-                    transform=raster_outlier_filtered["transform"],
-                    crs=raster_outlier_filtered["crs"]
-                )
-
-        # LoD-filtered rasters (keep all points above LoD, including outliers)
+        # L1: LoD-filtered rasters (keep all points above LoD, including outliers)
         if raster_lod_filtered is not None:
-            if "movement_bearing_LoD_filtered_tif" in save_files:
+            if "L1_movement-bearing_above-LoD_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L1_movement-bearing_above-LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_lod_filtered["raster"]["movement_bearing_pixels"],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
-            if "movement_rate_LoD_filtered_tif" in save_files:
+            if "L1_movement-rate_above-LoD_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L1_movement-rate_above-LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_lod_filtered["raster"][self.displacement_column_name],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
 
-        # ALL rasters (absolutely all tracked points, no filters)
+        # L0: Raw rasters (all tracked points, no filters)
         if raster_all is not None:
-            if "movement_bearing_all_tif" in save_files:
+            if "L0_movement-bearing_raw_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_bearing_all_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L0_movement-bearing_raw_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_all["raster"]["movement_bearing_pixels"],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
                 )
 
-            if "movement_rate_all_tif" in save_files:
+            if "L0_movement-rate_raw_tif" in save_files:
                 _save_raster_as_tif(
-                    path=f"{folder_path}/movement_rate_all_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L0_movement-rate_raw_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
                     raster=raster_all["raster"][self.displacement_column_name],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -1447,20 +1449,20 @@ class ImagePair:
         _write_reason_mask("is_bearing_standard_deviation_outlier", "mask_outlier_bsd_tif", "mask_outlier_bsd")
 
         # LoD points
-        if "LoD_points_geojson" in save_files and self.level_of_detection_points is not None:
+        if "LoD_points_fgb" in save_files and self.level_of_detection_points is not None:
             self.level_of_detection_points.to_file(
                 f"{folder_path}/LoD_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
                 driver="FlatGeobuf"
             )
 
-        if "control_points_geojson" in save_files and self.tracked_control_points is not None:
+        if "alignment_points_fgb" in save_files and self.tracked_control_points is not None:
             self.tracked_control_points.to_file(
-                f"{folder_path}/control_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
+                f"{folder_path}/alignment_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
                 driver="FlatGeobuf"
             )
 
         # --- Statistics text file (robust to missing columns) ---
-        if "statistical_parameters_txt" in save_files:
+        if "statistical_results_txt" in save_files:
             total_number_of_points = len(tr_all)
             number_of_points_below_lod = int(tr_all["is_below_LoD"].sum()) if has_lod_col else 0
             number_of_outliers = int(is_outlier.sum())
@@ -1667,52 +1669,56 @@ class ImagePair:
                 )
 
         # --- Parameter logs ---
-        with open(
-                f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
-                "w",
-        ) as text_file:
-            text_file.write(self.alignment_parameters.__str__())
-
-        if self.tracking_parameters is not None:
+        # --- Save parameters if requested ---
+        if "parameters_txt" in save_files:
             with open(
                     f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
-                    "a",
+                    "w",
             ) as text_file:
-                text_file.write(self.tracking_parameters.__str__())
+                text_file.write(self.alignment_parameters.__str__())
 
-        if self.filter_parameters is not None:
-            with (open(folder_path + "/parameters_" + str(self.image1_observation_date.strftime(format='%Y-%m-%d'))
-                       + "_" + str(self.image2_observation_date.strftime(format='%Y-%m-%d'))
-                       + ".txt", "a") as text_file):
-                text_file.write(self.filter_parameters.__str__())
+            if self.tracking_parameters is not None:
+                with open(
+                        f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
+                        "a",
+                ) as text_file:
+                    text_file.write(self.tracking_parameters.__str__())
+
+            if self.filter_parameters is not None:
+                with open(
+                        f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
+                        "a",
+                ) as text_file:
+                    text_file.write(self.filter_parameters.__str__())
 
         # --- Plots and LoD annotation  ---
-        if self.level_of_detection is not None:
-            if "mask_LoD_tif" in save_files and has_lod_col:
-                lod_mask = tr_all.loc[tr_all["is_below_LoD"]].copy()
-                lod_mask["is_below_LoD_int"] = 1  # write 1 where below LoD
-                lod_raster = _make_raster(lod_mask, ["is_below_LoD_int"])
-                if lod_raster is not None:
-                    _save_raster_as_tif(
-                        path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
-                        raster=lod_raster["raster"]["is_below_LoD_int"],
-                        transform=lod_raster["transform"],
-                        crs=lod_raster["crs"]
-                    )
+        if "tracking_results_figure_jpg" in save_files:
+            if self.level_of_detection is not None:
+                if "mask_LoD_tif" in save_files and has_lod_col:
+                    lod_mask = tr_all.loc[tr_all["is_below_LoD"]].copy()
+                    lod_mask["is_below_LoD_int"] = 1  # write 1 where below LoD
+                    lod_raster = _make_raster(lod_mask, ["is_below_LoD_int"])
+                    if lod_raster is not None:
+                        _save_raster_as_tif(
+                            path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                            raster=lod_raster["raster"]["is_below_LoD_int"],
+                            transform=lod_raster["transform"],
+                            crs=lod_raster["crs"]
+                        )
 
-            plot_movement_of_points_with_valid_mask(
-                self.image1_matrix,
-                self.image1_transform,
-                self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-            )
-        else:
-            plot_movement_of_points(
-                self.image1_matrix,
-                self.image1_transform,
-                self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-            )
+                plot_movement_of_points_with_valid_mask(
+                    self.image1_matrix,
+                    self.image1_transform,
+                    self.tracking_results,
+                    save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                )
+            else:
+                plot_movement_of_points(
+                    self.image1_matrix,
+                    self.image1_transform,
+                    self.tracking_results,
+                    save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                )
 
     def load_results(self, file_path, reference_area):
         """

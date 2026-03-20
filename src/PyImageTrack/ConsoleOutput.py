@@ -425,7 +425,7 @@ class ConsoleOutput:
         prefix = ' ' * indent
         if label:
             self.print(f"{prefix}[i] {label}:", color='white')
-        for f in sorted(files):
+        for f in sorted(files, key=str.lower):
             self.print(f"{prefix}  • {f}", color='dim')
     
     def info_verbose(self, message: str, indent: int = 0):

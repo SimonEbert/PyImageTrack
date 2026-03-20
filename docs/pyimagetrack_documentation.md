@@ -300,7 +300,7 @@ The `[output_units]` section is **required** and specifies how movement values a
 
 **Important Notes:**
 - When using `"total"` mode, all filter thresholds in the `[filter]` section are interpreted as raw displacement values (e.g., meters) rather than per-year rates.
-- The output TIF files (`movement_rate_*.tif`) will show either per-year or total displacement depending on the mode.
+- The output TIF files (`L*_movement-rate_*.tif`) will show either per-year or total displacement depending on the mode.
 - The statistical parameters output file will indicate the units used (e.g., "Movement (per year)" vs "Movement (total)").
 - The cache key includes the output units mode to prevent mixing cached results from different modes.
 
@@ -1637,15 +1637,14 @@ Writes tracking outputs (GeoJSON, GeoTIFFs, masks, stats) into `folder_path`.
 ``save_files`` : list
     Tokens controlling which outputs are written. Supported tokens include:
 
-- "first_image_matrix", "second_image_matrix"
-- "movement_bearing_valid_tif", "movement_rate_valid_tif"
-- "movement_bearing_outlier_filtered_tif", "movement_rate_outlier_filtered_tif"
-- "movement_bearing_LoD_filtered_tif", "movement_rate_LoD_filtered_tif"
-- "movement_bearing_all_tif", "movement_rate_all_tif"
+- "L0_movement-bearing_raw_tif", "L0_movement-rate_raw_tif"
+- "L1_movement-bearing_above-LoD_tif", "L1_movement-rate_above-LoD_tif"
+- "L2_movement-bearing_above-LoD_filtered_tif", "L2_movement-rate_above-LoD_filtered_tif"
+- "tracking_results_fgb", "tracking_results_figure_jpg", "statistical_results_txt"
 - "mask_invalid_tif", "mask_LoD_tif"
 - "mask_outlier_md_tif", "mask_outlier_msd_tif", "mask_outlier_bd_tif", "mask_outlier_bsd_tif"
-- "LoD_points_geojson", "control_points_geojson"
-- "statistical_parameters_txt"
+- "parameters_txt", "first_image_matrix_jpg", "second_image_matrix_jpg"
+- "LoD_points_fgb", "alignment_points_fgb"
 
 #### Returns
 ``None``
