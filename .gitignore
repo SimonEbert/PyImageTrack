@@ -21,10 +21,14 @@ dist/
 
 # Local tests
 /tests/
+/tests/*.txt
 
 # data
 input/
 output/
+
+# plans (documentation/draft files)
+plans/
 
 # local artifacts
 wsl

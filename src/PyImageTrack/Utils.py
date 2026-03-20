@@ -110,15 +110,19 @@ def _validate_date_token(token: str, year_part: str) -> bool:
             remaining_digits = remaining.replace('-', '')
             digit_count = len(remaining_digits)
             
-            # Valid digit counts for compact format:
-            # 0 = year only
+            # For progressive extraction, we need to accept intermediate states
+            # 0 = year only (valid)
+            # 2 = month only (potentially valid)
             # 4 = month + day (valid)
-            # 6 = month + day + hour (INVALID - incomplete time!)
+            # 6 = month + day + hour (potentially valid - could add minute)
             # 8 = month + day + hour + minute (valid)
             # 10 = month + day + hour + minute + second (valid)
-            if digit_count == 6:
-                return False  # HH without MM is incomplete
             
+            # Check that we have even-length digits (no partial segments)
+            if digit_count % 2 != 0:
+                return False  # Odd length means incomplete digit pair
+            
+            # Validate only the segments we have so far - don't require completeness
             if digit_count >= 2:
                 m = int(remaining_digits[0:2])
                 if not (1 <= m <= 12):
@@ -207,7 +211,9 @@ def extract_date_token(s: str) -> Optional[str]:
     
     year_part = match.group(1)
     token = year_part
-    remaining = normalized[len(year_part):]
+    # FIX: Use the actual match position, not just the year length
+    year_pos = match.start()
+    remaining = normalized[year_pos + len(year_part):]
     
     # Check if original has separator (hyphen or underscore) immediately after the year
     # This determines whether we use separated format (2023-03-16)
@@ -228,64 +234,101 @@ def extract_date_token(s: str) -> Optional[str]:
         all_additional = all_additional.lstrip('-').rstrip('-')
         
         if all_additional:
-            # Progressive testing: add parts incrementally
-            validated_token = token
-            pos = 0
+            # FIX: Base format decision on the actual extracted content, not the original string
+            # If all_additional contains hyphens, treat as separated format
+            # If all_additional is all digits, treat as compact format
+            extracted_has_hyphen = '-' in all_additional
             
-            while pos < len(all_additional):
-                # Try adding 1-4 characters at a time
-                added = False
-                for add_len in range(1, 5):
-                    if pos + add_len > len(all_additional):
-                        continue
-                    
-                    test_part = all_additional[pos:pos+add_len]
-                    
-                    # In compact format with no initial separator, hyphens mean end of date
-                    if not has_separator and '-' in test_part:
-                        # Stop at hyphen - the date portion is complete
+            if extracted_has_hyphen:
+                # Separated mode: split by hyphens and add each segment as a whole
+                segments = all_additional.split('-')
+                validated_token = token
+                
+                for seg in segments:
+                    # FIX: Check for identifier pattern before proceeding
+                    if seg.startswith('id'):
+                        # This is an identifier segment, stop extraction
                         break
                     
-                    # Build test token based on format
-                    if has_separator:
-                        # For separated format, we need to handle hyphen boundaries
-                        # If test_part is just digits, we probably need to find hyphen boundary
-                        # Simplification: add exactly what we have, including hyphens
-                        if test_part == '-':
-                            # Skip adding lone hyphen as incremental addition
-                            pos += 1
-                            added = True
-                            break
-                        
-                        # Check if we need to add a hyphen before
-                        if validated_token[-1] != '-' and not test_part.startswith('-'):
-                            test_token = validated_token + '-' + test_part
-                        else:
-                            test_token = validated_token + test_part
-                    else:
-                        # Compact format: no hyphens should be added here
-                        test_token = validated_token + test_part
+                    if not seg:
+                        continue
                     
-                    # Validate this test token
+                    # Only accept numeric segments at least 2 digits long
+                    if not seg.isdigit() or len(seg) < 2:
+                        break
+                    
+                    # FIX: Handle compact time segments (4 digits = HHMM)
+                    # If segment is 4 digits and we already have month/day, split it into hour/minute
+                    current_token_parts = len(validated_token.split('-'))
+                    if len(seg) == 4 and current_token_parts >= 3:
+                        # This is likely a compact time segment, try splitting it
+                        hour_part = seg[0:2]
+                        minute_part = seg[2:4]
+                        
+                        # First add just the hour
+                        hour_token = validated_token + '-' + hour_part
+                        if _validate_date_token(hour_token, year_part):
+                            validated_token = hour_token
+                            # Then add the minute
+                            minute_token = validated_token + '-' + minute_part
+                            if _validate_date_token(minute_token, year_part):
+                                validated_token = minute_token
+                            # If validation fails, stop
+                            break
+                        # If hour validation fails, stop
+                        break
+                    
+                    # Try adding this segment with a hyphen separator
+                    test_token = validated_token + '-' + seg
+                    
+                    # FIX: Don't validate partial tokens - only validate when we have a chance of being complete
+                    # For a date token to be valid after adding a segment, the segment should be:
+                    # - 2 digits (month or day or hour/minute)
+                    # - And make the token more complete
                     valid = _validate_date_token(test_token, year_part)
                     
                     if valid:
-                        # Token looks good, use it
                         validated_token = test_token
-                        pos += add_len
-                        added = True
-                        break
                     else:
-                        # Token invalid: might be because current test_part is too much
-                        # But might also be because we're missing a continuation
-                        # We only skip if this is clearly wrong
-                        pass
+                        # If adding this segment makes it invalid, we're done
+                        # But also check if adding more might help (e.g., we added partial day)
+                        # For simplicity, stop here - the token is no longer valid
+                        break
                 
-                if not added:
-                    # Can't add more without making it invalid - stop
-                    break
-            
-            token = validated_token
+                token = validated_token
+            else:
+                # Compact mode: all_additional should be all digits
+                if not all_additional.isdigit():
+                    # Not pure digits - not a valid compact format
+                    token = token
+                else:
+                    # Compact mode: add characters in 2-character pairs (month, day, etc.)
+                    validated_token = token
+                    pos = 0
+                    
+                    while pos + 2 <= len(all_additional):
+                        seg = all_additional[pos:pos+2]
+                        
+                        # Try adding this 2-character segment directly
+                        test_token = validated_token + seg
+                        
+                        # Check if the test token's remaining length is valid
+                        remaining_after_add = len(test_token) - len(year_part)
+                        
+                        # Compact format should have even-length remainder after year
+                        # (2 for month, 4 for month+day, 6 for month+day+hour, etc.)
+                        if remaining_after_add % 2 != 0:
+                            # Odd length = incomplete, stop
+                            break
+                        
+                        if _validate_date_token(test_token, year_part):
+                            validated_token = test_token
+                            pos += 2
+                        else:
+                            # Invalid, stop
+                            break
+                    
+                    token = validated_token
     
     return token
 
