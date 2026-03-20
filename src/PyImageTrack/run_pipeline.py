@@ -207,22 +207,74 @@ def _resolve_path(value, base_dir: Path):
     return str(path_obj)
 
 
+def _find_file_recursive(search_folder: str, filename: str) -> str | None:
+    """
+    Recursively search for a file by name in a folder and its subfolders.
+    
+    Parameters
+    ----------
+    search_folder : str
+        The base folder to search in.
+    filename : str
+        The filename to search for.
+    
+    Returns
+    -------
+    str or None
+        The full path to the file if found and unique, None if not found.
+    
+    Raises
+    ------
+    ValueError
+        If the file is found in multiple locations.
+    """
+    from .ConsoleOutput import get_console
+    console = get_console()
+    
+    matches = []
+    search_path = Path(search_folder)
+    
+    # Recursively search for the file
+    for root, dirs, files in os.walk(search_path):
+        if filename in files:
+            matches.append(str(Path(root) / filename))
+    
+    # If no matches found, return None
+    if not matches:
+        return None
+    
+    # If multiple matches found, raise error
+    if len(matches) > 1:
+        error_msg = f"Duplicate files found with name '{filename}':\n"
+        for match in matches:
+            error_msg += f"  - {match}\n"
+        console.error(error_msg)
+        raise ValueError(
+            f"Multiple files with the name '{filename}' found in the input folder "
+            "and its subdirectories. Please ensure each file has a unique name. "
+            f"See console output for details."
+        )
+    
+    # Return the single match
+    return matches[0]
+
+
 def _resolve_input_path(value: str | None, input_folder: str, config_dir: Path) -> str | None:
     """
-    Resolve an input file path, searching in input_folder first, then config_dir.
+    Resolve an input file path, searching recursively in input_folder and its subfolders.
     
     This function implements the following resolution strategy:
     1. If the path is absolute, use it as-is
     2. If the path is relative:
-       a. First, try to find it in input_folder
-       b. If not found, resolve it relative to config_dir (fallback)
+       a. Recursively search for the filename in input_folder and all subfolders
+       b. If not found recursively, try to resolve it relative to config_dir (fallback)
     
     Parameters
     ----------
     value : str or None
         Path to resolve. If None, returns None.
     input_folder : str
-        The input folder where files are searched first.
+        The input folder where files are searched first (searches recursively in subfolders).
     config_dir : Path
         The directory containing the config file (fallback for relative paths).
 
@@ -230,6 +282,11 @@ def _resolve_input_path(value: str | None, input_folder: str, config_dir: Path) 
     -------
     str or None
         Absolute path as string, or None if value is None.
+
+    Raises
+    ------
+    ValueError
+        If the file is found in multiple locations within input_folder subdirectories.
     """
     if value is None:
         return None
@@ -240,13 +297,18 @@ def _resolve_input_path(value: str | None, input_folder: str, config_dir: Path) 
     if path_obj.is_absolute():
         return str(path_obj)
     
-    # Try input_folder first
-    input_path = Path(input_folder) / path_obj
-    if input_path.exists():
-        return str(input_path.resolve())
+    # Try recursive search in input_folder first
+    recursive_match = _find_file_recursive(input_folder, value)
+    if recursive_match is not None:
+        return recursive_match
     
     # Fallback: resolve relative to config_dir (original behavior)
-    return str((config_dir / path_obj).resolve())
+    config_path = config_dir / path_obj
+    if config_path.exists():
+        return str(config_path.resolve())
+    
+    # File not found anywhere
+    return None
 
 
 def _crs_label(crs) -> str:

@@ -20,23 +20,32 @@
 
 [paths]
 # Directory containing input hillshade images
+# IMPORTANT: The input_folder and ALL its subdirectories are searched for images, CSVs, and shapefiles.
+# Files can be organized in any subfolder structure within this directory.
+# Duplicate filenames across different subfolders will cause an error.
 input_folder = "/path/to/input/hillshades"
 
 # Directory where all output files will be saved
 output_folder = "/path/to/output/hillshades"
 
-# Path to CSV file mapping abbreviated dates from image names to YYYY-MM-DD dates (searched in input_folder, or use absolute path)
+# Path to CSV file mapping abbreviated dates from image names to YYYY-MM-DD dates
+# Searched recursively in input_folder and subdirectories. If not found there,
+# an absolute path can be used. Cannot be in multiple locations.
 # Format: year;date (e.g., "2018;2018-01-01")
 # Can be set to "none" if the date is reflected in the filename
 date_csv_path = "image_dates.csv"
 
-# Path to CSV file defining custom image pairs (searched in input_folder, or use absolute path)
+# Path to CSV file defining custom image pairs
+# Searched recursively in input_folder and subdirectories. If not found there,
+# an absolute path can be used. Cannot be in multiple locations.
 # Format: date_earlier;date_later (e.g., "2024_07;2025_06")
 # Can be set to "none" if "all" or "successive" pairing mode is selected below
 pairs_csv_path = "image_pairs.csv"
 
 [polygons]
-# Shapefile defining the stable area (no expected movement) - searched in input_folder, or use absolute path
+# Shapefile defining the stable area (no expected movement)
+# Searched recursively in input_folder and subdirectories. If not found there,
+# an absolute path can be used. Cannot be in multiple locations.
 # Used for image alignment - stable areas provide reliable control points
 # Can be set to "none" to use image_bounds minus moving_area as stable area
 # (this assumes all areas outside the moving area are stable; alignment quality may be
@@ -50,7 +59,9 @@ pairs_csv_path = "image_pairs.csv"
 # combined into one reference area for alignment.
 stable_area_filename = "stable_area.shp"
 
-# Shapefile defining the moving area (where movement is expected) - searched in input_folder, or use absolute path
+# Shapefile defining the moving area (where movement is expected)
+# Searched recursively in input_folder and subdirectories. If not found there,
+# an absolute path can be used. Cannot be in multiple locations.
 # Used to define the region of interest for tracking
 #
 # NOTE: Wildcard pattern (*) is supported for batch processing mode.
@@ -312,8 +323,8 @@ use_lod_cache = false         # Cache Level of Detection calculations
 #     "parameters_txt"               - All configuration parameters (.txt)
 #     "first_image_matrix_jpg"       - Raw first image matrix (.jpg)
 #     "second_image_matrix_jpg"      - Raw second image matrix (.jpg)
-#     "LoD_points_fgb"           - Level of Detection points (.fgb)
-#     "alignment_points_fgb"       - Alignment control points (.fgb)
+#     "LoD_points_fgb"               - Level of Detection points (.fgb)
+#     "alignment_points_fgb"         - Alignment control points (.fgb)
 #
 files = [
   "L0_movement-bearing_raw_tif",
