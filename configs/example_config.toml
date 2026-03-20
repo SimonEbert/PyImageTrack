@@ -282,45 +282,54 @@ use_lod_cache = false         # Cache Level of Detection calculations
 [save]
 # List of output files to generate. Available options:
 #
-# Movement results:
-#   "movement_bearing_valid_tif"           - Movement direction (valid points only)
-#   "movement_rate_valid_tif"              - Movement speed (valid points only)
-#   "movement_bearing_outlier_filtered_tif" - After outlier removal
-#   "movement_rate_outlier_filtered_tif"    - After outlier removal
-#   "movement_bearing_LoD_filtered_tif"     - After LoD filtering
-#   "movement_rate_LoD_filtered_tif"        - After LoD filtering
-#   "movement_bearing_all_tif"              - All points (including filtered)
-#   "movement_rate_all_tif"                 - All points (including filtered)
+# Tracking results:
+#   L0 GeoTiff (Raw):
+#     "L0_movement-bearing_raw_tif"    - All tracked points, no filters applied
+#     "L0_movement-rate_raw_tif"       - All tracked points, no filters applied
 #
-# Masks (show which points passed/failed each filter):
-#   "mask_invalid_tif"          - Invalid points (failed cross-correlation)
-#   "mask_LoD_tif"              - Points below Level of Detection
-#   "mask_outlier_md_tif"       - Outliers by mean difference filter
-#   "mask_outlier_msd_tif"      - Outliers by mean standard deviation filter
-#   "mask_outlier_bd_tif"       - Outliers by bearing difference filter
-#   "mask_outlier_bsd_tif"      - Outliers by bearing standard deviation filter
+#   L1 GeoTiff (LoD-filtered):
+#     "L1_movement-bearing_above-LoD_tif"    - Points above LoD threshold (includes outliers)
+#     "L1_movement-rate_above-LoD_tif"       - Points above LoD threshold (includes outliers)
 #
-# Diagnostic outputs:
-#   "statistical_parameters_txt" - Summary statistics of tracking results
-#   "first_image_matrix"        - Raw first image matrix (debugging)
-#   "second_image_matrix"       - Raw second image matrix (debugging)
-#   "LoD_points_geojson"        - Level of Detection points (debugging)
-#   "control_points_geojson"    - Alignment control points (debugging)
+#   L2 GeoTiff (Valid):
+#     "L2_movement-bearing_above-LoD_filtered_tif"    - Fully validated (above LoD AND no outliers)
+#     "L2_movement-rate_above-LoD_filtered_tif"       - Fully validated (above LoD AND no outliers)
+#
+#   Other result outputs:
+#     "tracking_results_fgb"        - Full tracking results per point (.fgb)
+#     "tracking_results_figure_jpg" - Tracking visualization plot (.jpg)
+#     "statistical_results_txt"     - Summary statistics (.txt)
+#
+# Diagnostics:
+#   Mask GeoTiffs (show which points passed/failed each filter):
+#     "mask_invalid_tif"            - Invalid points (failed cross-correlation)
+#     "mask_LoD_tif"                - Points below Level of Detection
+#     "mask_outlier_md_tif"         - Outliers by mean difference filter
+#     "mask_outlier_msd_tif"        - Outliers by mean standard deviation filter
+#     "mask_outlier_bd_tif"         - Outliers by bearing difference filter
+#     "mask_outlier_bsd_tif"        - Outliers by bearing standard deviation filter
+#   Other diagnostic outputs:
+#     "parameters_txt"               - All configuration parameters (.txt)
+#     "first_image_matrix_jpg"       - Raw first image matrix (.jpg)
+#     "second_image_matrix_jpg"      - Raw second image matrix (.jpg)
+#     "LoD_points_fgb"           - Level of Detection points (.fgb)
+#     "alignment_points_fgb"       - Alignment control points (.fgb)
 #
 files = [
-  "movement_bearing_valid_tif",
-  "movement_rate_valid_tif",
-  "movement_bearing_outlier_filtered_tif",
-  "movement_rate_outlier_filtered_tif",
-  "movement_bearing_LoD_filtered_tif",
-  "movement_rate_LoD_filtered_tif",
-  "movement_bearing_all_tif",
-  "movement_rate_all_tif",
+  "L0_movement-bearing_raw_tif",
+  "L0_movement-rate_raw_tif",
+  "L1_movement-bearing_above-LoD_tif",
+  "L1_movement-rate_above-LoD_tif",
+  "L2_movement-bearing_above-LoD_filtered_tif",
+  "L2_movement-rate_above-LoD_filtered_tif",
   "mask_invalid_tif",
   "mask_LoD_tif",
   "mask_outlier_md_tif",
   "mask_outlier_msd_tif",
   "mask_outlier_bd_tif",
   "mask_outlier_bsd_tif",
-  "statistical_parameters_txt",
+  "tracking_results_fgb",
+  "tracking_results_figure_jpg",
+  "statistical_results_txt",
+  "parameters_txt",
 ]

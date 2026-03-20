@@ -217,10 +217,8 @@ def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, i
         The indices after applying the transformation matrix, as a (2,n)-shaped np.array.
     """
 
-    linear_transformation_matrix = np.array(transformation_matrix[0:2, 0:2])
-    shift_vector = np.array(np.repeat(np.expand_dims(np.array(transformation_matrix[0:2, 2]), axis=1),
-                                      indices.shape[1], axis=1))
-    moved_indices = np.matmul(linear_transformation_matrix, indices) + shift_vector
+    indices_h = np.vstack([indices, np.ones(indices.shape[1])])
+    moved_indices = (transformation_matrix @ indices_h)[0:2]
     return moved_indices
 
 

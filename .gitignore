@@ -30,6 +30,9 @@ output/
 # plans (documentation/draft files)
 plans/
 
+# obsolete code
+src/PyImageTrack/Obsolete_Code/
+
 # local artifacts
 wsl
 

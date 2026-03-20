@@ -19,6 +19,14 @@ deleting the "filename.prj" file from the folder where the "filename.shp" file i
 - Absolute beginner installation + quickstart + input file layout: `docs/absolute_beginner_installation.md`
 - Config templates: `configs/`
 
+## Output File Levels
+
+PyImageTrack outputs movement data in three processing levels (L0-L2):
+
+- **L0 (Raw)**: All tracked points with no filtering applied
+- **L1 (LoD-filtered)**: Points above the Level of Detection threshold (includes outliers)
+- **L2 (Valid)**: Points that pass all filters (above LoD AND no outliers)
+
 ## Quick start (CLI)
 
 Follow the steps for your platform.
