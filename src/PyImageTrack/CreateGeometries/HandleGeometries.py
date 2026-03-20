@@ -65,6 +65,8 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
     """
     if len(polygon) == 0:
         raise ValueError("polygon GeoDataFrame is empty")
+    # ToDo: This is a not-nice work-around and should be rewritten (where does polygon become a GeoSeries?
+    polygon = gpd.GeoDataFrame(geometry=polygon)
     if "geometry" not in polygon.columns:
         raise ValueError("polygon GeoDataFrame must contain a 'geometry' column")
     if distance_of_points <= 0:

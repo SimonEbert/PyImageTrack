@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timedelta
 from typing import Optional
 import numpy as np
+from pathlib import Path
 
 import pandas as pd
 
@@ -582,7 +583,7 @@ def _successive_pairs(sorted_years):
 def find_files_recursive_with_duplicates(base_folder: str, extensions: tuple):
     """
     Recursively find all files with specified extensions and check for duplicates.
-    
+    Exludes files that are stored in a folder called "Depth_images" since these are used for 3d displacement calculation
     Parameters
     ----------
     base_folder : str
@@ -609,7 +610,12 @@ def find_files_recursive_with_duplicates(base_folder: str, extensions: tuple):
     
     # Recursively walk through all subdirectories
     for root, dirs, files in os.walk(base_folder):
+        # Check if folder is called 'Depth_images' --> Then it will be excluded
+        if Path(root).parts[-1] == "Depth_images":
+            continue
         for filename in files:
+            if Path(filename).parent.name == "Depth_images":
+                continue
             # Check if file has one of the allowed extensions
             if filename.lower().endswith(extensions):
                 full_path = os.path.join(root, filename)
