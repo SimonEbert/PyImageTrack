@@ -3,6 +3,7 @@ import numpy as np
 import scipy
 import scipy.ndimage
 import sklearn
+import rasterio
 
 from ..CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
 from .TrackMovement import move_indices_from_transformation_matrix
@@ -62,7 +63,8 @@ def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformati
 
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
-                            alignment_parameters: AlignmentParameters):
+                            alignment_parameters: AlignmentParameters,
+                            return_alignment_transformation_matrix: bool = False):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
@@ -85,14 +87,17 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         This is the area, where no movement is suspected.
     alignment_parameters : AlignmentParameters
         The alignment parameters used for alignment, e.g. control_search_size_px
-    
+    return_alignment_transformation_matrix:
+        If true, the 3d homogeneous transformation matrix aligning image2 to image1 will be returned as a np.array
     Returns
     -------
     list
         [image1_matrix, new_matrix2, tracked_control_pixels_valid]: The two matrices representing the raster image
         as numpy arrays. As the two matrices are aligned, they possess the same transformation. The third element
         is a GeoDataFrame containing the tracked control points used for alignment.
-    
+        (alignment_transformation_matrix):
+            If return_alignment_transformation_matrix, the used alignment transformation will be returned as a 3x3
+            np.array representing a homogeneous transformation matrix.
     Raises
     ------
     ValueError
@@ -227,5 +232,10 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
             "Try adjusting alignment parameters: reduce control_cell_size, lower cross_correlation_threshold_alignment, "
             "or provide a proper stable_area polygon."
         )
+
+
+    if return_alignment_transformation_matrix:
+        return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid, sampling_transformation_matrix]
+
 
     return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid]

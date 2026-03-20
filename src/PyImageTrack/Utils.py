@@ -11,12 +11,21 @@ This module provides helper functions for:
 import itertools
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
+import numpy as np
 
 import pandas as pd
 
 from .ConsoleOutput import get_console
+
+def _round_to_nearest_hour(dt: datetime) -> datetime:
+    """Round to nearest hour (>=30 min rounds up)."""
+    if dt.minute > 30 or (dt.minute == 30 and (dt.second > 0 or dt.microsecond > 0)):
+        dt = dt.replace(minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    else:
+        dt = dt.replace(minute=0, second=0, microsecond=0)
+    return dt
 
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
@@ -983,6 +992,10 @@ def abbr_alignment(ap):
         Short code string starting with "A_".
     """
     parts = []
+    image_bands = _get(ap, 'image_bands', None)
+    if image_bands is not None:
+        parts.append(f"IB{image_bands}".replace(" ",""))
+
     # control extents (posx,negx,posy,negy) if provided
     ext = _get(ap, "control_search_extent_px", None)
     if ext:
@@ -1034,7 +1047,6 @@ def abbr_tracking(tp):
             parts.append(f"TS{ext}")  # fallback
 
     parts += [
-        f"IB{_get(tp, 'image_bands')}",
         f"DP{_get(tp, 'distance_of_tracked_points_px')}",
         f"MC{_get(tp, 'movement_cell_size')}",
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
@@ -1153,3 +1165,16 @@ def abbr_enhancement(ep) -> str:
     # Drop empty/None/NA fragments
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "E_" + "_".join(parts)
+
+def _recompute_lod_from_points(image_pair, filter_params) -> bool:
+    points = getattr(image_pair, "level_of_detection_points", None)
+    if points is None or len(points) == 0:
+        return False
+    quantile = filter_params.level_of_detection_quantile
+    if quantile is None or "movement_distance_per_year" not in points.columns:
+        return False
+    image_pair.level_of_detection = np.nanquantile(points["movement_distance_per_year"], quantile)
+    unit_name = points.crs.axis_info[0].unit_name if points.crs is not None else "pixel"
+    print("Found level of detection with quantile " + str(quantile) + " as "
+          + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + "/year")
+    return True

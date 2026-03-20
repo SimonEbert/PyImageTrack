@@ -1,6 +1,8 @@
 import skimage
 import numpy as np
 import scipy.ndimage
+import geopandas as gpd
+from shapely.geometry import Polygon
 
 from ..ConsoleOutput import get_console
 
@@ -35,6 +37,27 @@ def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
     return equalized_image
 
 
+def get_optimal_camera_model(image_matrix_shape: tuple, camera_intrinsic_matrix: np.ndarray,
+                             distortion_coefficients: np.ndarray):
+    import cv2
+
+    assert len(image_matrix_shape) == 2, "Image matrix is assumed to be two-dimensional height x width."
+
+    assert camera_intrinsic_matrix.shape == (3, 3), "The camera intrinsic matrix must be of shape (3,3)."
+    assert ((camera_intrinsic_matrix[2, :] == np.array([0, 0, 1])).all()
+            & (camera_intrinsic_matrix[1, 0] == 0)), ("The camera intrinsic matrix must be of the form\n"
+                                                      "[[f_x, s, c_x],\n"
+                                                      "[0, f_y, c_y],\n"
+                                                      "[0, 0, 1]]")
+
+
+    im_width = image_matrix_shape[1]
+    im_height = image_matrix_shape[0]
+    newCameraMatrix, roi = cv2.getOptimalNewCameraMatrix(
+        camera_intrinsic_matrix, distortion_coefficients, (im_width, im_height), 1, (im_width, im_height))
+    return newCameraMatrix, roi
+
+
 def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, distortion_coefficients: np.ndarray)\
         -> np.ndarray:
     """
@@ -65,7 +88,6 @@ def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, di
         severity of the distortion compared with the original array. The image matrix should have the same format as the
         original array (e.g. HxWxC for rasterio-read data).
     """
-    import cv2
 
     assert camera_intrinsic_matrix.shape == (3, 3), "The camera intrinsic matrix must be of shape (3,3)."
     assert ((camera_intrinsic_matrix[2, :] == np.array([0,0,1])).all()
@@ -73,15 +95,16 @@ def undistort_camera_image(image_matrix: np.ndarray, camera_intrinsic_matrix, di
                                                     "[[f_x, s, c_x],\n"
                                                     "[0, f_y, c_y],\n"
                                                     "[0, 0, 1]]")
-
+    import cv2
     change_format = (image_matrix.shape[0] == 3)
     if change_format:
         image_matrix = np.transpose(image_matrix, axes=(1, 2, 0))
 
-    im_width = image_matrix.shape[1]
-    im_height = image_matrix.shape[0]
-    newCameraMatrix, roi = cv2.getOptimalNewCameraMatrix(
-        camera_intrinsic_matrix, distortion_coefficients, (im_width, im_height), 1, (im_width, im_height))
+    image_matrix_shape = image_matrix.shape[0:2]
+
+    newCameraMatrix, roi = get_optimal_camera_model(image_matrix_shape,
+                                                    camera_intrinsic_matrix,
+                                                    distortion_coefficients,)
 
     image_matrix_undistorted = cv2.undistort(src=image_matrix,
                                              cameraMatrix=camera_intrinsic_matrix,
@@ -383,3 +406,31 @@ def check_channels_compatible(image1_matrix: np.ndarray, image2_matrix: np.ndarr
         f"Cannot process images with different channel configurations. "
         f"Both images must have the same dimensionality (both 2D or both 3D)."
     )
+
+
+
+def undistort_polygon(polygon: gpd.GeoDataFrame, image_shape: tuple, camera_intrinsic_matrix: np.ndarray,
+                      distortion_coefficients: np.ndarray,
+                      ):
+    import cv2
+
+    polygon_geom = polygon.geometry.iloc[0]
+    point_coordinates = np.array(polygon_geom.exterior.coords)
+    point_coordinates = point_coordinates.astype(np.float32).reshape(-1,1,2)
+    point_coordinates[..., 1] = -point_coordinates[..., 1]
+
+
+    newCameraMatrix, roi = get_optimal_camera_model(image_shape,camera_intrinsic_matrix,distortion_coefficients)
+
+    undistorted_point_coordinates = cv2.undistortPoints(point_coordinates, camera_intrinsic_matrix,
+                                                        distortion_coefficients,
+                                                        P=newCameraMatrix)
+
+    undistorted_xy = undistorted_point_coordinates.reshape(-1, 2)
+    undistorted_xy[:, 0] -= roi[0]
+    undistorted_xy[:, 1] -= roi[1]
+    undistorted_xy[..., 1] = -undistorted_xy[...,1]
+    undistorted_point_coordinates = Polygon(undistorted_xy)
+    undistorted_polygon = gpd.GeoDataFrame(geometry=[undistorted_point_coordinates], crs=polygon.crs).make_valid()
+    return undistorted_polygon
+

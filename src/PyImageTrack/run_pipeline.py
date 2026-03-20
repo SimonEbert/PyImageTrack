@@ -24,8 +24,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError as exc:
+    raise ModuleNotFoundError(
+        "tomllib is required to read TOML configs. Use Python 3.11+ or install tomli."
+    ) from exc
 
 import geopandas as gpd
 import numpy as np
@@ -404,43 +408,6 @@ def _resolve_common_crs(polygons_crs, image_path_1, image_path_2):
     return image_crs
 
 
-def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
-    """
-    Convert delta-per-year extents into effective absolute extents.
-
-    Converts user-specified delta extents (posx,negx,posy,negy) into effective
-    absolute extents by adding half the template size per side and scaling
-    deltas by the time between observations.
-
-    Parameters
-    ----------
-    deltas : tuple
-        A 4-element tuple (dx+, dx-, dy+, dy-) representing extra pixels beyond
-        half the template per year. Format: (positive_x, negative_x, positive_y, negative_y).
-    cell_size : int or float
-        The movement_cell_size or control_cell_size (template size).
-    years_between : float, optional
-        Time span in years between the two images. Default is 1.0.
-    cap_per_side : int, optional
-        Optional maximum value to clamp each side (to keep windows bounded).
-        If None, no clamping is applied. Default is None.
-
-    Returns
-    -------
-    tuple
-        A 4-element tuple (posx, negx, posy, negy) of effective extents as integers,
-        each >= half the cell size.
-    """
-    half = int(cell_size) // 2
-    def one(v):
-        eff = half + int(round(float(v) * float(years_between)))
-        if cap_per_side is not None:
-            eff = min(int(cap_per_side), eff)
-        return max(half, eff)
-    px, nx, py, ny = deltas
-    return (one(px), one(nx), one(py), one(ny))
-
-
 def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False,
                     use_colors: bool = True, log_file: str = None,
                     log_level: str = 'INFO', log_max_bytes: int = 10 * 1024 * 1024,
@@ -574,10 +541,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             camera_intrinsics_matrix = None
             camera_distortion_coefficients = None
         if convert_to_3d_displacement:
-            camera_to_3d_coordinates_transform = np.array(_as_optional_value(_get(cfg,
-                                                                                  "no_georef",
-                                                                                  "camera_to_3d_coordinates_transform",
-                                                                                  None)))
+
+            camera_to_3d_coordinates_transform = _as_optional_value(
+                _get(cfg, "no_georef", "camera_to_3d_coordinates_transform", None))
+            if camera_to_3d_coordinates_transform is not None:
+                camera_to_3d_coordinates_transform = np.array(camera_to_3d_coordinates_transform)
         else:
             camera_to_3d_coordinates_transform = None
     else:
@@ -618,8 +586,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # PARAMETERS (alignment, tracking, filter)
     # ==============================
     # Get image_bands from tracking configuration (used by both alignment and tracking)
-    image_bands = _require(cfg, "tracking", "image_bands")
-    
+    image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
+    unit_name = _as_optional_value(_get(cfg, "image", "unit_name", None))
+
     alignment_params = AlignmentParameters({
         "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
         # search extent tuple: (right, left, down, up) in pixels around the control cell
@@ -631,6 +600,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     })
 
     tracking_params = TrackingParameters({
+        # ToDo: Is this needed here? Probably not
         "image_bands": image_bands,
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
@@ -658,6 +628,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
         "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
     })
+    downsample_tracking_results_resolution = _as_optional_value(_get(cfg, "filter", "downsample_tracking_results_resolution"),)
+
 
     # ==============================
     # IMAGE ENHANCEMENT PARAMETERS
@@ -720,7 +692,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # Allow multiple features: combine to one reference polygon
             if len(poly_outside) > 0:
                 poly_outside = gpd.GeoDataFrame(
-                    geometry=[poly_outside.unary_union],
+                    geometry=[poly_outside.union_all()],
                     crs=poly_outside.crs,
                 )
         except Exception as e:
@@ -943,6 +915,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
             # Output units mode
             param_dict["output_units_mode"]                = output_units_mode
+            # Unit name (if specified, for plotting)
+            param_dict["unit_name"] = unit_name
             # Adaptive tracking window
             param_dict["use_adaptive_tracking_window"]     = use_adaptive_tracking_window
             # Image bands (ensure both key names are available for compatibility)
@@ -950,6 +924,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column
+            param_dict["downsample_tracking_results_resolution"] = downsample_tracking_results_resolution
+
  
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(

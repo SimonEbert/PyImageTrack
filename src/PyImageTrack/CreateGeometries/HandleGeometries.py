@@ -28,17 +28,9 @@ def get_submatrix_symmetric(central_index, shape, matrix):
     ----------
     submatrix: A numpy array of the specified shape.
     """
-    # matrix is three-dimensional if there are several channels
-    if len(matrix.shape) == 3:
-        submatrix = matrix[
-            :,
-            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
-            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
-    else:
-
-        submatrix = matrix[
-            int(central_index[0] - np.ceil(shape[0] / 2)) + 1:int(central_index[0] + np.ceil(shape[0] / 2)),
-            int(central_index[1] - np.ceil(shape[1] / 2)) + 1:int(central_index[1] + np.ceil(shape[1] / 2))]
+    submatrix = matrix[...,
+            max(0,int(central_index[0] - np.ceil(shape[0] / 2)) + 1):max(0,int(central_index[0] + np.ceil(shape[0] / 2))),
+            max(0,int(central_index[1] - np.ceil(shape[1] / 2)) + 1):max(0,int(central_index[1] + np.ceil(shape[1] / 2)))]
     return submatrix
 
 
@@ -102,7 +94,7 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
             points.append(shapely.geometry.Point(x, y))
 
     points = gpd.GeoDataFrame(crs=polygon.crs, geometry=points)
-    points = points[points.intersects(polygon.loc[0, "geometry"])]
+    points = points[points.intersects(polygon.geometry[0])]
 
     console = get_console()
     if polygon.crs is not None:
@@ -214,7 +206,7 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
                                 years_between_observations: float=1,
                                 output_unit_mode: str="per_year") -> gpd.GeoDataFrame:
     """
-    Georeferences a DataFrame with tracked points and calculates their movement in the unit
+    Georeferences a DataFrame with tracked points and calculates their movement (absolute and per year) in the unit
     specified by the coordinate reference system.
     Parameters
     ----------

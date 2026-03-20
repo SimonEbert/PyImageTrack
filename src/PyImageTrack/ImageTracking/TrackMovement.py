@@ -222,6 +222,7 @@ def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, i
 
     indices_h = np.vstack([indices, np.ones(indices.shape[1])])
     moved_indices = (transformation_matrix @ indices_h)[0:2]
+
     return moved_indices
 
 
@@ -250,6 +251,11 @@ def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarr
         problem did not converge after 50 iterations), the shift values and the transformation matrix are set to np.nan
         and None, respectively.
     """
+    # Assure the same number of channels for multi-channel image processing
+    if tracked_cell_matrix.ndim == 3:
+        if tracked_cell_matrix.shape[0] != search_cell_matrix.shape[0]:
+            raise ValueError("The tracked cell matrix and the search cell matrix contain different number of channels "
+                             "(Shape mismatch of the two matrices in axis 0).")
 
     # assign indices in respect to indexing in the search cell matrix
     if search_center is None:
@@ -409,10 +415,7 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
                                tracking_success=False)
     tracked_cell_vector = tracked_cell_vector / tracked_cell_norm
     corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
-    # if corr > 0.85:
-    #      rasterio.plot.show(search_cell_spline.ev(indices[0,:],indices[1,:]).reshape(tracked_cell_matrix.shape), title="Image 2 unmoved")
-    #      rasterio.plot.show(tracked_cell_matrix, title="Image 1 unmoved")
-    #      rasterio.plot.show(moved_cell_matrix, title="Image 2 moved")
+
 
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
@@ -434,6 +437,23 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
     ----------
     central_index: np.ndarray
         A np.ndarray that represents one central index to be tracked
+    shm1_name: str
+        Name of the shared memory for image matrix 1
+    shm2_name: str
+        Name of the shared memory for image matrix 2
+    shape1: np.ndarray
+        Shape of the first image matrix
+    shape2: np.ndarray
+        Shape of the second image matrix
+    dtype:
+        Data type of the image matrices (to read from shared memory)
+    tracked_cell_size: int
+        Size of the tracked cell (assumed to be quadratic)
+    search_extents: np.ndarray=None
+        Extents of the search area given as a tuple (pos_x, neg_x, pos_y, neg_y)
+    initial_shift_values: list=None
+        Initital shift values to circumvent rough cross-correlation guess and directly try to track using the Least
+        Squares Matching approach.
 
     Returns
     -------
@@ -447,7 +467,7 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
     # Get matrices from shared memory
     shm1 = multiprocessing.shared_memory.SharedMemory(name=shm1_name)
     shm2 = multiprocessing.shared_memory.SharedMemory(name=shm2_name)
-    
+    # ToDo: Is this fallback needed here?
     try:
         shared_image_matrix1 = np.ndarray(shape1, dtype=dtype, buffer=shm1.buf)
         shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
@@ -557,6 +577,10 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
         initial_shift_values = tracking_parameters.initial_shift_values
 
+    if image1_matrix.ndim != image2_matrix.ndim:
+        raise ValueError("The two matrices have different numbers of dimensions, possibly because of a channel "
+                         "mismatch between the two images.")
+
     # Check image sizes and create shared memory for image1_matrix
     if image1_matrix.nbytes == 0:
         raise ValueError("Image1 matrix has zero size. Cannot create shared memory.")
@@ -587,17 +611,26 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     full_cell_shared_search_extents = None  # Will hold the appropriate extents based on mode
 
     if alignment_tracking:
+        # ToDo: Are full_cell_shared_search_extents needed here?
         if getattr(alignment_parameters, "control_search_extent_px", None):
             shared_control_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_px)
             full_cell_shared_search_extents = shared_control_search_extents
         else:
-            raise ValueError("Alignment: control_search_extent_px must be set (tuple posx,negx,posy,negy).")
+            raise ValueError("Alignment: control_search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
+                             "Transformation from relative extents to full cell extents can be achieved using the"
+                             "function 'make_effective_extents_from_deltas' in the Utils module")
     else:
         if getattr(tracking_parameters, "search_extent_px", None):
             shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_px)
             full_cell_shared_search_extents = shared_search_extents
         else:
-            raise ValueError("Movement: search_extent_px must be set (tuple posx,negx,posy,negy).")
+            raise ValueError("Movement: search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
+                             "Transformation from relative extents to full cell extents can be achieved using the"
+                             "function 'make_effective_extents_from_deltas' in the Utils module")
+    initial_shift_values = getattr(tracking_parameters, "initial_shift_values", None)
+
+
+
 
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)

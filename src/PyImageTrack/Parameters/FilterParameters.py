@@ -68,7 +68,9 @@ class FilterParameters:
             "standard_deviation_movement_rate_threshold")
         self.standard_deviation_movement_rate_moving_window_size = parameter_dict.get(
             "standard_deviation_movement_rate_moving_window_size")
-        
+        self.maximal_fraction_depth_change_of_3d_displacement = parameter_dict.get(
+            "maximal_fraction_depth_change_of_3d_displacement")
+
         # Validate parameters
         self._validate()
     
@@ -81,6 +83,9 @@ class FilterParameters:
         if self.number_of_points_for_level_of_detection is not None:
             if self.number_of_points_for_level_of_detection <= 0:
                 raise ValueError(f"number_of_points_for_level_of_detection must be positive, got {self.number_of_points_for_level_of_detection}")
+        if self.maximal_fraction_depth_change_of_3d_displacement is not None:
+            if self.maximal_fraction_depth_change_of_3d_displacement <= 0:
+                raise ValueError(f"maximal_fraction_depth_change_of_3d_displacement must be positive, got {self.maximal_fraction_depth_change_of_3d_displacement}")
         
         # Validate threshold values (must be non-negative)
         for name in ["difference_movement_bearing_threshold", "standard_deviation_movement_bearing_threshold",
@@ -107,4 +112,5 @@ class FilterParameters:
                 f'\tdifference movement rate threshold: {self.difference_movement_rate_threshold}\n'
                 f'\tdifference movement rate moving window size: {self.difference_movement_rate_moving_window_size}\n'
                 f'\tstandard deviation movement rate threshold: {self.standard_deviation_movement_rate_threshold}\n'
-                f'\tstandard deviation movement rate moving window size: {self.standard_deviation_movement_rate_moving_window_size}\n')
+                f'\tstandard deviation movement rate moving window size: {self.standard_deviation_movement_rate_moving_window_size}\n'
+                f'\tmaximal_fraction_depth_change_of_3d_displacement: {self.maximal_fraction_depth_change_of_3d_displacement}\n')

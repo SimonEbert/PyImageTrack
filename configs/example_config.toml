@@ -102,6 +102,13 @@ fake_pixel_size = 1.0
 # Set to true to apply camera lens undistortion before tracking
 # Requires camera calibration parameters
 undistort_image = false
+# In this case, the camera intrinsics matrix and the distortion coefficients are needed
+camera_intrinsics_matrix = "none"
+camera_distortion_coefficients = "none"
+convert_to_3d_displacement = false
+# If the positions should be transformed from the camera coordinate system to a different 3d coordinate system, specify
+# the respective transform here
+camera_to_3d_coordinates_transform = "none"
 
 [downsampling]
 # Downsample input images by this integer factor to speed up processing

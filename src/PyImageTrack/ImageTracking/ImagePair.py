@@ -13,6 +13,8 @@ from scipy.sparse.csgraph import depth_first_tree
 from shapely.geometry import box
 import scipy
 import sklearn
+from pathlib import Path
+
 from ..Utils import make_effective_extents_from_deltas
 
 # Parameter classes
@@ -34,7 +36,9 @@ from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_
 from ..DataProcessing.DataPostprocessing import (
     filter_lod_points,
     filter_outliers_full,
+    downsample_tracking_results
 )
+
 # DataPreProcessing
 from ..DataProcessing.ImagePreprocessing import (
     equalize_adapthist_images,
@@ -42,9 +46,10 @@ from ..DataProcessing.ImagePreprocessing import (
     convert_float_to_uint,
     harmonize_dtypes,
     harmonize_resolution,
-    check_channels_compatible
+    check_channels_compatible,
+    undistort_polygon
 )
-from .AlignImages import align_images_lsm_scarce
+from .AlignImages import align_images_lsm_scarce, move_image_matrix_from_transformation
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
@@ -146,6 +151,10 @@ class ImagePair:
 
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
+        self.image_bands = parameter_dict.get("image_bands", None)
+        self.coordinate_system_unit_name = parameter_dict.get("unit_name", None)
+        self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
+        self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -317,6 +326,7 @@ class ImagePair:
                 raise ValueError(
                     "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
                     str(file1.crs))
+            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -418,6 +428,7 @@ class ImagePair:
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])
             w = min(self.image1_matrix.shape[-1], self.image2_matrix.shape[-1])
+            # ToDo: Is this clause needed or does the ellipsis already do the distinction?
             self.image1_matrix = self.image1_matrix[..., :h, :w] if self.image1_matrix.ndim == 3 else \
                 self.image1_matrix[:h, :w]
             self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
@@ -847,6 +858,11 @@ class ImagePair:
             raise ValueError("Got tracking area with crs " + str(tracking_area.crs) + " and images with crs "
                              + str(self.crs) + ". Tracking area and images are supposed to have the same crs.")
 
+        if self.undistort_image:
+            tracking_area = undistort_polygon(tracking_area, self.image1_matrix_original.shape[-2:],
+                                               self.camera_intrinsics_matrix,
+                                               self.camera_distortion_coefficients)
+
         if not self.images_aligned:
             console = get_console()
             console.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
@@ -889,6 +905,8 @@ class ImagePair:
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
                 years_between_observations=years_between_observations,
                 output_unit_mode=self.output_units_mode)
+            if self.coordinate_system_unit_name == "pixel":
+                self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
@@ -949,7 +967,12 @@ class ImagePair:
         -------
         None
         """
-        plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results)
+        if self.tracking_results is not None:
+            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results,
+                                    unit_name=self.coordinate_system_unit_name)
+        else:
+            console = get_console()
+            console.warning("No results calculated yet. Plot not provided")
 
     def plot_tracking_results_with_valid_mask(self) -> None:
         """
@@ -962,7 +985,12 @@ class ImagePair:
         -------
         None
         """
-        plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results)
+        if self.tracking_results is not None:
+            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
+                                                    unit_name=self.coordinate_system_unit_name)
+        else:
+            console = get_console()
+            console.warning("No results calculated yet. Plot not provided")
 
     def filter_outliers(self, filter_parameters: FilterParameters):
         """
@@ -1013,6 +1041,10 @@ class ImagePair:
             The tracked points which can be used for calculating the LoD.
         """
         points = points_for_lod_calculation
+        tracking_parameters = self.tracking_parameters
+        if tracking_parameters.initial_shift_values is not None:
+            tracking_parameters.initial_shift_values = [0,0]
+
         tracked_points = track_movement_lsm(
             image1_matrix=self.image1_matrix, image2_matrix=self.image2_matrix, image_transform=self.image1_transform,
             points_to_be_tracked=points, tracking_parameters=self.tracking_parameters, alignment_tracking=False,
@@ -1111,6 +1143,8 @@ class ImagePair:
 
         if points_for_lod_calculation.crs is not None:
             unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+        elif self.coordinate_system_unit_name is not None:
+            unit_name = self.coordinate_system_unit_name
         else:
             unit_name = "pixel"
         console = get_console()
@@ -1154,6 +1188,11 @@ class ImagePair:
         -------
         None
         """
+        if self.undistort_image:
+            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
+                                               self.camera_intrinsics_matrix,
+                                               self.camera_distortion_coefficients)
+
         points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
                                                                         filter_parameters.number_of_points_for_level_of_detection)
         self.filter_outliers(filter_parameters)
@@ -1239,6 +1278,21 @@ class ImagePair:
                 driver="FlatGeobuf"
             )
 
+        if self.downsample_tracking_results_resolution is not None:
+            downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
+                                                                       point_distance=self.downsample_tracking_results_resolution)
+            downsampled_tracking_results.to_file(
+                Path(f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb"),
+                driver="FlatGeobuf"
+            )
+            plot_movement_of_points(
+                self.image1_matrix,
+                self.image1_transform,
+                downsampled_tracking_results,
+                save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                unit_name=self.coordinate_system_unit_name
+            )
+
         # --- Prepare common subsets and guards ---
         tr_all = self.tracking_results
         moving_id_col = self.moving_id_column if self.moving_id_column in tr_all.columns else None
@@ -1314,20 +1368,27 @@ class ImagePair:
                 dtype = "uint8"
             else:
                 dtype = "float32"
-
+            if raster.ndim == 2:
+                raster_to_write = raster[np.newaxis, ...]
+                count = 1
+            elif raster.ndim == 3:
+                raster_to_write = raster
+                count = raster.shape[0]
+            else:
+                raise ValueError("Expecting raster to be 2D or 3D, but supplied raster with shape" + str(raster.shape))
             with rasterio.open(
                     path,
                     "w",
                     driver=driver,
-                    height=raster.shape[0],
-                    width=raster.shape[1],
+                    height=raster_to_write.shape[-2],
+                    width=raster_to_write.shape[-1],
                     transform=transform,
                     crs=crs,
-                    count=1,
+                    count=count,
                     nodata=np.nan,
                     dtype=dtype
             ) as dst:
-                dst.write(raster, 1)
+                dst.write(raster_to_write)
 
                 # --- Save input images if requested ---
 
@@ -1347,6 +1408,23 @@ class ImagePair:
                 transform=self.image1_transform,
                 crs=self.crs,
                 driver="JPEG"
+            )
+        if "first_image_depth_matrix" in save_files:
+            _save_raster_as_tif(
+                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
+                raster=self.depth_image1.astype(np.uint8),
+                transform=self.image1_transform,
+                crs=self.crs,
+                driver="GTiff"
+            )
+
+        if "second_image_depth_matrix" in save_files:
+            _save_raster_as_tif(
+                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
+                raster=self.depth_image2.astype(np.uint8),
+                transform=self.image1_transform,
+                crs=self.crs,
+                driver="GTiff"
             )
 
         # Grids for various subsets
@@ -1706,19 +1784,21 @@ class ImagePair:
                             crs=lod_raster["crs"]
                         )
 
-                plot_movement_of_points_with_valid_mask(
-                    self.image1_matrix,
-                    self.image1_transform,
-                    self.tracking_results,
-                    save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                )
-            else:
-                plot_movement_of_points(
-                    self.image1_matrix,
-                    self.image1_transform,
-                    self.tracking_results,
-                    save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                )
+            plot_movement_of_points_with_valid_mask(
+                self.image1_matrix,
+                self.image1_transform,
+                self.tracking_results,
+                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                unit_name=self.coordinate_system_unit_name
+            )
+        else:
+            plot_movement_of_points(
+                self.image1_matrix,
+                self.image1_transform,
+                self.tracking_results,
+                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                unit_name=self.coordinate_system_unit_name
+            )
 
     def load_results(self, file_path, reference_area):
         """

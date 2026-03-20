@@ -14,6 +14,9 @@ import hashlib
 import geopandas as gpd
 import rasterio
 from rasterio.crs import CRS as RioCRS
+import numpy as np
+
+from PyImageTrack.ConsoleOutput import get_console
 
 
 def _sha256(path: str) -> str:
@@ -55,9 +58,10 @@ def alignment_cache_paths(align_dir: str, year1: str, year2: str):
         A tuple of (aligned_tif_path, control_points_path, metadata_json_path).
     """
     aligned_tif = os.path.join(align_dir, f"aligned_image_{year2}.tif")
-    control_pts = os.path.join(align_dir, f"alignment_control_points_{year1}_{year2}.geojson")
+    aligned_depth_tif = os.path.join(align_dir, f"aligned_image_{year2}_depth.tif")
+    control_pts = os.path.join(align_dir, f"alignment_control_points_{year1}_{year2}.fgb")
     meta_json   = os.path.join(align_dir, f"alignment_meta_{year1}_{year2}.json")
-    return aligned_tif, control_pts, meta_json
+    return aligned_tif, aligned_depth_tif, control_pts, meta_json
 
 def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
                          align_params: dict, filenames: dict, dates: dict,
@@ -95,7 +99,7 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         If the aligned image contains all NaN values, all zeros, or has very low variance.
     """
     os.makedirs(align_dir, exist_ok=True)
-    aligned_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
+    aligned_tif, aligned_depth_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
 
     crs = image_pair.crs
     if crs is not None and not isinstance(crs, RioCRS):
@@ -139,6 +143,10 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         else:
             dst.write(image_pair.image2_matrix)
 
+    if image_pair.depth_image2 is not None:
+        profile.update({"count": 1})
+        with rasterio.open(aligned_depth_tif, "w", **profile) as dst:
+            dst.write(image_pair.depth_image2, 1)
     # optionally write an additional true-color aligned image
     # this expects image_pair.image2_matrix_truecolor to be set (multi-band or single-band)
     if save_truecolor_aligned and getattr(image_pair, "image2_matrix_truecolor", None) is not None:
@@ -197,20 +205,33 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     bool
         True if cache was loaded successfully, False if cache files don't exist.
     """
-    aligned_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
+    aligned_tif, aligned_depth_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
     if not os.path.exists(aligned_tif):
         return False
     with rasterio.open(aligned_tif, "r") as src:
         arr = src.read()
+        image_pair.crs = src.crs
     image_pair.image2_matrix = arr[0] if arr.shape[0] == 1 else arr
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
+    if image_pair.depth_image1 is not None:
+        with rasterio.open(aligned_depth_tif, "r") as src:
+            depth_arr = src.read()
+        image_pair.depth_image2 = np.squeeze(depth_arr)
+
+    console = get_console()
+    if image_pair.image1_matrix.shape != image_pair.image2_matrix.shape:
+        console.warning("The two matrices have not the same shape, signifying probably either a channel mismatch or "
+                        "non-aligned images.\n"
+                        "Shape of the first image: " + str(image_pair.image1_matrix.shape) + "\n"
+                        "Shape of the second image: " + str(image_pair.image2_matrix.shape))
     if os.path.exists(control_pts):
         try:
             image_pair.tracked_control_points = gpd.read_file(control_pts)
-        except Exception:
-            pass
+        except FileNotFoundError:
+            console.warning("Did not find control points in alignment cache. Control points for this alignment are not"
+                         "available.")
     return True
 
 def tracking_cache_paths(track_dir: str, year1: str, year2: str):
@@ -231,7 +252,7 @@ def tracking_cache_paths(track_dir: str, year1: str, year2: str):
     tuple
         A tuple of (tracking_geojson_path, metadata_json_path).
     """
-    raw_geojson = os.path.join(track_dir, f"tracking_raw_{year1}_{year2}.geojson")
+    raw_geojson = os.path.join(track_dir, f"tracking_raw_{year1}_{year2}.fgb")
     meta_json   = os.path.join(track_dir, f"tracking_meta_{year1}_{year2}.json")
     return raw_geojson, meta_json
 
@@ -254,7 +275,7 @@ def lod_cache_paths(track_dir: str, year1: str, year2: str):
     tuple
         A tuple of (lod_geojson_path, metadata_json_path).
     """
-    lod_geojson = os.path.join(track_dir, f"lod_points_{year1}_{year2}.geojson")
+    lod_geojson = os.path.join(track_dir, f"lod_points_{year1}_{year2}.fgb")
     meta_json   = os.path.join(track_dir, f"lod_meta_{year1}_{year2}.json")
     return lod_geojson, meta_json
 
@@ -286,7 +307,7 @@ def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
     raw_geojson, meta_json = tracking_cache_paths(track_dir, year1, year2)
     if image_pair.tracking_results is None or len(image_pair.tracking_results) == 0:
         return
-    image_pair.tracking_results.to_file(raw_geojson, driver="GeoJSON")
+    image_pair.tracking_results.to_file(raw_geojson, driver="FlatGeobuf")
     meta = {
         "pair": {"year1": year1, "year2": year2, "date1": dates[year1], "date2": dates[year2]},
         "files": {"file1": filenames[year1], "file2": filenames[year2]},
@@ -323,6 +344,7 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
         return False
     try:
         image_pair.tracking_results = gpd.read_file(raw_geojson)
+        image_pair.crs = image_pair.tracking_results.crs
         return True
     except Exception:
         return False
@@ -354,7 +376,7 @@ def save_lod_cache(image_pair, track_dir: str, year1: str, year2: str,
     lod_geojson, meta_json = lod_cache_paths(track_dir, year1, year2)
     if image_pair.level_of_detection_points is None or len(image_pair.level_of_detection_points) == 0:
         return
-    image_pair.level_of_detection_points.to_file(lod_geojson, driver="GeoJSON")
+    image_pair.level_of_detection_points.to_file(lod_geojson, driver="FlatGeobuf")
     meta = {
         "pair": {"year1": year1, "year2": year2, "date1": dates[year1], "date2": dates[year2]},
         "files": {"file1": filenames[year1], "file2": filenames[year2]},

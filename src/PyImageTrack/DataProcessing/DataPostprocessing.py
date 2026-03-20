@@ -1,5 +1,7 @@
 import geopandas as gpd
 import numpy as np
+from shapely import box
+import logging
 
 from ..ConsoleOutput import get_console
 from ..CreateGeometries.HandleGeometries import circular_std_deg
@@ -671,3 +673,50 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     base_df.loc[combined_outlier_mask, "valid"] = False
 
     return base_df
+
+
+def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distance: float) -> gpd.GeoDataFrame:
+    xmin, ymin, xmax, ymax = tracking_results.total_bounds
+    xcoords = np.arange(xmin, xmax, point_distance)
+    ycoords = np.arange(ymin, ymax, point_distance)
+
+    xcoords_grid, ycoords_grid = np.meshgrid(xcoords, ycoords)
+
+    xcoords_grid = xcoords_grid.flatten()
+    ycoords_grid = ycoords_grid.flatten()
+
+    grid_polygons = box(xcoords_grid, ycoords_grid,
+                        xcoords_grid + point_distance, ycoords_grid + point_distance)
+
+    grid_polygons_gdf = gpd.GeoDataFrame(geometry=grid_polygons,crs=tracking_results.crs)
+
+    tracking_results = tracking_results[tracking_results["valid"]]
+    if len(tracking_results) == 0:
+        logging.warning("No valid points available in the tracking results. Returning non-downsampled tracking results.")
+        return tracking_results
+
+    for grid_cell in grid_polygons_gdf.itertuples():
+        polygon = grid_cell.geometry
+        points_inside = tracking_results[polygon.contains(tracking_results.geometry)]
+        if len(points_inside) == 0:
+            grid_polygons_gdf.drop(grid_cell.Index, inplace=True)
+            continue
+        # average_x_value = points_inside.get_coordinates().x.mean()
+        # average_y_value = points_inside.get_coordinates().y.mean()
+        # grid_polygons_gdf.at[grid_cell.Index, "average_x_value"] = average_x_value
+        # grid_polygons_gdf.at[grid_cell.Index, "average_y_value"] = average_y_value
+
+        # Get numeric columns for averaging
+        numeric_cols = points_inside.select_dtypes(include=[np.number]).columns.tolist()
+        for colname in numeric_cols:
+            average_value = points_inside[colname].mean()
+            grid_polygons_gdf.at[grid_cell.Index,colname] = average_value
+
+
+    grid_points_gdf = gpd.GeoDataFrame(grid_polygons_gdf, crs=tracking_results.crs,
+                                       geometry=gpd.points_from_xy(grid_polygons_gdf.column,
+                                                                   -grid_polygons_gdf.row,
+                                                                   crs=tracking_results.crs))
+
+    return grid_points_gdf
+

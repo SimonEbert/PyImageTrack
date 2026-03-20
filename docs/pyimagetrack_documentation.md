@@ -258,7 +258,8 @@ The `[polygons]` section supports an optional fallback mode for defining the sta
 **Note**: This fallback mode may result in slightly lower alignment quality compared to using a properly defined stable area polygon. To compensate, consider increasing the `number_of_control_points` parameter in the `[alignment]` section.
 
 ### [no_georef] options and depth-image settings
-If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are handled and how optional 3D displacement calculation from depth images is performed.
+If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are
+handled and how optional 3D displacement calculation from depth images is performed.
 
 Example TOML snippet:
 ```toml
@@ -269,11 +270,9 @@ convert_to_3d_displacement = true   # If true, compute 3D displacements using de
 undistort_image = true              # If true, undistort both RGB and depth images before tracking
 
 # Camera intrinsics: 3x3 matrix in the following format
-camera_intrinsics_matrix = [
-  [fx, s, cx],
-  [0.0, fy, cy],
-  [0.0, 0.0, 1.0]
-]
+camera_intrinsics_matrix = [[fx, s, cx],
+                            [0.0, fy, cy],
+                            [0.0, 0.0, 1.0]]
 
 # Distortion coefficients: 2 or 4 elements as required by OpenCV (radial +/- tangential)
 camera_distortion_coefficients = [k1, k2]  # or [k1,k2,p1,p2]
@@ -281,18 +280,17 @@ camera_distortion_coefficients = [k1, k2]  # or [k1,k2,p1,p2]
 # Optional 4x4 homogeneous transform mapping camera coords -> target 3D coords
 # Can be used to transform computed 3d image coordinates from the depth image to an arbitrary 3d coordinate system
 # given the respective homogeneous transform in the following format
-camera_to_3d_coordinates_transform = [
-  [r11, r12, r13, t1],
-  [r21, r22, r23, t2],
-  [r31, r32, r33, t3],
-  [0.0,  0.0,  0.0,  1.0]
-]
+camera_to_3d_coordinates_transform = [[r11, r12, r13, t1],
+                                      [r21, r22, r23, t2],
+                                      [r31, r32, r33, t3],
+                                      [0.0,  0.0,  0.0,  1.0]]
 ```
 Notes and requirements:
 - `convert_to_3d_displacement`: when true, the pipeline will look for per-image depth rasters and compute 3D displacements.
 - `fake_pixel_size` gives the pixel size used when working without a CRS (units per pixel).
 - `camera_intrinsics_matrix` and `camera_distortion_coefficients` are required if `undistort_image = true` or when computing image→camera coordinate transforms.
-- `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix in standard row-major layout: [[R (3×3), t (3×1)], [0 0 0, 1]]. The pipeline applies this matrix directly (no internal transpose) when transforming points.
+- `camera_to_3d_coordinates_transform` must be a 4×4 homogeneous matrix in standard row-major layout:
+- [[R (3×3), t (3×1)], [0 0 0, 1]]. The pipeline applies this matrix directly (no internal transpose) when transforming points.
 - Arrays in TOML are parsed into lists and converted to numpy arrays by the pipeline — use numeric literals (no strings).
 
 ### [output_units] - Movement Units
@@ -305,6 +303,7 @@ The `[output_units]` section is **required** and specifies how movement values a
 - The cache key includes the output units mode to prevent mixing cached results from different modes.
 
 ## Module: run_pipeline.py
+
 ### _load_config(path: str) -> dict
 Loads a TOML config. Relative paths are resolved against the repository root.
 
@@ -449,6 +448,17 @@ Orchestrates the full pipeline:
 - Filters, displays interactive plots (optional), saves outputs and summary statistics
 
 ## Module: Utils.py
+### _round_to_nearest_hour(dt: datetime) -> datetime
+Rounds a datetime to the nearest hour (>=30 min rounds up).
+
+#### Parameters
+`dt` : datetime
+    Input datetime.
+
+#### Returns
+`dt_rounded` : datetime
+    Rounded datetime.
+
 ### parse_date(s: str) -> datetime
 Parses ISO-standard date strings with flexible separators.
 
@@ -1170,6 +1180,7 @@ Extracts an asymmetric rectangular window given extents (posx, negx, posy, negy)
 
 This module provides utilities to convert pixel coordinates and depth rasters into 3D positions and to compute 3D
 displacements from tracked points and depth images.
+
 ### calculate_3d_position_from_depth_image(points, depth_image, camera_intrinsics_matrix, camera_to_3d_coordinates_transform=None)
 Transform 2D image pixel coordinates with corresponding depth values into 3D coordinates.
 
