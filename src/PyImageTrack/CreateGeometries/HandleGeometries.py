@@ -65,8 +65,6 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
     """
     if len(polygon) == 0:
         raise ValueError("polygon GeoDataFrame is empty")
-    # ToDo: This is a not-nice work-around and should be rewritten (where does polygon become a GeoSeries?
-    polygon = gpd.GeoDataFrame(geometry=polygon)
     if "geometry" not in polygon.columns:
         raise ValueError("polygon GeoDataFrame must contain a 'geometry' column")
     if distance_of_points <= 0:
@@ -317,3 +315,16 @@ def get_submatrix_rect_from_extents(central_index, extents, matrix):
 
     center_in_sub = (row_c - r0, col_c - c0)
     return sub, center_in_sub
+
+
+# Common safe bounds calculation for both true and fake georef paths
+def make_safe_bounds_from_buffer(px_size, buffer, base_polygon, crs):
+    if not buffer:
+        raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
+    buffer_len = px_size * buffer
+
+    safe_bounds = gpd.GeoDataFrame({'geometry': [base_polygon]}, crs=crs).buffer(-buffer_len)
+    safe_bounds = gpd.GeoDataFrame(geometry=safe_bounds, crs=crs)
+    safe_bounds = safe_bounds.rename(columns={0: "geometry"})
+    safe_bounds.set_geometry("geometry", inplace=True)
+    return safe_bounds

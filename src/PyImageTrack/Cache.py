@@ -15,6 +15,10 @@ import geopandas as gpd
 import rasterio
 from rasterio.crs import CRS as RioCRS
 import numpy as np
+from shapely import box
+from rasterio.transform import array_bounds
+from affine import Affine
+from PyImageTrack.CreateGeometries.HandleGeometries import make_safe_bounds_from_buffer
 
 from PyImageTrack.ConsoleOutput import get_console
 
@@ -108,7 +112,6 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         crs = RioCRS.from_user_input(crs)
 
     # Validate the aligned image before saving
-    import numpy as np
     if np.all(np.isnan(image_pair.image2_matrix)):
         raise ValueError(
             f"Cannot save alignment cache for pair {year1}->{year2}: "
@@ -208,13 +211,49 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     aligned_tif, aligned_depth_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
     if not os.path.exists(aligned_tif):
         return False
-    with rasterio.open(aligned_tif, "r") as src:
-        arr = src.read()
-        image_pair.crs = src.crs
+    src = rasterio.open(aligned_tif, "r")
+    arr = src.read()
+    image_pair.crs = src.crs
     image_pair.image2_matrix = arr[0] if arr.shape[0] == 1 else arr
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
+
+    # Calculate correct safe image bounds
+    if image_pair.crs is not None:# correctly georeferenced path
+        # Spatial intersection (true georef)
+        bounds_poly = box(*src.bounds)
+        px_size = max(-src.transform[4], src.transform[0])# pixel size (>0)
+
+
+    else:# non-orthophoto path: No crs given --> 'fake georeferencing'
+
+        # Top-left crop to common size
+        h = min(image_pair.image1_matrix.shape[-2], image_pair.image2_matrix.shape[-2])
+        w = min(image_pair.image1_matrix.shape[-1], image_pair.image2_matrix.shape[-1])
+        px = float(image_pair.fake_pixel_size)
+        tform = Affine(px, 0, 0, 0, -px, 0)  # x = px*col ; y = -px*row
+
+
+        # Bounds in that CRS (pixel grid space)
+        bounds_poly = box(*array_bounds(h, w, tform))
+        px_size = float(image_pair.fake_pixel_size)
+
+    image_pair.safe_image_bounds_tracking = make_safe_bounds_from_buffer(
+        px_size=px_size,
+        buffer=max(getattr(image_pair.tracking_parameters, "search_extent_px", None))
+        + getattr(image_pair.tracking_parameters, "movement_cell_size", None)/2,
+        base_polygon=bounds_poly,
+        crs=image_pair.crs)
+
+    image_pair.safe_image_bounds_alignment = make_safe_bounds_from_buffer(
+        px_size=px_size,
+        buffer=max(getattr(image_pair.alignment_parameters, "control_search_extent_px", None))
+        + getattr(image_pair.alignment_parameters, "control_cell_size", None)/2,
+        base_polygon=bounds_poly,
+        crs=image_pair.crs)
+
+
     if image_pair.depth_image1 is not None:
         with rasterio.open(aligned_depth_tif, "r") as src:
             depth_arr = src.read()

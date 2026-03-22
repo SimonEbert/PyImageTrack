@@ -330,6 +330,8 @@ use_lod_cache = false         # Cache Level of Detection calculations
 #     "parameters_txt"               - All configuration parameters (.txt)
 #     "first_image_matrix_jpg"       - Raw first image matrix (.jpg)
 #     "second_image_matrix_jpg"      - Raw second image matrix (.jpg)
+#     "first_image_depth_matrix_jpg" - Raw first depth image matrix (.jpg)
+#     "second_image_depth_matrix_jpg"- Raw second depth image matrix (.jpg)
 #     "LoD_points_fgb"               - Level of Detection points (.fgb)
 #     "alignment_points_fgb"         - Alignment control points (.fgb)
 #

@@ -122,7 +122,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         raise ValueError("Invalid reference area or number_of_control_points for alignment grid.")
 
     approx_spacing = np.sqrt(poly_area / float(number_of_control_points))
-
     reference_area_point_grid = grid_points_on_polygon_by_distance(
         polygon=reference_area,
         distance_of_points=approx_spacing,

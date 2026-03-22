@@ -600,8 +600,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     })
 
     tracking_params = TrackingParameters({
-        # ToDo: Is this needed here? Probably not
-        "image_bands": image_bands,
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
@@ -805,13 +803,14 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             console.info_verbose(f"File 1: {filename_1}")
             console.info_verbose(f"File 2: {filename_2}")
 
-            if True: #try:
+            try:
                 image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
                 # compute years_between (hour-precise)
                 delta_hours = (dt2 - dt1).total_seconds() / 3600.0
                 years_between = delta_hours / (24.0 * 365.25)
                 console.info_verbose(f"Time between observations: {ConsoleOutput.format_duration(delta_hours)}")
-
+            except Exception as e:
+                console.warning("Was not able to compute time delta between observations")
 
             # alignment: convert user-entered deltas -> effective extents
             base_align_deltas = alignment_params.control_search_extent_px
@@ -1018,7 +1017,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         "Cross-correlation threshold": tracking_params.cross_correlation_threshold_movement,
                         "Adaptive tracking window": f"enabled{adaptive_info}"
                     })
-                    
+
                     # Track points regardless of alignment status
                     # If images are not aligned, track_points() will issue a warning
                     with console.timer("Tracking", verbose=True):

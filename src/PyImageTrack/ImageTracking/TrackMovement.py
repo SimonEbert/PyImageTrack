@@ -197,8 +197,8 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
     )
     # ToDo: Necessary?
     # Fallback for single initial values (1d) returns from peak_local_max
-    if len(movement.shape) == 1:
-        movement = np.expand_dims(movement, axis=0)
+    # if len(movement.shape) == 1:
+    #     movement = np.expand_dims(movement, axis=0)
 
     return movement
 

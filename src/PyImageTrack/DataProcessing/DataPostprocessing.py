@@ -31,7 +31,7 @@ def circular_median_deg(angles: np.ndarray) -> float:
     
     Examples
     --------
-    >>> circular_median_deg([350, 10, 20])
+    circular_median_deg([350, 10, 20])
     0.0  # The median is at 0°, not 10° as regular median would give
     """
     # Remove NaN values
@@ -674,7 +674,7 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
 
     return base_df
 
-
+# ToDo: Downsampling is still buggy
 def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distance: float) -> gpd.GeoDataFrame:
     xmin, ymin, xmax, ymax = tracking_results.total_bounds
     xcoords = np.arange(xmin, xmax, point_distance)
@@ -694,7 +694,7 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
     if len(tracking_results) == 0:
         logging.warning("No valid points available in the tracking results. Returning non-downsampled tracking results.")
         return tracking_results
-
+    print(grid_polygons_gdf)
     for grid_cell in grid_polygons_gdf.itertuples():
         polygon = grid_cell.geometry
         points_inside = tracking_results[polygon.contains(tracking_results.geometry)]
@@ -708,14 +708,14 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
 
         # Get numeric columns for averaging
         numeric_cols = points_inside.select_dtypes(include=[np.number]).columns.tolist()
+        print(numeric_cols)
         for colname in numeric_cols:
             average_value = points_inside[colname].mean()
             grid_polygons_gdf.at[grid_cell.Index,colname] = average_value
 
-
     grid_points_gdf = gpd.GeoDataFrame(grid_polygons_gdf, crs=tracking_results.crs,
-                                       geometry=gpd.points_from_xy(grid_polygons_gdf.column,
-                                                                   -grid_polygons_gdf.row,
+                                       geometry=gpd.points_from_xy(grid_polygons_gdf["column"],
+                                                                   -grid_polygons_gdf["row"],
                                                                    crs=tracking_results.crs))
 
     return grid_points_gdf

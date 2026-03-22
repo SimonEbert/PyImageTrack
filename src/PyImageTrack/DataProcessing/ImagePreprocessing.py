@@ -413,7 +413,6 @@ def undistort_polygon(polygon: gpd.GeoDataFrame, image_shape: tuple, camera_intr
                       distortion_coefficients: np.ndarray,
                       ):
     import cv2
-
     polygon_geom = polygon.geometry.iloc[0]
     point_coordinates = np.array(polygon_geom.exterior.coords)
     point_coordinates = point_coordinates.astype(np.float32).reshape(-1,1,2)
@@ -432,5 +431,7 @@ def undistort_polygon(polygon: gpd.GeoDataFrame, image_shape: tuple, camera_intr
     undistorted_xy[..., 1] = -undistorted_xy[...,1]
     undistorted_point_coordinates = Polygon(undistorted_xy)
     undistorted_polygon = gpd.GeoDataFrame(geometry=[undistorted_point_coordinates], crs=polygon.crs).make_valid()
+    # Make_valid returns a Geoseries, so turn it to a GeoDataFrame
+    undistorted_polygon = gpd.GeoDataFrame(geometry=undistorted_polygon, crs=polygon.crs)
     return undistorted_polygon
 

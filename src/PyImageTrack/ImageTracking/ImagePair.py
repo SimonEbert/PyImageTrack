@@ -6,10 +6,6 @@ import numpy as np
 import pandas as pd
 import rasterio
 import rasterio.plot
-from matplotlib import image as mpimg
-from rasterio.crs import CRS
-from geocube.api.core import make_geocube
-from scipy.sparse.csgraph import depth_first_tree
 from shapely.geometry import box
 import scipy
 import sklearn
@@ -28,7 +24,7 @@ from ..CreateGeometries.HandleGeometries import (
     crop_images_to_intersection,
     georeference_tracked_points,
     grid_points_on_polygon_by_distance,
-    random_points_on_polygon_by_number,
+    random_points_on_polygon_by_number, make_safe_bounds_from_buffer,
 )
 from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_depth_images
 
@@ -53,8 +49,7 @@ from .AlignImages import align_images_lsm_scarce, move_image_matrix_from_transfo
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
-    plot_movement_of_points_with_valid_mask, plot_raster_and_geometry,
-)
+    plot_movement_of_points_with_valid_mask, )
 # Date Handling
 from ..Utils import parse_date
 from ..ConsoleOutput import get_console
@@ -184,6 +179,8 @@ class ImagePair:
                 self.displacement_column_name = "movement_distance_total"
             else:
                 self.displacement_column_name = "movement_distance_per_year"
+        self.safe_image_bounds_tracking = None
+        self.safe_image_bounds_alignment = None
 
     def _effective_pixel_size(self) -> float:
         """
@@ -359,19 +356,10 @@ class ImagePair:
 
             # Keep search windows inside valid area
             px_size = max(-file1.transform[4], file1.transform[0]) * factor  # pixel size (>0)
-            ext = getattr(self.tracking_parameters, "search_extent_px", None)
-            if not ext:
-                raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
-            eff_search_radius_px = max(ext)
 
-            image_bounds = gpd.GeoDataFrame(
-                gpd.GeoDataFrame({'geometry': [intersection]}, crs=self.crs).buffer(-px_size * eff_search_radius_px)
-            )
-            image_bounds = image_bounds.rename(columns={0: "geometry"})
-            image_bounds.set_geometry("geometry", inplace=True)
-            self.image_bounds = image_bounds
             # Store bounds polygon for safe bounds calculation (will be computed after else block)
             bounds_poly = intersection
+            safe_px_size_bounds = px_size
 
         else:
             # FAKE georeferencing path (e.g., JPGs)
@@ -389,15 +377,17 @@ class ImagePair:
                 arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
 
             # Automatically convert float images to uint16 for better alignment
+
+            # Store original matrices for true-color alignment output (before harmonization and dtype change)
+            self.image1_matrix_original = arr1.copy()
+            self.image2_matrix_original = arr2.copy()
+
             arr1 = convert_float_to_uint(arr1)
             arr2 = convert_float_to_uint(arr2)
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2
 
-            # Store original matrices for true-color alignment output (before harmonization)
-            self.image1_matrix_original = arr1.copy()
-            self.image2_matrix_original = arr2.copy()
 
             if self.convert_to_3d_displacement:
                 basename1 = os.path.splitext(os.path.basename(filename_1))[0]
@@ -428,11 +418,9 @@ class ImagePair:
             # Top-left crop to common size
             h = min(self.image1_matrix.shape[-2], self.image2_matrix.shape[-2])
             w = min(self.image1_matrix.shape[-1], self.image2_matrix.shape[-1])
-            # ToDo: Is this clause needed or does the ellipsis already do the distinction?
-            self.image1_matrix = self.image1_matrix[..., :h, :w] if self.image1_matrix.ndim == 3 else \
-                self.image1_matrix[:h, :w]
-            self.image2_matrix = self.image2_matrix[..., :h, :w] if self.image2_matrix.ndim == 3 else \
-                self.image2_matrix[:h, :w]
+            self.image1_matrix = self.image1_matrix[..., :h, :w]
+            self.image2_matrix = self.image2_matrix[..., :h, :w]
+
 
             # Create synthetic transform first (needed for harmonize_resolution)
             from affine import Affine
@@ -457,45 +445,23 @@ class ImagePair:
                 self.depth_image1 = self._downsample_array(self.depth_image1, factor)
                 self.depth_image2 = self._downsample_array(self.depth_image2, factor)
 
-            # Synthetic transform: origin (0,0) upper-left, pixel size = fake_pixel_size
-            from affine import Affine
-            px = float(self.fake_pixel_size) * factor
-            tform = Affine(px, 0, 0, 0, -px, 0)  # x = px*col ; y = -px*row
-
-            self.image1_transform = tform
-            self.image2_transform = tform
-
             # Bounds in that CRS (pixel grid space)
             from rasterio.transform import array_bounds
-            bounds_poly = box(*array_bounds(h, w, tform))
-
-        # Common safe bounds calculation for both true and fake georef paths
-        def make_safe_bounds_from_buffer(buffer, base_polygon):
-            if not buffer:
-                raise ValueError("Search_extent_px must be set (tuple posx,negx,posy,negy).")
-            # Use appropriate pixel size variable based on which path was taken
-            if self.use_no_georeferencing:
-                # FAKE georef path - px is defined locally
-                buffer_len = px * buffer
-            else:
-                # TRUE georef path - px_size is defined locally
-                buffer_len = px_size * buffer
-
-            safe_bounds = gpd.GeoDataFrame({'geometry': [base_polygon]}, crs=self.crs).buffer(-buffer_len)
-            safe_bounds = gpd.GeoDataFrame(geometry=safe_bounds, crs=self.crs)
-            safe_bounds = safe_bounds.rename(columns={0: "geometry"})
-            safe_bounds.set_geometry("geometry", inplace=True)
-            return safe_bounds
+            bounds_poly = box(*array_bounds(w, h, tform))
+            safe_px_size_bounds = px
 
         self.safe_image_bounds_tracking = make_safe_bounds_from_buffer(
-            max(getattr(self.tracking_parameters, "search_extent_px", None))
+            px_size=safe_px_size_bounds,
+            buffer=max(getattr(self.tracking_parameters, "search_extent_px", None))
             + getattr(self.tracking_parameters, "movement_cell_size", None)/2,
-            bounds_poly)
-
+            base_polygon=bounds_poly,
+            crs=self.crs)
         self.safe_image_bounds_alignment = make_safe_bounds_from_buffer(
-            max(getattr(self.alignment_parameters, "control_search_extent_px", None))
+            px_size=safe_px_size_bounds,
+            buffer=max(getattr(self.alignment_parameters, "control_search_extent_px", None))
             + getattr(self.alignment_parameters, "control_cell_size", None)/2,
-            bounds_poly)
+            base_polygon=bounds_poly,
+            crs=self.crs)
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
@@ -715,6 +681,8 @@ class ImagePair:
                                         return_alignment_transformation_matrix=True))
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
+            console.success("Depth image resampled")
+
         else:
             [_, new_image2_matrix, tracked_control_points] = (
                 align_images_lsm_scarce(image1_matrix=self.image1_matrix,
@@ -866,11 +834,16 @@ class ImagePair:
         if not self.images_aligned:
             console = get_console()
             console.warning("Images have not been aligned. Any resulting velocities are likely invalid.")
-
         # spacing in px -> recalculate into CRS
         px_size = self._effective_pixel_size()
         dp_px = float(self.tracking_parameters.distance_of_tracked_points_px)
         spacing_crs = dp_px * px_size
+
+        # Crop tracking area to safe_image_bounds_tracking if safe bounds are provided
+        if self.safe_image_bounds_tracking is not None:
+            tracking_area = gpd.GeoDataFrame(tracking_area.intersection(self.safe_image_bounds_tracking))
+            tracking_area.rename(columns={0: 'geometry'}, inplace=True)
+            tracking_area.set_geometry('geometry', inplace=True)
 
         points_to_be_tracked = grid_points_on_polygon_by_distance(
             polygon=tracking_area,
@@ -878,17 +851,10 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
-        image_bounds_values = self.image_bounds.bounds.iloc[0]
-        within_image_mask = ((image_bounds_values.minx <= points_to_be_tracked.geometry.x) &
-                            (image_bounds_values.maxx >= points_to_be_tracked.geometry.x) &
-                            (image_bounds_values.miny <= points_to_be_tracked.geometry.y) &
-                            (image_bounds_values.maxy >= points_to_be_tracked.geometry.y))
-
-        points_to_be_tracked = points_to_be_tracked[within_image_mask]
         if len(points_to_be_tracked) == 0:
             console.warning("No tracking points fall within image bounds!")
 
-
+        # ToDo: Check performance on office PC: Is there a new bottleneck?
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
@@ -951,9 +917,9 @@ class ImagePair:
         -------
         None
         """
-        rasterio.plot.show(self.image1_matrix, title="Image 1, Observation date: "
+        rasterio.plot.show(self.image1_matrix_original, title="Image 1, Observation date: "
                                                      + self.image1_observation_date.strftime("%d-%m-%Y"))
-        rasterio.plot.show(self.image2_matrix, title="Image 2, Observation date: "
+        rasterio.plot.show(self.image2_matrix_original, title="Image 2, Observation date: "
                                                      + self.image2_observation_date.strftime("%d-%m-%Y"))
 
     def plot_tracking_results(self) -> None:
@@ -968,7 +934,7 @@ class ImagePair:
         None
         """
         if self.tracking_results is not None:
-            plot_movement_of_points(self.image1_matrix, self.image1_transform, self.tracking_results,
+            plot_movement_of_points(self.image1_matrix_original, self.image1_transform, self.tracking_results,
                                     unit_name=self.coordinate_system_unit_name)
         else:
             console = get_console()
@@ -986,7 +952,7 @@ class ImagePair:
         None
         """
         if self.tracking_results is not None:
-            plot_movement_of_points_with_valid_mask(self.image1_matrix, self.image1_transform, self.tracking_results,
+            plot_movement_of_points_with_valid_mask(self.image1_matrix_original, self.image1_transform, self.tracking_results,
                                                     unit_name=self.coordinate_system_unit_name)
         else:
             console = get_console()
@@ -1040,7 +1006,18 @@ class ImagePair:
         tracked_points : gpd.GeoDataFrame
             The tracked points which can be used for calculating the LoD.
         """
-        points = points_for_lod_calculation
+        points = points_for_lod_calculation.intersection(self.safe_image_bounds_tracking.geometry[0])
+        points = points[~points.geometry.is_empty]
+        points = gpd.GeoDataFrame(
+            geometry=points,
+            crs=self.crs
+        )
+
+
+        points = points.rename(columns={0: 'geometry'})
+        points.set_geometry('geometry', inplace=True)
+
+
         tracking_parameters = self.tracking_parameters
         if tracking_parameters.initial_shift_values is not None:
             tracking_parameters.initial_shift_values = [0,0]
@@ -1117,11 +1094,11 @@ class ImagePair:
                 filter_parameters = self.filter_parameters
         else:
             self.filter_parameters = filter_parameters
-
-        points_for_lod_calculation = gpd.GeoDataFrame(
-            points_for_lod_calculation.intersection(self.image_bounds.geometry[0]))
-        points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
-        points_for_lod_calculation.set_geometry('geometry', inplace=True)
+        if self.image_bounds is not None:
+            points_for_lod_calculation = gpd.GeoDataFrame(
+                points_for_lod_calculation.intersection(self.image_bounds.geometry[0]))
+            points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
+            points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
@@ -1282,11 +1259,12 @@ class ImagePair:
             downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
                                                                        point_distance=self.downsample_tracking_results_resolution)
             downsampled_tracking_results.to_file(
-                Path(f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb"),
+                f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(
+                    format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
                 driver="FlatGeobuf"
             )
             plot_movement_of_points(
-                self.image1_matrix,
+                self.image1_matrix_original,
                 self.image1_transform,
                 downsampled_tracking_results,
                 save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
@@ -1785,7 +1763,7 @@ class ImagePair:
                         )
 
             plot_movement_of_points_with_valid_mask(
-                self.image1_matrix,
+                self.image1_matrix_original,
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
@@ -1793,7 +1771,7 @@ class ImagePair:
             )
         else:
             plot_movement_of_points(
-                self.image1_matrix,
+                self.image1_matrix_original,
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
