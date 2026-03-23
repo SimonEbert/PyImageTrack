@@ -19,9 +19,19 @@ dist/
 .DS_Store
 *.egg
 
+# Local tests
+/tests/
+/tests/*.txt
+
 # data
 input/
 output/
+
+# plans (documentation/draft files)
+plans/
+
+# obsolete code
+src/PyImageTrack/Obsolete_Code/
 
 # local artifacts
 wsl

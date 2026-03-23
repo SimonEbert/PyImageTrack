@@ -8,14 +8,14 @@ version = "0.2"
 description = "A Python library for image tracking on rock glaciers"
 authors = [
   { name = "Simon Ebert", email = "simon.ebert.kn@gmx.de" },
-  { name = "Lisa Rehn", email = "lisa.s.rehn@gmail.com" },
+  { name = "Lisa Rehn" },
 ]
 maintainers = [
-  { name = "Lisa Rehn", email = "lisa.s.rehn@gmail.com" },
+  { name = "Lisa Rehn" },
 ]
 readme = "README.md"
-requires-python = ">=3.8"
-
+requires-python = ">=3.11"
+# ToDo: Adjust dependencies section
 dependencies = [
     "geocube>=0.7.1",
     "geopandas>=1.0.1,<1.1",
@@ -31,10 +31,12 @@ dependencies = [
     "shapely>=2.0.6,<2.1",
     "tqdm>=4.67.1,<5",
     "tomli>=2.0.1; python_version < \"3.11\"",
+    # Note: tomli is only needed for Python < 3.11, but kept for compatibility
 ]
 
 [project.scripts]
 pyimagetrack-run = "PyImageTrack.run_pipeline:main"
+pyimagetrack-batch = "PyImageTrack.BatchProcessor:main"
 
 [tool.setuptools]
 include-package-data = true

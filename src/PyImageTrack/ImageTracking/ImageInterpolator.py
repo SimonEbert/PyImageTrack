@@ -23,4 +23,7 @@ class ImageInterpolator:
                 [s.ev(yq, xq, dx=dx, dy=dy) for s in self.splines],
                 axis=0
             )
-            return out.reshape(shape) if shape is not None else out
+            # Explicitly reshape to expected dimensions (channels, height, width)
+            if shape is not None:
+                return out.reshape(shape)
+            return out

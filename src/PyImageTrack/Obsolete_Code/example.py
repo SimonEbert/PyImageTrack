@@ -18,7 +18,7 @@ cross_correlation_threshold_movement = 0
 # === SAVE OPTIONS ===
 # tracking_results.geojson will always be saved, since it contains the full information.
 save_files = ["first_image_matrix", "second_image_matrix",
-              "movement_rate_valid_tif", "statistical_parameters_txt"]
+              "L2_movement-rate_above-LoD_filtered_tif", "statistical_parameters_txt"]
 
 
 # === FILTER PARAMETERS ===

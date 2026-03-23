@@ -67,8 +67,8 @@ cross_correlation_threshold_movement = 0.5
 
 # === SAVE OPTIONS ===
 # tracking_results.geojson will always be saved, since it contains the full information.
-save_files = ["movement_bearing_valid_tif", "movement_bearing_outlier_filtered_tif",
-              "movement_rate_valid_tif", "movement_rate_outlier_filtered_tif", "invalid_mask_tif", "lod_mask_tif",
+save_files = ["L0_movement-bearing_raw_tif", "L2_movement-bearing_above-LoD_filtered_tif",
+              "L0_movement-rate_raw_tif", "L2_movement-rate_above-LoD_filtered_tif", "invalid_mask_tif", "lod_mask_tif",
               "statistical_parameters_txt"]
 
 

@@ -95,15 +95,25 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     point_size = np.clip((median_spacing ** 2) * 0.04, 2, 30)
 
-    if "3d_displacement_distance_per_year" in list(point_movement.columns):
-        displacement_column_name = "3d_displacement_distance_per_year"
-        legend_title_part = "Point velocity in "
-    else:
-        displacement_column_name = "movement_distance_per_year"
-        legend_title_part = "Point velocity in "
+    # Determine displacement column name (supports both per_year and total modes)
+    displacement_column_name = None
+    for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_year",
+                "movement_distance_total", "movement_distance_per_year"]:
+        if col in list(point_movement.columns):
+            displacement_column_name = col
+            break
+    
+    if displacement_column_name is None:
+        raise ValueError("Could not find any displacement column. "
+                         "Expected one of: 'movement_distance_per_year', 'movement_distance_total', "
+                         "'3d_displacement_distance_per_year', or '3d_displacement_distance_total'.")
+    legend_title_part = "Point velocity in "
 
     if unit_name is None:
-        unit_name = point_movement.crs.axis_info[0].unit_name if point_movement.crs is not None else "pixel"
+        if point_movement.crs is not None:
+            unit_name = point_movement.crs.axis_info[0].unit_name
+        else:
+            unit_name = "pixel"
 
 
     if point_color is None:
@@ -111,15 +121,11 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
             point_movement.plot(ax=ax, column=displacement_column_name, legend=True, markersize=point_size, marker=".",
                                     alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"}
                                     )
-
-
-        except:
-            raise ValueError("Could not find columns 'movement_distance_per_year' or '3d_displacement_distance_per_year'."
-                             "Provide a dataframe with either one of these columns for movement plotting.")
+        except Exception as e:
+            raise ValueError(f"Could not plot using column '{displacement_column_name}': {e}")
 
     else:
-        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0,
-                            )
+        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)
 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
@@ -220,6 +226,24 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
 
 
 def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
+    """
+    Plots the distribution of point movement as a scatter plot.
+    
+    Creates a scatter plot showing the movement in row and column directions
+    for all tracked points. The plot includes grid lines and axes at the
+    origin for reference.
+    
+    Parameters
+    ----------
+    moving_points : gpd.GeoDataFrame
+        A GeoDataFrame containing tracked points with columns
+        "movement_row_direction" and "movement_column_direction".
+    
+    Returns
+    -------
+    None
+        Displays the plot using plt.show().
+    """
     fig, ax = plt.subplots()
     ax.grid(True, which='both')
 
@@ -227,7 +251,6 @@ def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
     ax.axvline(x=0, color='k')
     # ax.set_xlim((-1,1))
     # ax.set_ylim((-1,1))
-
     ax.scatter(moving_points["movement_row_direction"],
                moving_points["movement_column_direction"])
     plt.show()

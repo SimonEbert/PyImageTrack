@@ -35,8 +35,8 @@ maximal_alignment_movement = None # In Pixels !!
 
 # === SAVE OPTIONS ===
 # tracking_results.geojson will always be saved, since it contains the full information.
-save_files = ["movement_bearing_valid_tif",
-              "movement_rate_valid_tif", "invalid_mask_tif", "lod_mask_tif",
+save_files = ["L2_movement-bearing_above-LoD_filtered_tif",
+              "L2_movement-rate_above-LoD_filtered_tif", "invalid_mask_tif", "lod_mask_tif",
               "statistical_parameters_txt", "LoD_points_geojson", "control_points_geojson",
               "first_image_matrix", "second_image_matrix"]
 

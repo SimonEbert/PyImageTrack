@@ -77,7 +77,8 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
 def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth_image_time1: np.ndarray,
                                              depth_image_time2: np.ndarray, camera_intrinsics_matrix: np.ndarray,
                                              years_between_observations: float,
-                                             camera_to_3d_coordinates_transform: np.ndarray = None,) -> gpd.GeoDataFrame:
+                                             camera_to_3d_coordinates_transform: np.ndarray = None,
+                                             output_unit_mode: str = "per_year") -> gpd.GeoDataFrame:
     """
     Calculates 3d displacement vectors given tracking results on an undistorted image and corresponding depth images.
     The depth images are assumed to be given in the exact same coordinate system as the images on which the tracking
@@ -115,18 +116,20 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         the 'row' and 'column' data, the 'x', 'y' and 'z' values correspond to the position at the first time point.
         This matrix is assumed to be a 4x4 homogeneous matrix in the format [[R, t]\n
                                                                              [0, 1]]
+    output_unit_mode: str = "per_year"
+        Either "per_year" (normalize to per-year values) or "total" (raw displacement without normalization).
 
     Returns
     -------
     georeferenced_tracked_pixels: gpd.GeoDataFrame
         A GeoDataFrame that is 'pseudo-georeferenced': It contains a column '3d_displacement_distance' that gives
         the full displacement between the 2 image time points as well as a column '3d_displacement_distance_per_year'
-        that gives a comparable velocity for each point. The units of these columns are determined by the unit of
-        the depth image (e.g. m). The DataFrame also contains the 'x', 'y' and 'z' positions corresponding to the
-        used 3d coordinate system. If camera_to_3d_coordinates_transform is None, this coordinate system is such
-        that the X- and Y- coordinates align with the width (=columns) and height (=rows) of the image and the
-        Z-coordinate is given by the optical axis of the camera. Otherwise the 'x', 'y' and 'z' coordinates belong
-        to the coordinate system corresponding to the specified 'camera_to_3d_coordinates_transform'.
+        or '3d_displacement_distance_total' depending on output_unit_mode. The units of these columns are determined
+        by the unit of the depth image (e.g. m). The DataFrame also contains the 'x', 'y' and 'z' positions
+        corresponding to the used 3d coordinate system. If camera_to_3d_coordinates_transform is None, this coordinate
+        system is such that the X- and Y- coordinates align with the width (=columns) and height (=rows) of the image
+        and the Z-coordinate is given by the optical axis of the camera. Otherwise the 'x', 'y' and 'z' coordinates
+        belong to the coordinate system corresponding to the specified 'camera_to_3d_coordinates_transform'.
     """
 
     points1 = np.array([tracked_points["row"].values,
@@ -135,9 +138,9 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
                         tracked_points["column"].values + tracked_points["movement_column_direction"].values],
                        dtype=np.float32).transpose()
     points_3d1 = calculate_3d_position_from_depth_image(points1, depth_image_time1, camera_intrinsics_matrix,
-                                                        camera_to_3d_coordinates_transform)
+                                                         camera_to_3d_coordinates_transform)
     points_3d2 = calculate_3d_position_from_depth_image(points2, depth_image_time2, camera_intrinsics_matrix,
-                                                        camera_to_3d_coordinates_transform)
+                                                         camera_to_3d_coordinates_transform)
 
     points_3d_displacement = points_3d2 - points_3d1
     tracked_points["3d_displacement_distance"] = np.linalg.norm(points_3d_displacement, axis=1)
@@ -153,8 +156,12 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
     georeferenced_tracked_pixels.loc[
         np.isnan(georeferenced_tracked_pixels["3d_displacement_distance"]),
         "valid"] = False
-    georeferenced_tracked_pixels["3d_displacement_distance_per_year"] \
-        = georeferenced_tracked_pixels["3d_displacement_distance"] / years_between_observations
+    
+    if output_unit_mode == "total":
+        georeferenced_tracked_pixels["3d_displacement_distance_total"] = georeferenced_tracked_pixels["3d_displacement_distance"]
+    else:  # per_year
+        georeferenced_tracked_pixels["3d_displacement_distance_per_year"] \
+            = georeferenced_tracked_pixels["3d_displacement_distance"] / years_between_observations
 
     return georeferenced_tracked_pixels
 
