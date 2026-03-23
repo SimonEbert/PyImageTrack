@@ -23,6 +23,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import warnings
+
 
 try:
     import tomllib
@@ -529,6 +531,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     use_no_georeferencing = bool(_get(cfg, "no_georef", "use_no_georeferencing", False))
     if use_no_georeferencing:
+        # Suppress NotGeoreferencedWarning throughout the script when using non-georeferenced images
+        # This is expected behavior when use_no_georeferencing = true
+        warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
+
         fake_pixel_size = float(_get(cfg, "no_georef", "fake_pixel_size", 1.0))
         convert_to_3d_displacement = bool(_get(cfg, "no_georef", "convert_to_3d_displacement", False))
         undistort_image = bool(_get(cfg, "no_georef", "undistort_image", False))
