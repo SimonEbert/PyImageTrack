@@ -691,24 +691,26 @@ class ImagePair:
             if self.depth_image2 is None:
                 raise ValueError("Got depth image for time point 1, but not for time point 2.")
 
-            [_, new_image2_matrix, tracked_control_points, alignment_transformation_matrix] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                        image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform,
-                                        reference_area=reference_area_safe_bounds,
-                                        alignment_parameters=self.alignment_parameters,
-                                        return_alignment_transformation_matrix=True))
+            _, new_image2_matrix, tracked_control_points, alignment_transformation_matrix = align_images_lsm_scarce(
+                image1_matrix=self.image1_matrix,
+                image2_matrix=self.image2_matrix,
+                image_transform=self.image1_transform,
+                reference_area=reference_area_safe_bounds,
+                alignment_parameters=self.alignment_parameters,
+                return_alignment_transformation_matrix=True
+            )
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
             console.success("Depth image resampled")
 
         else:
-            [_, new_image2_matrix, tracked_control_points] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                        image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform,
-                                        reference_area=reference_area_safe_bounds,
-                                        alignment_parameters=self.alignment_parameters))
+            _, new_image2_matrix, tracked_control_points = align_images_lsm_scarce(
+                image1_matrix=self.image1_matrix,
+                image2_matrix=self.image2_matrix,
+                image_transform=self.image1_transform,
+                reference_area=reference_area_safe_bounds,
+                alignment_parameters=self.alignment_parameters
+            )
 
         self.valid_alignment_possible = True
 
@@ -721,6 +723,8 @@ class ImagePair:
                                                                   years_between_observations,
                                                                   self.output_units_mode)
 
+        # Apply singleton dimension removal to image1_matrix as well for consistency
+        self.image1_matrix = np.squeeze(self.image1_matrix)
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
 
