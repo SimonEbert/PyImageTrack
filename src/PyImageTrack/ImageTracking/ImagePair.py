@@ -465,6 +465,23 @@ class ImagePair:
             base_polygon=bounds_poly,
             crs=self.crs)
 
+        # Set image_bounds for fallback alignment mode (when reference_area is None)
+        # This is used by align_images() when stable_area_filename is "none"
+        # Similar logic to load_images_from_matrix_and_transform()
+        px_size = safe_px_size_bounds
+        ext = getattr(self.tracking_parameters, "search_extent_px", None)
+        if not ext:
+            raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
+        eff_search_radius_px = max(ext)
+        
+        image_bounds = gpd.GeoDataFrame(
+            gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs).buffer(-px_size * eff_search_radius_px)
+        )
+        # set correct geometry column
+        image_bounds = image_bounds.rename(columns={0: "geometry"})
+        image_bounds.set_geometry("geometry", inplace=True)
+        self.image_bounds = image_bounds
+
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
 
