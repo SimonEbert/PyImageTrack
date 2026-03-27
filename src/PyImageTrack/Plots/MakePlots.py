@@ -2,6 +2,7 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio.plot
+from pyproj import CRS as PyprojCRS
 
 
 def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geometry: gpd.GeoDataFrame, alpha=0.6):
@@ -111,7 +112,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     if unit_name is None:
         if point_movement.crs is not None:
-            unit_name = point_movement.crs.axis_info[0].unit_name
+            crs_obj = PyprojCRS.from_user_input(point_movement.crs)
+            unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
         else:
             unit_name = "pixel"
 

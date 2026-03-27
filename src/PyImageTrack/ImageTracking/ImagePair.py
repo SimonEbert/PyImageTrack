@@ -10,6 +10,7 @@ from shapely.geometry import box
 import scipy
 import sklearn
 from pathlib import Path
+from pyproj import CRS as PyprojCRS
 
 from ..Utils import make_effective_extents_from_deltas
 
@@ -323,7 +324,8 @@ class ImagePair:
                 raise ValueError(
                     "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
                     str(file1.crs))
-            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
+            crs_obj = PyprojCRS.from_user_input(file1.crs)
+            self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -1119,7 +1121,8 @@ class ImagePair:
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
-            unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+            crs_obj = PyprojCRS.from_user_input(points_for_lod_calculation.crs)
+            unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
         elif self.coordinate_system_unit_name is not None:
             unit_name = self.coordinate_system_unit_name
         else:

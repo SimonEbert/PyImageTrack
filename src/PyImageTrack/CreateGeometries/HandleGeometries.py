@@ -5,6 +5,7 @@ import rasterio
 import rasterio.mask
 import rasterio.transform
 import shapely
+from pyproj import CRS as PyprojCRS
 
 from ..ConsoleOutput import get_console
 
@@ -98,7 +99,8 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
 
     console = get_console()
     if polygon.crs is not None:
-        unit_name = points.crs.axis_info[0].unit_name
+        crs_obj = PyprojCRS.from_user_input(points.crs)
+        unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
     else:
         unit_name = "pixel"
     if distance_px is None:
