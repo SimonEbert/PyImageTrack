@@ -10,6 +10,7 @@ from shapely.geometry import box
 import scipy
 import sklearn
 from pathlib import Path
+from pyproj import CRS as PyprojCRS
 
 from ..Utils import make_effective_extents_from_deltas
 
@@ -323,7 +324,8 @@ class ImagePair:
                 raise ValueError(
                     "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
                     str(file1.crs))
-            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
+            crs_obj = PyprojCRS.from_user_input(file1.crs)
+            self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -462,6 +464,23 @@ class ImagePair:
             + getattr(self.alignment_parameters, "control_cell_size", None)/2,
             base_polygon=bounds_poly,
             crs=self.crs)
+
+        # Set image_bounds for fallback alignment mode (when reference_area is None)
+        # This is used by align_images() when stable_area_filename is "none"
+        # Similar logic to load_images_from_matrix_and_transform()
+        px_size = safe_px_size_bounds
+        ext = getattr(self.tracking_parameters, "search_extent_px", None)
+        if not ext:
+            raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
+        eff_search_radius_px = max(ext)
+        
+        image_bounds = gpd.GeoDataFrame(
+            gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs).buffer(-px_size * eff_search_radius_px)
+        )
+        # set correct geometry column
+        image_bounds = image_bounds.rename(columns={0: "geometry"})
+        image_bounds.set_geometry("geometry", inplace=True)
+        self.image_bounds = image_bounds
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
@@ -672,24 +691,26 @@ class ImagePair:
             if self.depth_image2 is None:
                 raise ValueError("Got depth image for time point 1, but not for time point 2.")
 
-            [_, new_image2_matrix, tracked_control_points, alignment_transformation_matrix] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                        image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform,
-                                        reference_area=reference_area_safe_bounds,
-                                        alignment_parameters=self.alignment_parameters,
-                                        return_alignment_transformation_matrix=True))
+            _, new_image2_matrix, tracked_control_points, alignment_transformation_matrix = align_images_lsm_scarce(
+                image1_matrix=self.image1_matrix,
+                image2_matrix=self.image2_matrix,
+                image_transform=self.image1_transform,
+                reference_area=reference_area_safe_bounds,
+                alignment_parameters=self.alignment_parameters,
+                return_alignment_transformation_matrix=True
+            )
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
             console.success("Depth image resampled")
 
         else:
-            [_, new_image2_matrix, tracked_control_points] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                        image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform,
-                                        reference_area=reference_area_safe_bounds,
-                                        alignment_parameters=self.alignment_parameters))
+            _, new_image2_matrix, tracked_control_points = align_images_lsm_scarce(
+                image1_matrix=self.image1_matrix,
+                image2_matrix=self.image2_matrix,
+                image_transform=self.image1_transform,
+                reference_area=reference_area_safe_bounds,
+                alignment_parameters=self.alignment_parameters
+            )
 
         self.valid_alignment_possible = True
 
@@ -702,6 +723,8 @@ class ImagePair:
                                                                   years_between_observations,
                                                                   self.output_units_mode)
 
+        # Apply singleton dimension removal to image1_matrix as well for consistency
+        self.image1_matrix = np.squeeze(self.image1_matrix)
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
 
@@ -1119,7 +1142,8 @@ class ImagePair:
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
-            unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+            crs_obj = PyprojCRS.from_user_input(points_for_lod_calculation.crs)
+            unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
         elif self.coordinate_system_unit_name is not None:
             unit_name = self.coordinate_system_unit_name
         else:

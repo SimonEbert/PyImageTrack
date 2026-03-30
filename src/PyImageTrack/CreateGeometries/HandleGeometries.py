@@ -5,6 +5,7 @@ import rasterio
 import rasterio.mask
 import rasterio.transform
 import shapely
+from pyproj import CRS as PyprojCRS
 
 from ..ConsoleOutput import get_console
 
@@ -98,7 +99,8 @@ def grid_points_on_polygon_by_distance(polygon: gpd.GeoDataFrame,
 
     console = get_console()
     if polygon.crs is not None:
-        unit_name = points.crs.axis_info[0].unit_name
+        crs_obj = PyprojCRS.from_user_input(points.crs)
+        unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
     else:
         unit_name = "pixel"
     if distance_px is None:
@@ -230,11 +232,26 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         "movement_distance" and either "movement_distance_per_year" or "movement_distance_total" depending on mode,
         specifying the movement in the unit of the given coordinate reference system and one geometry column.
     """
-    [x, y] = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
+    # Handle rasterio.transform.xy() which may return different structures depending on version
+    try:
+        x, y = rasterio.transform.xy(raster_transform, tracked_pixels.loc[:, "row"], tracked_pixels.loc[:, "column"])
+    except Exception as e:
+        # Add detailed debugging information
+        raise type(e)(
+            f"{str(e)}\n"
+            f"  - tracked_pixels.columns: {list(tracked_pixels.columns)}\n"
+            f"  - tracked_pixels.shape: {tracked_pixels.shape}\n"
+            f"  - raster_transform: {raster_transform}\n"
+            f"  - 'row' in tracked_pixels: {'row' in tracked_pixels.columns}\n"
+            f"  - 'column' in tracked_pixels: {'column' in tracked_pixels.columns}"
+        ) from e
+    
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_pixels, geometry=gpd.points_from_xy(x=x, y=y), crs=crs)
     georeferenced_tracked_pixels["movement_distance"] = np.linalg.norm(
-        [-raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
-         raster_transform[0] * georeferenced_tracked_pixels.loc[:, "movement_column_direction"].values], axis=0)
+        np.column_stack([
+            -raster_transform[4] * georeferenced_tracked_pixels.loc[:, "movement_row_direction"].values,
+             raster_transform[0] * georeferenced_tracked_pixels.loc[:, "movement_column_direction"].values
+        ]), axis=1)
     
     if output_unit_mode == "total":
         georeferenced_tracked_pixels["movement_distance_total"] = georeferenced_tracked_pixels["movement_distance"]

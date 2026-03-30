@@ -25,17 +25,41 @@ def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformati
         A 2x3 affine transformation matrix.
     target_shape : tuple, optional
         The shape of the output image. If None, uses the input image shape.
+        When provided, only the last 2 dimensions (height, width) are used.
     
     Returns
     -------
     np.ndarray
-        The transformed image matrix.
+        The transformed image matrix (always 2D or 3D).
     """
 
-    if target_shape is None:
-        target_shape = image_matrix.shape
+    # Remove singleton dimensions to handle cases like (1, 1, H, W)
+    image_matrix = np.squeeze(image_matrix)
+    
+    # Ensure the result is 2D or 3D
+    if image_matrix.ndim not in (2, 3):
+        raise ValueError(f"Expected 2D or 3D array, got shape {image_matrix.shape}")
 
-    indices = np.array(np.meshgrid(np.arange(0, target_shape[-2]), np.arange(0, target_shape[-1]))
+    # Use the spatial dimensions (height, width) for index grid
+    # Extract the last 2 dimensions (height, width) from the target_shape if provided
+    if target_shape is None:
+        # Use the squeezed image_matrix.shape directly
+        if image_matrix.ndim == 2:
+            n_rows, n_cols = image_matrix.shape
+        else:  # 3D
+            n_rows, n_cols = image_matrix.shape[-2], image_matrix.shape[-1]
+    else:
+        # Extract spatial dimensions - take last 2 dimensions of provided target_shape
+        # This handles (1, 1, 971, 808) -> n_rows=971, n_cols=808
+        # or (3, 971, 808) -> n_rows=971, n_cols=808
+        # or (971, 808) -> n_rows=971, n_cols=808
+        if len(target_shape) >= 2:
+            n_rows = int(target_shape[-2])
+            n_cols = int(target_shape[-1])
+        else:
+            raise ValueError(f"target_shape must have at least 2 dimensions, got {target_shape}")
+
+    indices = np.array(np.meshgrid(np.arange(0, n_rows), np.arange(0, n_cols))
                        ).T.reshape(-1, 2).T
     moved_indices = move_indices_from_transformation_matrix(transformation, indices)
 
@@ -50,11 +74,23 @@ def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformati
 
     image_matrix_spline = ImageInterpolator(image_matrix)
     
-    if len(image_matrix.shape) == 2:
-        moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
-            target_shape)
-    else:
-        moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :], shape=target_shape)
+    try:
+        if image_matrix.ndim == 2:
+            # Single-band: reshape to (height, width)
+            moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
+                (n_rows, n_cols))
+        else:
+            # Multi-band: reshape to (bands, height, width)
+            n_bands = image_matrix.shape[0]
+            moved_image_matrix = image_matrix_spline.ev(moved_indices[0, :], moved_indices[1, :],
+                                                          shape=(n_bands, n_rows, n_cols))
+    except Exception as e:
+        raise type(e)(
+            f"Error during image matrix transformation: {str(e)}\n"
+            f"  - image_matrix.shape (original input): {image_matrix.shape}\n"
+            f"  - n_rows: {n_rows}, n_cols: {n_cols}\n"
+            f"  - moved_indices.shape: {moved_indices.shape}"
+        ) from e
 
     # Put NaN values back into the image at the positions, where they were before the transformation
     if image_contains_nans:
@@ -232,6 +268,11 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
             "or provide a proper stable_area polygon."
         )
 
+    # Squeeze image1_matrix to match moved_image2_matrix dimensions for consistency
+    # This ensures both images have compatible dimensions for tracking
+    image1_matrix = np.squeeze(image1_matrix)
+    if image1_matrix.ndim > 3:
+        raise ValueError(f"image1_matrix has unexpected shape {image1_matrix.shape} after squeezing")
 
     if return_alignment_transformation_matrix:
         return [image1_matrix, moved_image2_matrix, tracked_control_pixels_valid, sampling_transformation_matrix]
