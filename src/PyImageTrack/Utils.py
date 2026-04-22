@@ -69,8 +69,7 @@ def _validate_date_token(token: str, year_part: str) -> bool:
     bool
         True if token is complete and valid, False if parts are incomplete or invalid.
     """
-    from datetime import datetime
-    
+
     # Extract year from token
     year_match = re.match(r'^(\d{2,4})', token)
     if not year_match:
@@ -158,17 +157,43 @@ def _validate_date_token(token: str, year_part: str) -> bool:
     except (ValueError, IndexError):
         return False
 
+import dateutil.parser
+def extract_datetime_token_dt(s: str) -> datetime:
+    "Gets a filename part and extracts the found datetime token as a datetime object."
+    s_norm = s.replace('_', '-')
+    s_norm = s_norm.replace(' ', '-')
+    s_norm = s_norm.replace(':', '-')
+    s_norm = s_norm.replace('T', '-')
 
-def extract_date_token(s: str) -> Optional[str]:
+    # Extract possible datetime matches
+    full_match = re.match(r'(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
+    datetime_part = full_match.group(0)
+
+    # Normalize string with separating date and time options
+    datetime_parts = datetime_part.split('-')
+    if len(datetime_parts) <= 3:
+        datetime_string = datetime_part  # date only, hyphens are fine
+    else:
+        date_part = '-'.join(datetime_parts[:3])  # "2024-06-14"
+        time_part = ':'.join(datetime_parts[3:6])  # "14:30:59"
+        sub_seconds = datetime_parts[6] if len(datetime_parts) > 6 else None
+
+        datetime_string = f"{date_part}T{time_part}"
+        if sub_seconds:
+            datetime_string += f".{sub_seconds}"
+
+    datetime_observation = dateutil.parser.parse(datetime_string)
+    return datetime_observation
+
+def extract_datetime_token(s: str) -> Optional[datetime]:
     """
-    Extract the complete date token from a string.
+    Extract the complete datetime token from a string.
     
     Normalizes the string by replacing underscores with hyphens and extracts
     the date token starting with a year (YY or YYYY) from anywhere in the string.
-    The token includes the year and any following date/time parts with separators.
+    The function returns the token as a datetime object.
     
-    This is used in conjunction with parse_date() to ensure consistent token
-    extraction across the codebase. The extraction stops when an invalid part
+    The extraction of datetime information stops when an invalid part
     is encountered (e.g., a letter or a value that doesn't make sense for dates).
     
     Parameters
@@ -178,18 +203,18 @@ def extract_date_token(s: str) -> Optional[str]:
     
     Returns
     -------
-    Optional[str]
+    Optional[datetime]
         The extracted date token, or None if no valid token is found.
     
     Examples
     --------
-    >>> extract_date_token("2023-09-01-1504")
+    >>> extract_datetime_token("2023-09-01-1504")
     '2023-09-01-1504'
-    >>> extract_date_token("HS_2023_09_01_1504_xyz.tif")
+    >>> extract_datetime_token("HS_2023_09_01_1504_xyz.tif")
     '2023-09-01-1504'
-    >>> extract_date_token("image_20230317_1504.tif")
+    >>> extract_datetime_token("image_20230317_1504.tif")
     '202303171504'
-    >>> extract_date_token("no_date.tif")
+    >>> extract_datetime_token("no_date.tif")
     None
     """
     # Shortcut: if s looks like a complete date token already, return it
@@ -198,7 +223,12 @@ def extract_date_token(s: str) -> Optional[str]:
     # For separated format: YYYY-MM or YYYY-MM-DD or YYYY-MM-DD-HH-MM
     # For compact format: YYYY, YYYYMMDD, YYYYMMDDHHMM, etc.
     s_norm = s.replace('_', '-')
-    full_match = re.match(r'^(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2})?)?)?)?$', s_norm)
+    full_match = re.match(r'^(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?$', s_norm)
+    if full_match is not None:
+        print(s_norm, s)
+        print(full_match.group(0))
+        raise ValueError
+
     if full_match:
         # Check if it's more than just year
         matched_str = full_match.group(0)
@@ -212,6 +242,8 @@ def extract_date_token(s: str) -> Optional[str]:
     
     # Normalize: replace underscores with hyphens for consistent parsing
     normalized = s.replace('_', '-')
+
+
     
     # Extract date token starting with year (YY or YYYY) anywhere in the string
     # The token may include separators and continues while the pattern makes sense for dates
@@ -224,7 +256,7 @@ def extract_date_token(s: str) -> Optional[str]:
     # FIX: Use the actual match position, not just the year length
     year_pos = match.start()
     remaining = normalized[year_pos + len(year_part):]
-    
+
     # Check if original has separator (hyphen or underscore) immediately after the year
     # This determines whether we use separated format (2023-03-16)
     # or compact format (20230316)
@@ -242,7 +274,19 @@ def extract_date_token(s: str) -> Optional[str]:
     if all_match:
         all_additional = all_match.group(1)
         all_additional = all_additional.lstrip('-').rstrip('-')
-        
+
+        print(year_part + "-" + all_additional)
+        datetime_patterns = ["%Y-%m-%d", "%Y%m%d", "%Y-%m%d%H%M%S", "%Y-%m-%d-%H-%M-%S", "%Y-%m-%dT%H%M%S%f",
+                             "%Y-%m-%d-%H-%M-%S-%f","%Y-%m%d%H%M%S%f", "%Y-%m%d%H%M%S%f"]
+        for dt_format in datetime_patterns:
+            try:
+                token = datetime.strptime(year_part + "-" + all_additional, dt_format)
+                print(token)
+                break
+            except:
+                print("Passing")
+                pass
+
         if all_additional:
             # FIX: Base format decision on the actual extracted content, not the original string
             # If all_additional contains hyphens, treat as separated format
@@ -270,6 +314,7 @@ def extract_date_token(s: str) -> Optional[str]:
                     # FIX: Handle compact time segments (4 digits = HHMM)
                     # If segment is 4 digits and we already have month/day, split it into hour/minute
                     current_token_parts = len(validated_token.split('-'))
+
                     if len(seg) == 4 and current_token_parts >= 3:
                         # This is likely a compact time segment, try splitting it
                         hour_part = seg[0:2]
@@ -339,7 +384,8 @@ def extract_date_token(s: str) -> Optional[str]:
                             break
                     
                     token = validated_token
-    
+    print(token)
+    raise ValueError
     return token
 
 
@@ -388,7 +434,7 @@ def parse_date(s: str) -> datetime:
     console = get_console()
     
     # Pre-extract and normalize the date token using our helper
-    token = extract_date_token(s)
+    token = extract_datetime_token(s)
     if token is None:
         console.error(f"Invalid date format: {s!r}")
         console.error("")
@@ -422,6 +468,7 @@ def parse_date(s: str) -> datetime:
     hour = 0
     minute = 0
     second = 0
+    microsecond = 0
     
     # Get the remaining part after the year
     remaining = token[len(year_part):]
@@ -473,6 +520,13 @@ def parse_date(s: str) -> datetime:
                     second = s
             except ValueError:
                 pass  # Keep default second
+        if len(parts) >= 6 and parts[5]:
+            try:
+                f = int(parts[5])
+                if 0 <= f <= 999999:
+                    microsecond = f
+            except ValueError:
+                pass # Keep default microsecond
     else:
         # Parse without separators (e.g., 20160319 or 20160319143045)
         # Extract month (2 digits after year)
@@ -519,8 +573,16 @@ def parse_date(s: str) -> datetime:
                     second = s
             except ValueError:
                 pass  # Keep default second
+        if len(remaining) >= 16:
+            try:
+                f = int(remaining[10:16])
+                if 0 <= f <= 999999:
+                    microsecond = f
+            except ValueError:
+                pass # Keep default microsecond
+
     
-    return datetime(year, month, day, hour, minute, second)
+    return datetime(year, month, day, hour, minute, second, microsecond)
 
 
 def extract_identifier(filename: str) -> Optional[str]:
@@ -661,9 +723,9 @@ def collect_pairs(input_folder: str,
                   identifier: Optional[str] = None):
     """
     Build pairs and return:
-      - year_pairs: list of (id1, id2)
+      - datetime_pairs: list of (id1, id2)
       - id_to_file: id -> tif path
-      - id_to_date: id -> date string ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS")
+      - id_to_date: id -> datetime
       - id_hastime_from_filename: id -> bool (True if time came from filename)
       - id_to_identifier: id -> identifier (only if identifier parameter is provided)
     
@@ -696,7 +758,7 @@ def collect_pairs(input_folder: str,
     Returns
     -------
     tuple
-        (year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier)
+        (datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier)
         where id_to_identifier is only included if identifier parameter is not None.
     """
     console = get_console()
@@ -715,6 +777,7 @@ def collect_pairs(input_folder: str,
             elif "file/year" in date_df.columns:
                 id_col = "file/year"
             else:
+                # ToDo: Change year column to datetime column?
                 raise ValueError("image_dates.csv must contain a 'file', 'year', or 'file/year' column.")
             if "date" not in date_df.columns:
                 raise ValueError("image_dates.csv must contain a 'date' column.")
@@ -740,19 +803,17 @@ def collect_pairs(input_folder: str,
 
     for f in img_files:
         # Extract date token using our helper function
-        lead = extract_date_token(f)
-        if lead is None:
+        try:
+            observation_timedate = extract_datetime_token_dt(f)
+        except ValueError:
+            # Skip files with invalid date tokens
+            continue
+        if observation_timedate is None:
             continue
         
         # Use the full path from recursive search
         path = filename_to_path[f]
-        
-        # Parse the date token
-        try:
-            dt = parse_date(lead)
-        except ValueError:
-            # Skip files with invalid date tokens
-            continue
+
         
         # Extract identifier from filename to make ID unique
         file_identifier = extract_identifier(f)
@@ -788,9 +849,13 @@ def collect_pairs(input_folder: str,
         
         # Format date string (with time if present, without if not)
         if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
-            id_to_date[id_] = dt.strftime("%Y-%m-%d %H:%M:%S")
+            if dt.microsecond != 0:
+                id_to_date[id_] = dt.strftime("%Y-%m-%d %H:%M:%S:%f")
+            else:
+                id_to_date[id_] = dt.strftime("%Y-%m-%d %H:%M:%S")
         else:
             id_to_date[id_] = dt.strftime("%Y-%m-%d")
+
 
     # 3) Order by actual time
     items = [(k, parse_date(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
@@ -826,21 +891,21 @@ def collect_pairs(input_folder: str,
     # 4) Build pairs
     if pairing_mode == "all":
         # every id with every later id
-        year_pairs = list(itertools.combinations(ordered_ids, 2))
+        datetime_pairs = list(itertools.combinations(ordered_ids, 2))
 
     elif pairing_mode == "successive":
         # only neighbours: (t1,t2), (t2,t3), ...
         def _successive_pairs(ids):
             return [(ids[i], ids[i + 1]) for i in range(len(ids) - 1)]
-        year_pairs = _successive_pairs(ordered_ids)
+        datetime_pairs = _successive_pairs(ordered_ids)
 
     elif pairing_mode == "first_to_all":
         # always use the first id as anchor: (first, second), (first, third), ...
         if len(ordered_ids) < 2:
-            year_pairs = []
+            datetime_pairs = []
         else:
             anchor = ordered_ids[0]
-            year_pairs = [(anchor, other) for other in ordered_ids[1:]]
+            datetime_pairs = [(anchor, other) for other in ordered_ids[1:]]
 
     elif pairing_mode == "custom":
         # --- read CSV with auto delimiter (',' or ';') ---
@@ -878,7 +943,7 @@ def collect_pairs(input_folder: str,
 
         # Map CSV token -> ID used in id_to_file
         def _resolve_csv_token_to_id(raw: str) -> str:
-            lead = extract_date_token(raw)
+            lead = extract_datetime_token(raw)
             if lead is None:
                 raise ValueError(f"Unrecognized pair token: {raw!r}")
             
@@ -911,13 +976,13 @@ def collect_pairs(input_folder: str,
             except Exception as e:
                 console.error(f"Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
 
-        year_pairs = pairs
+        datetime_pairs = pairs
 
     # Return with or without id_to_identifier based on whether identifier was provided
     if identifier is not None:
-        return year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier
+        return datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier
     else:
-        return year_pairs, id_to_file, id_to_date, id_hastime_from_filename
+        return datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename
 
 
 def ensure_dir(path: str):
@@ -1184,3 +1249,6 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     print("Found level of detection with quantile " + str(quantile) + " as "
           + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + "/year")
     return True
+
+
+

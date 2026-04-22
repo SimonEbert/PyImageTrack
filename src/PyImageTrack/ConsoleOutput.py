@@ -19,7 +19,7 @@ import logging.handlers
 import sys
 import time
 from contextlib import contextmanager
-from datetime import datetime
+import datetime as dt
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -534,7 +534,7 @@ class ConsoleOutput:
             self.success(f"Total processing completed in {total_elapsed:.2f}s")
     
     @staticmethod
-    def format_duration(delta_hours: float) -> str:
+    def format_duration(delta_time: dt.timedelta) -> str:
         """
         Format a duration in hours to a human-readable string.
         
@@ -544,8 +544,8 @@ class ConsoleOutput:
         
         Parameters
         ----------
-        delta_hours : float
-            Duration in hours
+        delta_hours : datetime.timedelta
+            Timedelta between the observations
             
         Returns
         -------
@@ -553,7 +553,7 @@ class ConsoleOutput:
             Formatted duration string
         """
         # Convert to seconds for easier calculations
-        total_seconds = delta_hours * 3600
+        total_seconds = delta_time.total_seconds()
         
         # Define unit thresholds in seconds
         MINUTE = 60

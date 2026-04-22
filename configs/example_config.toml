@@ -90,6 +90,11 @@ mode = "custom"
 # ==============================================================================
 # Settings for image preprocessing and enhancement.
 
+[image]
+image_bands = [0,1,2]
+unit_name_distance = "meter"
+unit_name_time = "year"
+
 [no_georef]
 # Set to true ONLY when processing non-georeferenced images (e.g., JPG photos)
 # For orthorectified images (GeoTIFF), keep this false

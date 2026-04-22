@@ -147,7 +147,8 @@ class ImagePair:
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
         self.image_bands = parameter_dict.get("image_bands", None)
-        self.coordinate_system_unit_name = parameter_dict.get("unit_name", None)
+        self.coordinate_system_unit_name = parameter_dict.get("unit_name_distance", None)
+        self.unit_name_time = parameter_dict.get("unit_name_time", "year")
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
@@ -935,7 +936,8 @@ class ImagePair:
         """
         if self.tracking_results is not None:
             plot_movement_of_points(self.image1_matrix_original, self.image1_transform, self.tracking_results,
-                                    unit_name=self.coordinate_system_unit_name)
+                                    unit_name_distance=self.coordinate_system_unit_name,
+                                    unit_name_time=self.unit_name_time)
         else:
             console = get_console()
             console.warning("No results calculated yet. Plot not provided")
@@ -953,7 +955,8 @@ class ImagePair:
         """
         if self.tracking_results is not None:
             plot_movement_of_points_with_valid_mask(self.image1_matrix_original, self.image1_transform, self.tracking_results,
-                                                    unit_name=self.coordinate_system_unit_name)
+                                                    unit_name_distance=self.coordinate_system_unit_name,
+                                                    unit_name_time=self.unit_name_time)
         else:
             console = get_console()
             console.warning("No results calculated yet. Plot not provided")
@@ -1119,13 +1122,13 @@ class ImagePair:
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
-            unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+            unit_name_spatial = points_for_lod_calculation.crs.axis_info[0].unit_name
         elif self.coordinate_system_unit_name is not None:
-            unit_name = self.coordinate_system_unit_name
+            unit_name_spatial = self.coordinate_system_unit_name
         else:
-            unit_name = "pixel"
+            unit_name_spatial = "pixel"
         console = get_console()
-        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=5)} {unit_name}/year")
+        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=5)} {unit_name_spatial}/{self.unit_name_time}")
 
     def filter_lod_points(self) -> None:
         """
@@ -1268,7 +1271,8 @@ class ImagePair:
                 self.image1_transform,
                 downsampled_tracking_results,
                 save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
+                unit_name_distance=self.coordinate_system_unit_name,
+                unit_name_time=self.unit_name_time
             )
 
         # --- Prepare common subsets and guards ---
@@ -1767,7 +1771,8 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
+                unit_name_distance=self.coordinate_system_unit_name,
+                unit_name_time=self.unit_name_time
             )
         else:
             plot_movement_of_points(
@@ -1775,7 +1780,8 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
+                unit_name_distance=self.coordinate_system_unit_name,
+                unit_name_time=self.unit_name_time
             )
 
     def load_results(self, file_path, reference_area):

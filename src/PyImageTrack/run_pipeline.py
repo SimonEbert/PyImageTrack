@@ -20,7 +20,7 @@ import csv
 import os
 import sys
 import time
-from datetime import datetime
+import datetime as dt
 from pathlib import Path
 from typing import Optional
 import warnings
@@ -593,7 +593,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # Get image_bands from tracking configuration (used by both alignment and tracking)
     image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
-    unit_name = _as_optional_value(_get(cfg, "image", "unit_name", None))
+    unit_name_distance = _as_optional_value(_get(cfg, "image", "unit_name_distance", None))
+    unit_name_time = _as_optional_value(_get(cfg, "image", "unit_name_time", None))
+
 
     alignment_params = AlignmentParameters({
         "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
@@ -664,7 +666,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # Collect pairs, optionally filtering by identifier
     if identifier is not None:
-        year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier = collect_pairs(
+        # ToDo: Introduce datetime handling here
+        datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
             pairs_csv_path=pairs_csv_path,
@@ -673,7 +676,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             identifier=identifier
         )
     else:
-        year_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
+        datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
             pairs_csv_path=pairs_csv_path,
@@ -681,7 +684,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             extensions=extensions
         )
 
-    console.info(f"Image pairs to process ({pairing_mode}): {len(year_pairs)}")
+    console.info(f"Image pairs to process ({pairing_mode}): {len(datetime_pairs)}")
 
     # Load polygons
     poly_outside = None
@@ -768,7 +771,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # Start overall timer
     start_time = time.time()
-    for year1, year2 in year_pairs:
+    for year1, year2 in datetime_pairs:
             if year1 not in id_to_date or year2 not in id_to_date:
                 skipped.append((year1, year2, "Date missing in CSV"))
                 continue
@@ -812,9 +815,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             try:
                 image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
                 # compute years_between (hour-precise)
-                delta_hours = (dt2 - dt1).total_seconds() / 3600.0
-                years_between = delta_hours / (24.0 * 365.25)
-                console.info_verbose(f"Time between observations: {ConsoleOutput.format_duration(delta_hours)}")
+                time_between_observations = dt2 - dt1
+                console.info_verbose(f"Time between observations: {ConsoleOutput.format_duration(time_between_observations)}")
             except Exception as e:
                 console.warning("Was not able to compute time delta between observations")
 
@@ -838,10 +840,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
             # movement: convert user-entered deltas -> effective extents
             base_track_deltas = tracking_params.search_extent_px
+            years_between_observations_float = time_between_observations / dt.timedelta(years=1)
             adaptive_extents = make_effective_extents_from_deltas(
                 deltas=base_track_deltas,
                 cell_size=tracking_params.movement_cell_size,
-                years_between=years_between if use_adaptive_tracking_window else 1.0,
+                years_between=years_between_observations_float if use_adaptive_tracking_window else 1.0,
                 cap_per_side=None
             )
 
@@ -915,17 +918,18 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
             # Image enhancement parameters
-            param_dict["enhancement_type"]                 = enhancement_params.get("type", "none")
+            param_dict["enhancement_type"]                  = enhancement_params.get("type", "none")
             param_dict["enhancement_kernel_size"]           = enhancement_params.get("kernel_size", 50)
             param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
             # Output units mode
-            param_dict["output_units_mode"]                = output_units_mode
+            param_dict["output_units_mode"]                 = output_units_mode
             # Unit name (if specified, for plotting)
-            param_dict["unit_name"] = unit_name
+            param_dict["unit_name_distance"]                = unit_name_distance
+            param_dict["unit_name_time"]                    = unit_name_time
             # Adaptive tracking window
-            param_dict["use_adaptive_tracking_window"]     = use_adaptive_tracking_window
+            param_dict["use_adaptive_tracking_window"]      = use_adaptive_tracking_window
             # Image bands (ensure both key names are available for compatibility)
-            param_dict["image_bands"]                      = tracking_params.image_bands
+            param_dict["image_bands"]                       = tracking_params.image_bands
 
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column
@@ -1014,7 +1018,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
 
                 if not used_cache_tracking:
-                    adaptive_info = f" (scaled by {years_between:.3f} years)" if use_adaptive_tracking_window else " (disabled)"
+                    adaptive_info = f" (scaled by {years_between_observations_float:.3f} years)" if use_adaptive_tracking_window else " (disabled)"
                     console.parameter_summary({
                         "Image bands": tracking_params.image_bands,
                         "Distance of tracked points": f"{tracking_params.distance_of_tracked_points_px} px",
