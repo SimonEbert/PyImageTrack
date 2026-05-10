@@ -647,6 +647,7 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     base_df = tracking_results.reset_index(drop=True).copy()
     if "valid" not in base_df.columns:
         base_df["valid"] = True
+    base_df["is_outlier"] = False
 
     def _mask_from(df: gpd.GeoDataFrame, col: str) -> np.ndarray:
         if col not in df.columns:
@@ -671,6 +672,7 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     base_df["is_movement_rate_standard_deviation_outlier"] = mask_msd
 
     base_df.loc[combined_outlier_mask, "valid"] = False
+    base_df.loc[combined_outlier_mask, "is_outlier"] = True
 
     return base_df
 
@@ -694,7 +696,6 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
     if len(tracking_results) == 0:
         logging.warning("No valid points available in the tracking results. Returning non-downsampled tracking results.")
         return tracking_results
-    print(grid_polygons_gdf)
     for grid_cell in grid_polygons_gdf.itertuples():
         polygon = grid_cell.geometry
         points_inside = tracking_results[polygon.contains(tracking_results.geometry)]
@@ -708,7 +709,6 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
 
         # Get numeric columns for averaging
         numeric_cols = points_inside.select_dtypes(include=[np.number]).columns.tolist()
-        print(numeric_cols)
         for colname in numeric_cols:
             average_value = points_inside[colname].mean()
             grid_polygons_gdf.at[grid_cell.Index,colname] = average_value
