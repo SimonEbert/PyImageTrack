@@ -459,6 +459,26 @@ Rounds a datetime to the nearest hour (>=30 min rounds up).
 `dt_rounded` : datetime
     Rounded datetime.
 
+### normalize_image_shape(arr: np.ndarray) -> np.ndarray
+Normalizes image arrays at pipeline input boundaries to avoid shape mismatches.
+
+Rules:
+- `(1, H, W)` → `(H, W)`
+- `(H, W)` remains unchanged
+- `(C, H, W)` with `C > 1` remains 3D
+
+The function is intentionally conservative and does not reorder axes. It is used
+after image loading and after alignment cache loading to keep downstream shape
+handling consistent.
+
+#### Parameters
+`arr` : np.ndarray
+    Input image array (typically from `rasterio.read()`).
+
+#### Returns
+`normalized_arr` : np.ndarray
+    Shape-normalized image array.
+
 ### parse_date(s: str) -> datetime
 Parses ISO-standard date strings with flexible separators.
 
