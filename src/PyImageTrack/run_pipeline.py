@@ -23,6 +23,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import logging
 import warnings
 
 from PyImageTrack.DataProcessing.ImagePreprocessing import undistort_polygon
@@ -575,6 +576,21 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
     use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
+
+    # Suppress known Matplotlib clipping message emitted via logging (not warnings module).
+    # Matplotlib emits this through logger 'matplotlib.image' at WARNING level.
+    class _SuppressImshowClippingFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return "Clipping input data to the valid range for imshow with RGB data" not in record.getMessage()
+
+    logging.getLogger("matplotlib.image").addFilter(_SuppressImshowClippingFilter())
+
+    # Keep warnings-filter variant as fallback for environments/versions that emit a warning instead.
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*Clipping input data to the valid range for imshow with RGB data.*",
+        category=UserWarning,
+    )
 
     write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 

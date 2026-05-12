@@ -1,5 +1,3 @@
-import warnings
-
 import geopandas as gpd
 
 from ..ConsoleOutput import get_console
@@ -32,7 +30,7 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
     plot_extent = rasterio.plot.plotting_extent(raster_matrix, raster_transform)
     fig, ax = plt.subplots()
     geometry.plot(ax=ax, color="blue", alpha=alpha, markersize=1)
-    rasterio.plot.show(raster_matrix, ax=ax, extent=plot_extent, cmap="Greys")
+    rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
     plt.show()
 
 
@@ -84,13 +82,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         if ax is None and fig is None:
             fig, ax = plt.subplots(dpi=200)
         if raster_matrix is not None:
-            with warnings.catch_warnings():
-                warnings.filterwarnings(
-                    "ignore",
-                    message=r"Clipping input data to the valid range for imshow with RGB data.*",
-                    category=UserWarning,
-                )
-                rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+            rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
         plt.title("Movement velocity (no valid points)")
         if save_path is not None and fig is not None:
             fig.savefig(save_path, bbox_inches='tight')
@@ -155,13 +147,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
-        with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=r"Clipping input data to the valid range for imshow with RGB data.*",
-                category=UserWarning,
-            )
-            rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+        rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
 
 
