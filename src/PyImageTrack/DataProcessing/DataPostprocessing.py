@@ -111,7 +111,7 @@ def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, i
                       "movement_distance_pixels",
                       "movement_bearing_pixels",
                       ],
-        task_label="Tracking points for LoD"
+        task_label="[~] Tracking points for LoD"
     )
     tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
