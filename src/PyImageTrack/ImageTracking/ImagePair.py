@@ -12,7 +12,7 @@ import sklearn
 from pathlib import Path
 from pyproj import CRS as PyprojCRS
 
-from ..Utils import make_effective_extents_from_deltas
+from ..Utils import make_effective_extents_from_deltas, normalize_image_shape
 
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
@@ -386,11 +386,8 @@ class ImagePair:
             arr1 = file1.read()  # (bands, rows, cols)
             arr2 = file2.read()
 
-            def squeeze(arr):
-                return arr[0] if arr.shape[0] == 1 else arr
-
-            arr1 = squeeze(arr1)
-            arr2 = squeeze(arr2)
+            arr1 = normalize_image_shape(arr1)
+            arr2 = normalize_image_shape(arr2)
 
             if self.undistort_image:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)

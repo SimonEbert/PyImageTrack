@@ -29,6 +29,13 @@ def _round_to_nearest_hour(dt: datetime) -> datetime:
         dt = dt.replace(minute=0, second=0, microsecond=0)
     return dt
 
+
+def normalize_image_shape(arr: np.ndarray) -> np.ndarray:
+    """Normalize image shape: ``(1,H,W)->(H,W)``, keep ``(H,W)`` and ``(C,H,W), C>1``."""
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        return arr[0]
+    return arr
+
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
     Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
