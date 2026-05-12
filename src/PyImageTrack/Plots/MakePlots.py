@@ -1,6 +1,8 @@
 import warnings
 
 import geopandas as gpd
+
+from ..ConsoleOutput import get_console
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio.plot
@@ -75,13 +77,33 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     None
     """
 
+    if point_movement.empty:
+        get_console().info(
+            "Plot layer skipped (empty GeoDataFrame). This usually occurs when a subset is empty after filtering or if filters are disabled."
+        )
+        if ax is None and fig is None:
+            fig, ax = plt.subplots(dpi=200)
+        if raster_matrix is not None:
+            with warnings.catch_warnings():
+                warnings.filterwarnings(
+                    "ignore",
+                    message=r"Clipping input data to the valid range for imshow with RGB data.*",
+                    category=UserWarning,
+                )
+                rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+        plt.title("Movement velocity (no valid points)")
+        if save_path is not None and fig is not None:
+            fig.savefig(save_path, bbox_inches='tight')
+        return
+
     # --- Estimate median point spacing in map units ---
     coords = np.vstack([point_movement.geometry.x, point_movement.geometry.y]).T
 
     # Sort by x then y for fast nearest-neighbor estimate
     coords_sorted = coords[np.lexsort((coords[:, 1], coords[:, 0]))]
     deltas = np.sqrt(np.sum(np.diff(coords_sorted, axis=0) ** 2, axis=1))
-    median_spacing = np.nanmedian(deltas[deltas > 0])
+    positive_deltas = deltas[deltas > 0]
+    median_spacing = np.nanmedian(positive_deltas) if positive_deltas.size > 0 else np.nan
 
     if not np.isfinite(median_spacing):
         median_spacing = 1.0
