@@ -1,3 +1,5 @@
+import warnings
+
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -131,7 +133,13 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
-        rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r"Clipping input data to the valid range for imshow with RGB data.*",
+                category=UserWarning,
+            )
+            rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
 
 
