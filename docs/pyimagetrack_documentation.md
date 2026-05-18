@@ -1893,6 +1893,25 @@ The pipeline applies filters in the following order:
 2. **Outlier filtering**: Statistical filters (bearing difference, bearing standard deviation, rate difference, rate standard deviation) are then applied to the remaining points above the LoD threshold.
 
 ## Module: Plots/MakePlots.py
+
+### _prepare_raster_for_plotting(raster_matrix, context_label="plot")
+Prepares a raster array for robust plotting with rasterio/matplotlib. For 3D inputs with more than 3 bands, this falls back to band 1 as grayscale visualization and emits a console warning. 2D inputs are returned unchanged.
+
+#### Parameters
+``raster_matrix`` : np.ndarray
+    The raster array to prepare for plotting. May be 2D (rows, cols), or 3D (bands, rows, cols) or (rows, cols, bands).
+
+``context_label`` : str
+    A label used in console messages to identify which plot context triggered the fallback (e.g., "raster+geometry plot", "movement plot").
+
+#### Returns
+``prepared_raster`` : np.ndarray
+    A 2D array (grayscale) if the input had more than 3 bands, or the original array if it was already 2D or had 3 or fewer bands.
+
+#### Notes
+- The band axis is detected heuristically as the axis with the smallest dimension.
+- When a fallback to band 1 occurs, a warning is emitted via `console.warning(...)` (always visible), and additional shape/axis info is logged via `console.info_verbose(...)` (only in verbose mode).
+
 ### plot_raster_and_geometry(raster_matrix, raster_transform, geometry, alpha=0.6)
 Plots a raster with a geometry overlay.
 
@@ -1909,7 +1928,7 @@ Plots a raster with a geometry overlay.
 ``None``
 
 ### plot_movement_of_points(raster_matrix, raster_transform, point_movement, point_color=None, masking_polygon=None,
-fig=None, ax=None, save_path=None, show_arrows=True)
+fig=None, ax=None, save_path=None, show_arrows=True, unit_name=None)
 Plots tracked point movement with optional masking and saving.
 
 #### Parameters
@@ -1929,10 +1948,13 @@ Plots tracked point movement with optional masking and saving.
 
 ``show_arrows`` : bool
 
+``unit_name`` : str or None
+    Name of the unit to display in the plot legend. If None, the unit is inferred from the CRS of ``point_movement`` (e.g., "meter" for projected CRS), defaulting to "pixel" if no CRS is available.
+
 #### Returns
 ``None``
 
-### plot_movement_of_points_with_valid_mask(raster_matrix, raster_transform, point_movement, save_path=None)
+### plot_movement_of_points_with_valid_mask(raster_matrix, raster_transform, point_movement, save_path=None, unit_name=None)
 Plots valid vs invalid points in different colors. When `save_path` is provided, saves the plot to a file. When `save_path` is None, displays the plot interactively (requires a graphical display).
 
 #### Parameters
@@ -1944,6 +1966,9 @@ Plots valid vs invalid points in different colors. When `save_path` is provided,
 
 ``save_path`` : str or None
     If provided, saves the plot to this path. If None, displays the plot interactively.
+
+``unit_name`` : str or None
+    Name of the unit to display in the plot legend. Passed through to ``plot_movement_of_points``.
 
 #### Returns
 ``None``
