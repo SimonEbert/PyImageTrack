@@ -140,6 +140,10 @@ def _validate_date_token(token: str, year_part: str) -> bool:
             if digit_count % 2 != 0:
                 return False  # Odd length means incomplete digit pair
             
+            # Check that we don't have too many digits (max 10 = MMDDHHMMSS)
+            if digit_count > 10:
+                return False  # Too many digit pairs for a valid date/time
+            
             # Validate only the segments we have so far - don't require completeness
             if digit_count >= 2:
                 m = int(remaining_digits[0:2])
@@ -252,18 +256,16 @@ def extract_date_token(s: str) -> Optional[str]:
         all_additional = all_additional.lstrip('-').rstrip('-')
         
         if all_additional:
-            # FIX: Base format decision on the actual extracted content, not the original string
-            # If all_additional contains hyphens, treat as separated format
-            # If all_additional is all digits, treat as compact format
-            extracted_has_hyphen = '-' in all_additional
-            
-            if extracted_has_hyphen:
+            # FIX: Base format decision on the original string's separator pattern,
+            # not on whether the extracted content contains hyphens (which can come
+            # from normalized underscores in compact-format filenames like 20260117_103852)
+            if has_separator:
                 # Separated mode: split by hyphens and add each segment as a whole
                 segments = all_additional.split('-')
                 validated_token = token
                 
                 for seg in segments:
-                    # FIX: Check for identifier pattern before proceeding
+                    # Check for identifier pattern before proceeding
                     if seg.startswith('id'):
                         # This is an identifier segment, stop extraction
                         break
@@ -315,17 +317,19 @@ def extract_date_token(s: str) -> Optional[str]:
                 
                 token = validated_token
             else:
-                # Compact mode: all_additional should be all digits
-                if not all_additional.isdigit():
-                    # Not pure digits - not a valid compact format
+                # Compact mode: strip hyphens (from normalized underscores) and use pure digits
+                all_additional_digits = all_additional.replace('-', '')
+                
+                if not all_additional_digits.isdigit():
+                    # Not pure digits after stripping hyphens - not a valid compact format
                     token = token
                 else:
                     # Compact mode: add characters in 2-character pairs (month, day, etc.)
                     validated_token = token
                     pos = 0
                     
-                    while pos + 2 <= len(all_additional):
-                        seg = all_additional[pos:pos+2]
+                    while pos + 2 <= len(all_additional_digits):
+                        seg = all_additional_digits[pos:pos+2]
                         
                         # Try adding this 2-character segment directly
                         test_token = validated_token + seg
