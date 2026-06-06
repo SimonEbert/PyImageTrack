@@ -10,8 +10,9 @@ from shapely.geometry import box
 import scipy
 import sklearn
 from pathlib import Path
+import datetime as dt
 
-from ..Utils import make_effective_extents_from_deltas
+from ..Utils import make_effective_extents_from_deltas, extract_datetime_from_token
 
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
@@ -51,7 +52,6 @@ from ..Plots.MakePlots import (
     plot_movement_of_points,
     plot_movement_of_points_with_valid_mask, )
 # Date Handling
-from ..Utils import parse_date
 from ..ConsoleOutput import get_console
 
 
@@ -149,6 +149,7 @@ class ImagePair:
         self.image_bands = parameter_dict.get("image_bands", None)
         self.coordinate_system_unit_name = parameter_dict.get("unit_name_distance", None)
         self.unit_name_time = parameter_dict.get("unit_name_time", "year")
+        self.time_between_observations = None
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
@@ -260,8 +261,9 @@ class ImagePair:
             self.image1_matrix = self.image1_matrix[selected_channels, :, :]
             self.image2_matrix = self.image2_matrix[selected_channels, :, :]
 
-    def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
-                              selected_channels=None, NA_value: float = None):
+    def load_images_from_file(self, filename_1: str, observation_date_1: str | dt.datetime,
+                              filename_2: str, observation_date_2: str,selected_channels:int | list[int] | tuple[int] | None,
+                              NA_value: float = None):
         """
         Load two image files, crop/align extents, harmonize dtypes/resolution, and store metadata.
 
@@ -340,6 +342,8 @@ class ImagePair:
 
             # Check channel compatibility
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
+
+            self.select_image_channels(selected_channels)
 
             # Harmonize datatypes
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
@@ -432,7 +436,9 @@ class ImagePair:
 
             # Check channel compatibility for non-georeferenced images
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
-            
+            self.select_image_channels(selected_channels)
+
+
             # Harmonize dtypes (may already be uint16, but verifies)
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
             
@@ -464,12 +470,14 @@ class ImagePair:
             base_polygon=bounds_poly,
             crs=self.crs)
 
-        self.image1_observation_date = parse_date(observation_date_1)
-        self.image2_observation_date = parse_date(observation_date_2)
 
-        # Calculate years between observations
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        self.years_between_observations = delta_hours / (24.0 * 365.25)
+        self.image1_observation_date = extract_datetime_from_token(observation_date_1)\
+            if type(observation_date_1) is not dt.datetime else observation_date_1
+
+        self.image2_observation_date = extract_datetime_from_token(observation_date_2)\
+            if type(observation_date_2) is not dt.datetime else observation_date_2
+        # Calculate delta t between observations
+        self.time_between_observations = self.image2_observation_date - self.image1_observation_date
 
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
@@ -483,7 +491,7 @@ class ImagePair:
                 make_effective_extents_from_deltas(
                     self.tracking_parameters.search_extent_px,
                     self.tracking_parameters.movement_cell_size,
-                    years_between=self.years_between_observations if self.use_adaptive_tracking_window else 1.0,
+                    years_between=self.time_between_observations.total_seconds()/ (3600.0 * 24.0 * 365.25) if self.use_adaptive_tracking_window else 1.0,
                     cap_per_side=None
                 ))
         else:
@@ -549,8 +557,10 @@ class ImagePair:
         self.image1_matrix_original = image1_matrix.copy()
         self.image2_matrix_original = image2_matrix.copy()
 
-        self.image1_observation_date = parse_date(observation_date_1)
-        self.image2_observation_date = parse_date(observation_date_2)
+        if type(observation_date_1) is not dt.datetime:
+            self.image1_observation_date = extract_datetime_from_token(observation_date_1)
+        if type(observation_date_2) is not dt.datetime:
+            self.image2_observation_date = extract_datetime_from_token(observation_date_2)
         self.crs = crs
 
         bbox = rasterio.transform.array_bounds(image1_matrix.shape[-2], image1_matrix.shape[-1], image_transform)
@@ -694,13 +704,12 @@ class ImagePair:
 
         self.valid_alignment_possible = True
 
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        years_between_observations = delta_hours / (24.0 * 365.25)
+        self.time_between_observations = self.image2_observation_date - self.image1_observation_date
 
         self.tracked_control_points = georeference_tracked_points(tracked_control_points,
                                                                   self.image1_transform,
                                                                   self.crs,
-                                                                  years_between_observations,
+                                                                  self.time_between_observations,
                                                                   self.output_units_mode)
 
         self.image2_matrix = new_image2_matrix
@@ -862,22 +871,20 @@ class ImagePair:
                                             alignment_tracking=False,
                                             task_label="[~] Tracking points for movement tracking")
         # calculate the years between observations from the two given observation dates
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        years_between_observations = delta_hours / (24.0 * 365.25)
 
         if self.convert_to_3d_displacement:
             georeferenced_tracked_points = calculate_displacement_from_depth_images(
                 tracked_points, depth_image_time1=self.depth_image1,
                 depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
-                years_between_observations=years_between_observations,
+                time_between_observations=self.time_between_observations,
                 output_unit_mode=self.output_units_mode)
             if self.coordinate_system_unit_name == "pixel":
                 self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
-                years_between_observations=years_between_observations,
+                time_between_observations=self.time_between_observations,
                 output_unit_mode=self.output_units_mode)
 
         return georeferenced_tracked_points
@@ -989,8 +996,7 @@ class ImagePair:
                                                      self.displacement_column_name)
 
 
-    def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame,
-                         years_between_observations) -> gpd.GeoDataFrame:
+    def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Track movement on stable points for level of detection calculation.
 
@@ -1001,8 +1007,6 @@ class ImagePair:
         ----------
         points_for_lod_calculation : gpd.GeoDataFrame
             Points in the stable area for calculating the level of detection.
-        years_between_observations : float
-            Time span in years between the two observations.
 
         Returns
         -------
@@ -1053,13 +1057,13 @@ class ImagePair:
                 tracked_control_pixels_valid,self.depth_image1,self.depth_image2,
                 camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
-                years_between_observations=years_between_observations,
+                time_between_observations=self.time_between_observations,
                 output_unit_mode=self.output_units_mode)
         else:
             tracked_points = georeference_tracked_points(tracked_control_pixels_valid,
                                                          self.image1_transform,
                                                          crs=self.crs,
-                                                         years_between_observations=years_between_observations,
+                                                         time_between_observations=self.time_between_observations,
                                                          output_unit_mode=self.output_units_mode)
 
         return tracked_points
@@ -1103,8 +1107,6 @@ class ImagePair:
             points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
             points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        years_between_observations = delta_hours / (24.0 * 365.25)
 
         # check if a LoD filter parameter is provided, if this is None, don't perform LoD calculation
         if (filter_parameters.level_of_detection_quantile is None
@@ -1114,8 +1116,7 @@ class ImagePair:
         level_of_detection_quantile = filter_parameters.level_of_detection_quantile
 
         unfiltered_level_of_detection_points = self.track_lod_points(
-            points_for_lod_calculation=points_for_lod_calculation,
-            years_between_observations=years_between_observations)
+            points_for_lod_calculation=points_for_lod_calculation)
         self.level_of_detection_points = unfiltered_level_of_detection_points
 
         self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[self.displacement_column_name],

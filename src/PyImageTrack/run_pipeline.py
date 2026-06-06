@@ -46,8 +46,8 @@ from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
     collect_pairs, ensure_dir, abbr_alignment,
-    abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units, parse_date,
-    make_effective_extents_from_deltas,
+    abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units,  # parse_date,
+    make_effective_extents_from_deltas, extract_datetime_from_token,
 )
 
 from .Cache import (
@@ -666,7 +666,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # Collect pairs, optionally filtering by identifier
     if identifier is not None:
-        # ToDo: Introduce datetime handling here
         datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
@@ -771,41 +770,47 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # Start overall timer
     start_time = time.time()
-    for year1, year2 in datetime_pairs:
-            if year1 not in id_to_date or year2 not in id_to_date:
-                skipped.append((year1, year2, "Date missing in CSV"))
+    for token1, token2 in datetime_pairs:
+            if token1 not in id_to_date or token2 not in id_to_date:
+                skipped.append((token1, token2, "Date missing in CSV"))
                 continue
-            if year1 not in id_to_file or year2 not in id_to_file:
-                skipped.append((year1, year2, "Input image missing"))
+            if token1 not in id_to_file or token2 not in id_to_file:
+                skipped.append((token1, token2, "Input image missing"))
                 continue
 
-            filename_1 = id_to_file[year1]
-            filename_2 = id_to_file[year2]
-            date_1 = id_to_date[year1]
-            date_2 = id_to_date[year2]
+            filename_1 = id_to_file[token1]
+            filename_2 = id_to_file[token2]
+            dt1 = id_to_date[token1]
+            dt2 = id_to_date[token2]
 
-            dt1 = parse_date(date_1)
-            dt2 = parse_date(date_2)
 
-            def _fmt_label(id_key, dt):
-                return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
-                    else dt.strftime("%Y-%m-%d")
-
-            label_1 = _fmt_label(year1, dt1)
-            label_2 = _fmt_label(year2, dt2)
+            # def _fmt_label(id_key, datetime: dt.datetime):
+            #     return datetime.strftime("%Y-%m-%d %H:%M:%S.%f") if id_hastime_from_filename.get(id_key, False) \
+            #         else datetime.strftime("%Y-%m-%d")
+            #
+            # label_1 = _fmt_label(token1, dt1)
+            # label_2 = _fmt_label(token2, dt2)
             
             # Extract date tokens (years) from IDs for display and paths
             # IDs are now in format "date_token_identifier" or "date_token"
-            date_token_1 = year1.split('_')[0] if '_' in year1 else year1
-            date_token_2 = year2.split('_')[0] if '_' in year2 else year2
+            # date_token_1 = token1.split('_')[0] if '_' in token1 else token1
+            # date_token_2 = token2.split('_')[0] if '_' in token2 else token2
             
             # Use the already-parsed dates for folder naming (guaranteed correct)
             # This avoids malformed tokens from extraction issues
-            folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
-            folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
+            # folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
+            # folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
             
+            if (dt1.hour == 0 & dt1.minute == 0 & dt1.second == 0 & dt1.microsecond == 0
+                & dt2.hour == 0 and dt2.minute == 0 & dt2.second == 0 & dt2.microsecond == 0):
+                dt1_string = dt1.date().isoformat()
+                dt2_string = dt2.date().isoformat()
+            else:
+                dt1_string = dt1.isoformat(sep=" ")
+                dt2_string = dt2.isoformat(sep=" ")
+
             # Image pair header
-            pair_id_short = f"{date_token_1} -> {date_token_2}"
+            pair_id_short = f"{dt1_string} -> {dt2_string}"
             if identifier is not None:
                 pair_id_short += f"; id: {identifier}"
             console.section_header("PREPROCESSING", "Loading and preparing images", f"({pair_id_short})", level=2)
@@ -840,7 +845,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
             # movement: convert user-entered deltas -> effective extents
             base_track_deltas = tracking_params.search_extent_px
-            years_between_observations_float = time_between_observations / dt.timedelta(years=1)
+
+            years_between_observations_float = time_between_observations / dt.timedelta(days=365.25)
             adaptive_extents = make_effective_extents_from_deltas(
                 deltas=base_track_deltas,
                 cell_size=tracking_params.movement_cell_size,
@@ -889,7 +895,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
             # Directories
             # Use formatted dates for directory names (guaranteed correct, handles all date formats)
-            base_pair_dir = os.path.join(output_folder, f"{folder_date_1}_{folder_date_2}")
+            base_pair_dir = os.path.join(output_folder, f"{dt1_string}_{dt2_string}")
             enhancement_dir = os.path.join(base_pair_dir, enhancement_code)
             align_dir  = os.path.join(enhancement_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
@@ -939,9 +945,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
                 filename_1=filename_1,
-                observation_date_1=date_1,
+                observation_date_1=dt1,
                 filename_2=filename_2,
-                observation_date_2=date_2,
+                observation_date_2=dt2,
                 selected_channels=tracking_params.image_bands
             )
 
@@ -954,9 +960,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
                 used_cache_alignment = False
                 if use_alignment_cache:
-                    used_cache_alignment = load_alignment_cache(image_pair, align_dir, year1, year2)
+                    used_cache_alignment = load_alignment_cache(image_pair, align_dir, token1, token2)
                     if used_cache_alignment:
-                        console.cache_info("loaded", align_dir, f"{date_token_1}->{date_token_2}", cache_type="alignment")
+                        console.cache_info("loaded", align_dir, f"{dt1_string}->{dt2_string}", cache_type="alignment")
 
                 if not used_cache_alignment:
                     console.parameter_summary({
@@ -972,25 +978,25 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         with console.timer("Alignment", verbose=True):
                                 image_pair.align_images(poly_outside, polygon_inside=polygon_inside)
                     except ValueError as e:
-                        console.error(f"Alignment failed for pair {date_token_1} -> {date_token_2}: {e}")
+                        console.error(f"Alignment failed for pair {dt1_string} -> {dt2_string}: {e}")
                         console.error("Skipping this pair. Please check your alignment parameters or input data.")
-                        skipped.append((year1, year2, f"Alignment failed: {str(e)}"))
+                        skipped.append((token1, token2, f"Alignment failed: {str(e)}"))
                         continue
                     
                     if not image_pair.valid_alignment_possible:
-                        skipped.append((year1, year2, "Alignment not possible"))
+                        skipped.append((token1, token2, "Alignment not possible"))
                         continue
                 
                 # Save alignment results only if not loaded from cache
                 if not used_cache_alignment:
                     save_alignment_cache(
-                        image_pair, align_dir, year1, year2,
+                        image_pair, align_dir, token1, token2,
                         align_params=alignment_params.__dict__,
-                        filenames={year1: filename_1, year2: filename_2},
-                        dates={year1: date_1, year2: date_2},
+                        filenames={token1: filename_1, token2: filename_2},
+                        dates={token1: dt1_string, token2: dt2_string},
                         save_truecolor_aligned=write_truecolor_aligned,
                     )
-                    console.cache_info("saved", align_dir, f"{date_token_1}->{date_token_2}", cache_type="alignment")
+                    console.cache_info("saved", align_dir, f"{dt1_string}->{dt2_string}", cache_type="alignment")
 
             else:
                 console.section_header("ALIGNMENT", "Co-registering image pair", f"({pair_id_short})", level=2)
@@ -1007,14 +1013,14 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             if do_tracking:
                 console.section_header("TRACKING", "Detecting movement between images", f"({pair_id_short})", level=2)
                 if use_tracking_cache:
-                    used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
+                    used_cache_tracking = load_tracking_cache(image_pair, track_dir, token1, token2)
                     if used_cache_tracking:
                         if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
                             used_cache_tracking = False
                             image_pair.tracking_results = None
                             console.warning("CRS not compatible with no-georef; recomputing.")
                         else:
-                            console.cache_info("loaded", track_dir, f"{date_token_1}->{date_token_2}", cache_type="tracking")
+                            console.cache_info("loaded", track_dir, f"{dt1_string}->{dt2_string}", cache_type="tracking")
 
 
                 if not used_cache_tracking:
@@ -1046,13 +1052,13 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     save_tracking_cache(
                         image_pair,
                         track_dir,
-                        year1,
-                        year2,
+                        token1,
+                        token2,
                         track_params=pair_tracking_config,
-                        filenames={year1: filename_1, year2: filename_2},
-                        dates={year1: date_1, year2: date_2},
+                        filenames={token1: filename_1, token2: filename_2},
+                        dates={token1: dt1_string, token2: dt2_string},
                     )
-                    console.cache_info("saved", track_dir, f"{date_token_1}->{date_token_2}", cache_type="tracking")
+                    console.cache_info("saved", track_dir, f"{dt1_string}->{dt2_string}", cache_type="tracking")
             else:
                 console.info("Tracking is disabled (alignment-only run).")
 
@@ -1067,14 +1073,14 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     # First: Load or calculate Level of Detection
                     used_cache_lod = False
                     if use_lod_cache:
-                        used_cache_lod = load_lod_cache(image_pair, track_dir, year1, year2)
+                        used_cache_lod = load_lod_cache(image_pair, track_dir, token1, token2)
                         if used_cache_lod:
                             if use_no_georeferencing and getattr(image_pair.level_of_detection_points, "crs", None) is not None:
                                 used_cache_lod = False
                                 image_pair.level_of_detection_points = None
                                 console.warning("CRS not compatible with no-georef; recomputing.")
                             else:
-                                console.cache_info("loaded", track_dir, f"{date_token_1}->{date_token_2}", cache_type="LoD")
+                                console.cache_info("loaded", track_dir, f"{dt1_string}->{dt2_string}", cache_type="LoD")
 
                     if not used_cache_lod:
                         if poly_outside is not None:
@@ -1101,12 +1107,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         save_lod_cache(
                             image_pair,
                             track_dir,
-                            year1,
-                            year2,
-                            filenames={year1: filename_1, year2: filename_2},
-                            dates={year1: date_1, year2: date_2},
+                            token1,
+                            token2,
+                            filenames={token1: filename_1, token2: filename_2},
+                            dates={token1: dt1_string, token2: dt2_string},
                         )
-                        console.cache_info("saved", track_dir, f"{date_token_1}->{date_token_2}", cache_type="LoD")
+                        console.cache_info("saved", track_dir, f"{dt1_string}->{dt2_string}", cache_type="LoD")
 
                     # Second: Apply LoD filtering (remove points below detection threshold)
                     image_pair.filter_lod_points()
@@ -1125,11 +1131,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     df_vf = image_pair.tracking_results
                     if moving_id_column in df_vf.columns:
                         grouped = df_vf.groupby(moving_id_column)["valid"].mean()
-                        valid_rows = [(f"{date_token_1}_{date_token_2}", str(k), float(v)) for k, v in grouped.items()]
+                        valid_rows = [(f"{dt1_string}_{dt2_string}", str(k), float(v)) for k, v in grouped.items()]
                     else:
-                        valid_rows = [(f"{date_token_1}_{date_token_2}", "all", float(df_vf["valid"].mean()))]
+                        valid_rows = [(f"{dt1_string}_{dt2_string}", "all", float(df_vf["valid"].mean()))]
                 except Exception:
-                    valid_rows = [(f"{date_token_1}_{date_token_2}", "all", None)]
+                    valid_rows = [(f"{dt1_string}_{dt2_string}", "all", None)]
                 valid_csv = os.path.join(filter_dir, "valid_results_fraction.csv")
                 with open(valid_csv, "w", newline="", encoding="utf-8") as f:
                     w = csv.writer(f)
@@ -1153,16 +1159,16 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 console.section_header("OUTPUT", "Saving results", f"({pair_id_short})", level=2)
                 console.info("Skipping filtering, plotting and saving of movement products (alignment-only mode).")
                 # Alignment-only outputs exist in align_dir:
-                # - aligned_image_<year2>.tif
-                # - alignment_control_points_<year1>_<year2>.geojson
-                # - alignment_meta_<year1>_<year2>.json
+                # - aligned_image_<token2>.tif
+                # - alignment_control_points_<token1>_<token2>.geojson
+                # - alignment_meta_<token1>_<token2>.json
                         # Mark this pair as successfully processed
 
             # Extract identifier from year IDs for summary display
             identifier_from_id = None
-            if '_' in year1:
-                identifier_from_id = year1.split('_')[1]
-            successes.append((date_token_1, date_token_2, identifier_from_id))
+            if '_' in token1:
+                identifier_from_id = token1.split('_')[1]
+            successes.append((dt1_string, dt2_string, identifier_from_id))
 
     # Print summary with total elapsed time
     total_elapsed = time.time() - start_time

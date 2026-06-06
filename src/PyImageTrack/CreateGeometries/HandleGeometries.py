@@ -5,6 +5,7 @@ import rasterio
 import rasterio.mask
 import rasterio.transform
 import shapely
+import datetime as dt
 
 from ..ConsoleOutput import get_console
 
@@ -203,7 +204,7 @@ def crop_images_to_intersection(file1, file2):
 
 
 def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs,
-                                years_between_observations: float=1,
+                                time_between_observations: dt.timedelta=dt.timedelta(days=365),
                                 output_unit_mode: str="per_year") -> gpd.GeoDataFrame:
     """
     Georeferences a DataFrame with tracked points and calculates their movement (absolute and per year) in the unit
@@ -219,10 +220,11 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         indices to the coordinate reference system of the points.
     crs:
         An identifier for a coordinate reference system to which the resulting GeoDataFrame will be projected.
-    years_between_observations: float = 1
-        A float representing the number of years between the two images for calculating average yearly movement rates.
+    time_between_observations: dt.timedelta=dt.timedelta(days=365),
+        A timedelta object giving the time between the two images for calculating average movement rates for a unit time.
     output_unit_mode: str = "per_year"
-        Either "per_year" (normalize to per-year values) or "total" (raw displacement without normalization).
+        Can be "per_year" (normalize to per-year values), "per_second" (normalize to per-second values) or "total"
+        (raw displacement without normalization).
     Returns
     ----------
     georeferenced_tracked_pixels:
@@ -239,10 +241,20 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
     if output_unit_mode == "total":
         georeferenced_tracked_pixels["movement_distance_total"] = georeferenced_tracked_pixels["movement_distance"]
         displacement_column_name = "movement_distance_total"
-    else:  # per_year
+    elif output_unit_mode == "per_year":  # per_year
         georeferenced_tracked_pixels["movement_distance_per_year"] = (georeferenced_tracked_pixels["movement_distance"]
-                                                                       / years_between_observations)
+                                                                       / (time_between_observations.days // 365))
         displacement_column_name = "movement_distance_per_year"
+    elif output_unit_mode == "per_second":
+        georeferenced_tracked_pixels["movement_distance_per_second"] = (georeferenced_tracked_pixels["movement_distance"]
+                                                                        / time_between_observations.seconds)
+        displacement_column_name = "movement_distance_per_second"
+        # Todo: Change displacement column name throughout the code
+
+    else:
+        raise ValueError("Did not recognize output unit mode " + output_unit_mode + ". Expected 'total', 'per_year',"
+                                                                                    " or 'per_second'.")
+
 
     georeferenced_tracked_pixels["valid"] = True
     georeferenced_tracked_pixels.loc[

@@ -34,7 +34,7 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
                             save_path: str = None, show_arrows: bool = True, unit_name_distance: str = None,
-                            unit_name_time: str = "year"):
+                            unit_name_time: str = None):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -75,6 +75,12 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     None
     """
 
+    # Fallback for None unit names
+    if unit_name_distance is None:
+        unit_name_distance = "meter"
+    if unit_name_time is None:
+        unit_name_time = "year"
+
     # --- Estimate median point spacing in map units ---
     coords = np.vstack([point_movement.geometry.x, point_movement.geometry.y]).T
 
@@ -105,7 +111,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
         if col in list(point_movement.columns):
             displacement_column_name = col
             break
-    
+
     if displacement_column_name is None:
         raise ValueError("Could not find any displacement column. "
                          "Expected one of: 'movement_distance_per_year', 'movement_distance_total', "
