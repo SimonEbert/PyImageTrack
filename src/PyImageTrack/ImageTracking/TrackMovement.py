@@ -354,8 +354,6 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
 
         # Check for NaN values before fitting
         if np.any(np.isnan(J)) or np.any(np.isnan(residuals)):
-            console = get_console()
-            console.info_verbose("NaN values detected in LSM optimization. Skipping this point.")
             return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                    tracking_success=False)
 

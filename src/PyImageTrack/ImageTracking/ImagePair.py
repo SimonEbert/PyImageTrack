@@ -10,6 +10,7 @@ from shapely.geometry import box
 import scipy
 import sklearn
 from pathlib import Path
+from pyproj import CRS as PyprojCRS
 
 from ..Utils import make_effective_extents_from_deltas
 
@@ -259,6 +260,16 @@ class ImagePair:
             self.image1_matrix = self.image1_matrix[selected_channels, :, :]
             self.image2_matrix = self.image2_matrix[selected_channels, :, :]
 
+
+    def make_safe_bounds(self,buffer_to_image_bounds: int):
+        safe_bounds = make_safe_bounds_from_buffer(
+            px_size=self._effective_pixel_size(),
+            buffer=buffer_to_image_bounds,
+            base_polygon=self.image_bounds.geometry[0],
+            crs=self.crs)
+        return safe_bounds
+
+
     def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
                               selected_channels=None, NA_value: float = None):
         """
@@ -302,8 +313,12 @@ class ImagePair:
         
         # Suppress NotGeoreferencedWarning when opening non-georeferenced images
         # This is expected behavior when use_no_georeferencing = true
-        with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
+        if self.use_no_georeferencing:
+            with warnings.catch_warnings():
+                warnings.filterwarnings("ignore", category=rasterio.errors.NotGeoreferencedWarning)
+                file1 = rasterio.open(filename_1, 'r')
+                file2 = rasterio.open(filename_2, 'r')
+        else:
             file1 = rasterio.open(filename_1, 'r')
             file2 = rasterio.open(filename_2, 'r')
 
@@ -319,14 +334,17 @@ class ImagePair:
             if file1.crs != file2.crs:
                 raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
                                  " but the two images must have the same crs.")
-            if self.crs != file1.crs:
-                raise ValueError(
-                    "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
-                    str(file1.crs))
-            try:
-                self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
-            except:
-                self.coordinate_system_unit_name = file1.crs.units_factor[0]
+            if self.crs is not None:
+                if self.crs != file1.crs:
+                    raise ValueError(
+                        "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
+                        str(file1.crs))
+            else:
+                self.crs = file1.crs
+
+            crs_obj = PyprojCRS.from_user_input(file1.crs)
+
+            self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -453,18 +471,22 @@ class ImagePair:
             bounds_poly = box(*array_bounds(w, h, tform))
             safe_px_size_bounds = px
 
-        self.safe_image_bounds_tracking = make_safe_bounds_from_buffer(
-            px_size=safe_px_size_bounds,
-            buffer=max(getattr(self.tracking_parameters, "search_extent_px", None))
-            + getattr(self.tracking_parameters, "movement_cell_size", None)/2,
-            base_polygon=bounds_poly,
-            crs=self.crs)
-        self.safe_image_bounds_alignment = make_safe_bounds_from_buffer(
-            px_size=safe_px_size_bounds,
-            buffer=max(getattr(self.alignment_parameters, "control_search_extent_px", None))
-            + getattr(self.alignment_parameters, "control_cell_size", None)/2,
-            base_polygon=bounds_poly,
-            crs=self.crs)
+
+        # Set image_bounds for fallback alignment mode (when reference_area is None)
+        # This is used by align_images() when stable_area_filename is "none"
+        # Similar logic to load_images_from_matrix_and_transform()
+        px_size = safe_px_size_bounds
+        ext = getattr(self.tracking_parameters, "search_extent_px", None)
+        if not ext:
+            raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
+        eff_search_radius_px = max(ext)
+
+        image_bounds = gpd.GeoDataFrame(
+            gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs))
+        # set correct geometry column
+        image_bounds = image_bounds.rename(columns={0: "geometry"})
+        image_bounds.set_geometry("geometry", inplace=True)
+        self.image_bounds = image_bounds
 
         self.image1_observation_date = parse_date(observation_date_1)
         self.image2_observation_date = parse_date(observation_date_2)
@@ -506,88 +528,100 @@ class ImagePair:
             raise ValueError("Set exactly one of 'control_search_extent_px' and 'control_search_extent_full_cell'.")
 
 
+        self.safe_image_bounds_tracking = self.make_safe_bounds(max(getattr(self.tracking_parameters, "search_extent_px", None))
+            + getattr(self.tracking_parameters, "movement_cell_size", None)/2)
+
+
+        self.safe_image_bounds_alignment = self.make_safe_bounds(
+            buffer_to_image_bounds=max(getattr(self.alignment_parameters, "control_search_extent_px", None))
+            + getattr(self.alignment_parameters, "control_cell_size", None)/2)
+
         # Select image bands
         if self.image_bands is not None:
             self.select_image_channels(selected_channels=self.image_bands)
         elif self.image1_matrix.ndim == 3:
             self.image_bands = self.image1_matrix.shape[0]
 
-    def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
-                                              image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
-                                              selected_channels=None):
-        """
-        Load two images from matrices with a common transform.
 
-        Stores the matrices, dates, CRS/transform, copies originals, builds bounds,
-        and optionally selects channels. No file I/O is performed.
+    # ToDo: Remove?
+    # def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
+    #                                           image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
+    #                                           selected_channels=None):
+    #     """
+    #     Load two images from matrices with a common transform.
+    #
+    #     Stores the matrices, dates, CRS/transform, copies originals, builds bounds,
+    #     and optionally selects channels. No file I/O is performed.
+    #
+    #     Parameters
+    #     ----------
+    #     image1_matrix : np.ndarray
+    #         Matrix of the first image.
+    #     observation_date_1 : str
+    #         Observation date of the first image. Multiple ISO-like formats accepted by ``parse_date``.
+    #     image2_matrix : np.ndarray
+    #         Matrix of the second image.
+    #     observation_date_2 : str
+    #         Observation date of the second image.
+    #     image_transform : Affine
+    #         Common transform for both images.
+    #     crs : any
+    #         Coordinate reference system.
+    #     selected_channels : int | list[int] | tuple[int] | None, optional
+    #         Channels to select from 3D inputs. Defaults to no selection when ``None``.
+    #
+    #     Returns
+    #     -------
+    #     None
+    #     """
+    #     self.image1_matrix = image1_matrix
+    #     self.image1_transform = image_transform
+    #     self.image2_matrix = image2_matrix
+    #     self.image2_transform = image_transform
+    #
+    #     # Also store original matrices for potential true-color alignment output
+    #     self.image1_matrix_original = image1_matrix.copy()
+    #     self.image2_matrix_original = image2_matrix.copy()
+    #
+    #     self.image1_observation_date = parse_date(observation_date_1)
+    #     self.image2_observation_date = parse_date(observation_date_2)
+    #     self.crs = crs
+    #
+    #     bbox = rasterio.transform.array_bounds(image1_matrix.shape[-2], image1_matrix.shape[-1], image_transform)
+    #     poly1 = box(*bbox)
+    #
+    #     # Same idea as above: extents-only buffer
+    #     px_size = max(-image_transform[4], image_transform[0])
+    #     ext = getattr(self.tracking_parameters, "search_extent_px", None)
+    #     if not ext:
+    #         raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
+    #     eff_search_radius_px = max(ext)
+    #
+    #     image_bounds = gpd.GeoDataFrame(
+    #         gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-px_size * eff_search_radius_px)
+    #     )
+    #     # set correct geometry column
+    #     image_bounds = image_bounds.rename(columns={0: "geometry"})
+    #     image_bounds.set_geometry("geometry", inplace=True)
+    #     self.image_bounds = image_bounds
+    #
+    #     # Also compute safe_image_bounds_alignment for align_images() method
+    #     alignment_ext = getattr(self.alignment_parameters, "control_search_extent_px", None)
+    #     if not alignment_ext:
+    #         raise ValueError("AlignmentParameters.control_search_extent_px must be set (tuple posx,negx,posy,negy).")
+    #     alignment_cell_size = getattr(self.alignment_parameters, "control_cell_size", None)
+    #     if alignment_cell_size is None:
+    #         raise ValueError("AlignmentParameters.control_cell_size must be set.")
+    #
+    #     alignment_buffer = px_size * max(alignment_ext) + px_size * alignment_cell_size / 2
+    #     safe_image_bounds_alignment = gpd.GeoDataFrame(
+    #         gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-alignment_buffer)
+    #     )
+    #     safe_image_bounds_alignment = safe_image_bounds_alignment.rename(columns={0: "geometry"})
+    #     safe_image_bounds_alignment.set_geometry("geometry", inplace=True)
+    #     self.safe_image_bounds_alignment = safe_image_bounds_alignment
 
-        Parameters
-        ----------
-        image1_matrix : np.ndarray
-            Matrix of the first image.
-        observation_date_1 : str
-            Observation date of the first image. Multiple ISO-like formats accepted by ``parse_date``.
-        image2_matrix : np.ndarray
-            Matrix of the second image.
-        observation_date_2 : str
-            Observation date of the second image.
-        image_transform : Affine
-            Common transform for both images.
-        crs : any
-            Coordinate reference system.
-        selected_channels : int | list[int] | tuple[int] | None, optional
-            Channels to select from 3D inputs. Defaults to no selection when ``None``.
 
-        Returns
-        -------
-        None
-        """
-        self.image1_matrix = image1_matrix
-        self.image1_transform = image_transform
-        self.image2_matrix = image2_matrix
-        self.image2_transform = image_transform
-
-        # Also store original matrices for potential true-color alignment output
-        self.image1_matrix_original = image1_matrix.copy()
-        self.image2_matrix_original = image2_matrix.copy()
-
-        self.image1_observation_date = parse_date(observation_date_1)
-        self.image2_observation_date = parse_date(observation_date_2)
-        self.crs = crs
-
-        bbox = rasterio.transform.array_bounds(image1_matrix.shape[-2], image1_matrix.shape[-1], image_transform)
-        poly1 = box(*bbox)
-
-        # Same idea as above: extents-only buffer
-        px_size = max(-image_transform[4], image_transform[0])
-        ext = getattr(self.tracking_parameters, "search_extent_px", None)
-        if not ext:
-            raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
-        eff_search_radius_px = max(ext)
-
-        image_bounds = gpd.GeoDataFrame(
-            gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-px_size * eff_search_radius_px)
-        )
-        # set correct geometry column
-        image_bounds = image_bounds.rename(columns={0: "geometry"})
-        image_bounds.set_geometry("geometry", inplace=True)
-        self.image_bounds = image_bounds
-        
-        # Also compute safe_image_bounds_alignment for align_images() method
-        alignment_ext = getattr(self.alignment_parameters, "control_search_extent_px", None)
-        if not alignment_ext:
-            raise ValueError("AlignmentParameters.control_search_extent_px must be set (tuple posx,negx,posy,negy).")
-        alignment_cell_size = getattr(self.alignment_parameters, "control_cell_size", None)
-        if alignment_cell_size is None:
-            raise ValueError("AlignmentParameters.control_cell_size must be set.")
-        
-        alignment_buffer = px_size * max(alignment_ext) + px_size * alignment_cell_size / 2
-        safe_image_bounds_alignment = gpd.GeoDataFrame(
-            gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-alignment_buffer)
-        )
-        safe_image_bounds_alignment = safe_image_bounds_alignment.rename(columns={0: "geometry"})
-        safe_image_bounds_alignment.set_geometry("geometry", inplace=True)
-        self.safe_image_bounds_alignment = safe_image_bounds_alignment
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
         Align images by tracking control points in a stable reference area.
@@ -658,14 +692,15 @@ class ImagePair:
             reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
                                                self.camera_intrinsics_matrix,
                                                self.camera_distortion_coefficients)
-
+            self.safe_image_bounds_alignment = self.make_safe_bounds(max(getattr(self.alignment_parameters, "control_search_extent_px", None))
+            + getattr(self.alignment_parameters, "control_cell_size", None)/2)
 
         reference_area_safe_bounds = gpd.GeoDataFrame(reference_area.intersection(self.safe_image_bounds_alignment))
         reference_area_safe_bounds.rename(columns={0: 'geometry'}, inplace=True)
         reference_area_safe_bounds.set_geometry('geometry', inplace=True)
         
         # Check if reference_area is empty after intersection
-        if len(reference_area) == 0 or reference_area.geometry.iloc[0].is_empty:
+        if len(reference_area_safe_bounds) == 0 or reference_area_safe_bounds.geometry.iloc[0].is_empty:
             raise ValueError(
                 "Reference area is empty after intersection with image bounds. "
                 "This may happen if the moving area covers the entire image."
@@ -675,24 +710,26 @@ class ImagePair:
             if self.depth_image2 is None:
                 raise ValueError("Got depth image for time point 1, but not for time point 2.")
 
-            [_, new_image2_matrix, tracked_control_points, alignment_transformation_matrix] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                        image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform,
-                                        reference_area=reference_area_safe_bounds,
-                                        alignment_parameters=self.alignment_parameters,
-                                        return_alignment_transformation_matrix=True))
+            _, new_image2_matrix, tracked_control_points, alignment_transformation_matrix = align_images_lsm_scarce(
+                image1_matrix=self.image1_matrix,
+                image2_matrix=self.image2_matrix,
+                image_transform=self.image1_transform,
+                reference_area=reference_area_safe_bounds,
+                alignment_parameters=self.alignment_parameters,
+                return_alignment_transformation_matrix=True
+            )
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
             console.success("Depth image resampled")
 
         else:
-            [_, new_image2_matrix, tracked_control_points] = (
-                align_images_lsm_scarce(image1_matrix=self.image1_matrix,
-                                        image2_matrix=self.image2_matrix,
-                                        image_transform=self.image1_transform,
-                                        reference_area=reference_area_safe_bounds,
-                                        alignment_parameters=self.alignment_parameters))
+            _, new_image2_matrix, tracked_control_points = align_images_lsm_scarce(
+                image1_matrix=self.image1_matrix,
+                image2_matrix=self.image2_matrix,
+                image_transform=self.image1_transform,
+                reference_area=reference_area_safe_bounds,
+                alignment_parameters=self.alignment_parameters
+            )
 
         self.valid_alignment_possible = True
 
@@ -705,6 +742,8 @@ class ImagePair:
                                                                   years_between_observations,
                                                                   self.output_units_mode)
 
+        # Apply singleton dimension removal to image1_matrix as well for consistency
+        self.image1_matrix = np.squeeze(self.image1_matrix)
         self.image2_matrix = new_image2_matrix
         self.image2_transform = self.image1_transform
 
@@ -833,6 +872,9 @@ class ImagePair:
             tracking_area = undistort_polygon(tracking_area, self.image1_matrix_original.shape[-2:],
                                                self.camera_intrinsics_matrix,
                                                self.camera_distortion_coefficients)
+            self.safe_image_bounds_tracking = self.make_safe_bounds(
+                max(getattr(self.tracking_parameters, "search_extent_px", None))
+                + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
 
         if not self.images_aligned:
             console = get_console()
@@ -843,7 +885,11 @@ class ImagePair:
         spacing_crs = dp_px * px_size
 
         # Crop tracking area to safe_image_bounds_tracking if safe bounds are provided
-        if self.safe_image_bounds_tracking is not None:
+        if self.safe_image_bounds_tracking is None:
+            self.safe_image_bounds_tracking = self.make_safe_bounds(
+                max(getattr(self.tracking_parameters, "search_extent_px", None))
+                + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
+
             tracking_area = gpd.GeoDataFrame(tracking_area.intersection(self.safe_image_bounds_tracking))
             tracking_area.rename(columns={0: 'geometry'}, inplace=True)
             tracking_area.set_geometry('geometry', inplace=True)
@@ -854,10 +900,10 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
+
         if len(points_to_be_tracked) == 0:
             console.warning("No tracking points fall within image bounds!")
 
-        # ToDo: Check performance on office PC: Is there a new bottleneck?
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
@@ -866,7 +912,6 @@ class ImagePair:
         # calculate the years between observations from the two given observation dates
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
-
         if self.convert_to_3d_displacement:
             georeferenced_tracked_points = calculate_displacement_from_depth_images(
                 tracked_points, depth_image_time1=self.depth_image1,
@@ -874,7 +919,7 @@ class ImagePair:
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
                 years_between_observations=years_between_observations,
                 output_unit_mode=self.output_units_mode)
-            if self.coordinate_system_unit_name == "pixel":
+            if (self.coordinate_system_unit_name == "pixel") | (self.coordinate_system_unit_name is None):
                 self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
@@ -1097,11 +1142,16 @@ class ImagePair:
                 filter_parameters = self.filter_parameters
         else:
             self.filter_parameters = filter_parameters
-        if self.image_bounds is not None:
-            points_for_lod_calculation = gpd.GeoDataFrame(
-                points_for_lod_calculation.intersection(self.image_bounds.geometry[0]))
-            points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
-            points_for_lod_calculation.set_geometry('geometry', inplace=True)
+
+        if self.safe_image_bounds_tracking is not None:
+            self.safe_image_bounds_tracking = self.make_safe_bounds(
+                max(getattr(self.tracking_parameters, "search_extent_px", None))
+                + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
+
+        points_for_lod_calculation = gpd.GeoDataFrame(
+            points_for_lod_calculation.intersection(self.safe_image_bounds_tracking.geometry[0]))
+        points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
+        points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
@@ -1122,7 +1172,8 @@ class ImagePair:
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
-            unit_name = points_for_lod_calculation.crs.axis_info[0].unit_name
+            crs_obj = PyprojCRS.from_user_input(points_for_lod_calculation.crs)
+            unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
         elif self.coordinate_system_unit_name is not None:
             unit_name = self.coordinate_system_unit_name
         else:
@@ -1147,37 +1198,37 @@ class ImagePair:
             return
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection,
                                                   self.displacement_column_name)
-
-    def full_filter(self, reference_area, filter_parameters: FilterParameters):
-        """
-        Perform complete filtering workflow.
-
-        This method:
-        1. Filters outliers from tracking results
-        2. Calculates the level of detection
-        3. Filters points below the level of detection
-
-        Parameters
-        ----------
-        reference_area : gpd.GeoDataFrame
-            Reference area for generating LoD calculation points.
-        filter_parameters : FilterParameters
-            Parameters for filtering and LoD calculation.
-
-        Returns
-        -------
-        None
-        """
-        if self.undistort_image:
-            reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
-                                               self.camera_intrinsics_matrix,
-                                               self.camera_distortion_coefficients)
-
-        points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
-                                                                        filter_parameters.number_of_points_for_level_of_detection)
-        self.filter_outliers(filter_parameters)
-        self.calculate_lod(points_for_lod_calculation, filter_parameters)
-        self.filter_lod_points()
+    # ToDO: Remove?
+    # def full_filter(self, reference_area, filter_parameters: FilterParameters):
+    #     """
+    #     Perform complete filtering workflow.
+    #
+    #     This method:
+    #     1. Filters outliers from tracking results
+    #     2. Calculates the level of detection
+    #     3. Filters points below the level of detection
+    #
+    #     Parameters
+    #     ----------
+    #     reference_area : gpd.GeoDataFrame
+    #         Reference area for generating LoD calculation points.
+    #     filter_parameters : FilterParameters
+    #         Parameters for filtering and LoD calculation.
+    #
+    #     Returns
+    #     -------
+    #     None
+    #     """
+    #     if self.undistort_image:
+    #         reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
+    #                                            self.camera_intrinsics_matrix,
+    #                                            self.camera_distortion_coefficients)
+    #
+    #     points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
+    #                                                                     filter_parameters.number_of_points_for_level_of_detection)
+    #     self.filter_outliers(filter_parameters)
+    #     self.calculate_lod(points_for_lod_calculation, filter_parameters)
+    #     self.filter_lod_points()
 
     def equalize_adapthist_images(self):
         """

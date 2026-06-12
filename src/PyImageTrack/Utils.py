@@ -17,6 +17,7 @@ import numpy as np
 from pathlib import Path
 
 import pandas as pd
+from pyproj import CRS as PyprojCRS
 
 from .ConsoleOutput import get_console
 
@@ -1180,7 +1181,11 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     if quantile is None or "movement_distance_per_year" not in points.columns:
         return False
     image_pair.level_of_detection = np.nanquantile(points["movement_distance_per_year"], quantile)
-    unit_name = points.crs.axis_info[0].unit_name if points.crs is not None else "pixel"
+    if points.crs is not None:
+        crs_obj = PyprojCRS.from_user_input(points.crs)
+        unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
+    else:
+        unit_name = "pixel"
     print("Found level of detection with quantile " + str(quantile) + " as "
           + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + "/year")
     return True

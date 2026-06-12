@@ -25,6 +25,7 @@ from pathlib import Path
 from typing import Optional
 import warnings
 
+from PyImageTrack.DataProcessing.ImagePreprocessing import undistort_polygon
 
 try:
     import tomllib
@@ -1004,6 +1005,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 console.section_header("TRACKING", "Detecting movement between images", f"({pair_id_short})", level=2)
                 if use_tracking_cache:
                     used_cache_tracking = load_tracking_cache(image_pair, track_dir, year1, year2)
+                    if (image_pair.convert_to_3d_displacement) & (image_pair.coordinate_system_unit_name == "pixel") | (image_pair.coordinate_system_unit_name is None):
+                        image_pair.coordinate_system_unit_name = "meter"
                     if used_cache_tracking:
                         if use_no_georeferencing and getattr(image_pair.tracking_results, "crs", None) is not None:
                             used_cache_tracking = False
@@ -1074,10 +1077,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
                     if not used_cache_lod:
                         if poly_outside is not None:
-                            lod_points = random_points_on_polygon_by_number(
-                                poly_outside,
-                                filter_params.number_of_points_for_level_of_detection
-                            )
+                            lod_polygon = poly_outside
                         else:
                             # Use image_bounds minus moving_area for LoD calculation
                             lod_polygon = gpd.GeoDataFrame(
@@ -1086,10 +1086,14 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             )
                             lod_polygon = lod_polygon.rename(columns={0: 'geometry'})
                             lod_polygon.set_geometry('geometry', inplace=True)
-                            lod_points = random_points_on_polygon_by_number(
-                                lod_polygon,
-                                filter_params.number_of_points_for_level_of_detection
-                            )
+                        if image_pair.undistort_image:
+                            lod_polygon = undistort_polygon(lod_polygon, image_pair.image1_matrix_original.shape[-2:],
+                                                               image_pair.camera_intrinsics_matrix,
+                                                               image_pair.camera_distortion_coefficients)
+                        lod_points = random_points_on_polygon_by_number(
+                            lod_polygon,
+                            filter_params.number_of_points_for_level_of_detection
+                        )
                         image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
                     
                     # Save LoD results only if not loaded from cache
