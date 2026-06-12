@@ -323,7 +323,10 @@ class ImagePair:
                 raise ValueError(
                     "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
                     str(file1.crs))
-            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
+            try:
+                self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
+            except:
+                self.coordinate_system_unit_name = file1.crs.units_factor[0]
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
