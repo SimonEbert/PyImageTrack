@@ -585,6 +585,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             f"Invalid output_units.mode: '{output_units_mode}'. "
             "Must be either 'per_year' or 'total'."
         )
+    # Bounds for the colormap of the velocity plot
+    min_cmap_value = _as_optional_value(_get(cfg, "output_units", "min_cmap_value", None))
+    max_cmap_value = _as_optional_value(_get(cfg, "output_units", "max_cmap_value", None))
 
     # adaptive tracking window options
     use_adaptive_tracking_window = bool(_get(cfg, "adaptive_tracking_window", "use_adaptive_tracking_window", False))
@@ -1140,9 +1143,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
                 # final results go to the filter level
                 console.section_header("OUTPUT", "Saving results", f"({pair_id_short})", level=2)
+                print(min_cmap_value,max_cmap_value)
                 if save_files:
                     console.processing("Saving results.")
-                    image_pair.save_full_results(filter_dir, save_files=save_files)
+                    image_pair.save_full_results(filter_dir, save_files=save_files,min_cmap_value=min_cmap_value, max_cmap_value=max_cmap_value)
                     console.success("Saved results.")
                     console.file_list("", save_files)
                 else:

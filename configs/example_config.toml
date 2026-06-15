@@ -269,6 +269,13 @@ standard_deviation_movement_rate_threshold = 2
 # Larger = regional consistency; Smaller = local consistency
 standard_deviation_movement_rate_moving_window_size = 50
 
+# --- Depth changee Filter ---
+#
+maximal_fraction_depth_change_of_3d_displacement = 0.8
+
+
+
+
 # ==============================================================================
 # SECTION 7: OUTPUT SETTINGS
 # ==============================================================================
@@ -290,6 +297,11 @@ display_plots = false
 # - "total": Raw displacement values without dividing by years between images
 #   (useful for one-time events like landslides or single event monitoring)
 mode = "per_year"
+
+# Minimum and maximum values for the colorscale of the point velocity plot. If they are not given, default to the level
+# of detection for the minimum value and the maximal valid velocity for the maximum value
+min_cmap_value = "none" # In CRS units / year
+max_cmap_value = "none" # In CRS units / year
 
 [cache]
 # Enable caching to speed up re-runs with modified parameters

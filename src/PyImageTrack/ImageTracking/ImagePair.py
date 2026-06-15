@@ -1257,7 +1257,7 @@ class ImagePair:
 
         console.success("Finished image enhancement.")
 
-    def save_full_results(self, folder_path: str, save_files: list) -> None:
+    def save_full_results(self, folder_path: str, save_files: list,min_cmap_value:float | None=None,max_cmap_value:float | None=None) -> None:
         """
         Save tracking outputs (vectors, rasters, masks, statistics) into ``folder_path``.
 
@@ -1812,6 +1812,8 @@ class ImagePair:
                     text_file.write(self.filter_parameters.__str__())
 
         # --- Plots and LoD annotation  ---
+        if min_cmap_value is None:
+            min_cmap_value = self.level_of_detection
         if "tracking_results_figure_jpg" in save_files:
             if self.level_of_detection is not None:
                 if "mask_LoD_tif" in save_files and has_lod_col:
@@ -1832,7 +1834,7 @@ class ImagePair:
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
                 unit_name=self.coordinate_system_unit_name,
-                vmin=self.level_of_detection
+                vmin=min_cmap_value,vmax=max_cmap_value
             )
         else:
             plot_movement_of_points(
@@ -1841,7 +1843,7 @@ class ImagePair:
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
                 unit_name=self.coordinate_system_unit_name,
-                vmin=self.level_of_detection
+                vmin=min_cmap_value,vmax=max_cmap_value
             )
 
     def load_results(self, file_path, reference_area):

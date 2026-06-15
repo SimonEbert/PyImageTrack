@@ -34,7 +34,7 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
-                            save_path: str = None, show_arrows: bool = True, unit_name: str = None,vmin=0):
+                            save_path: str = None, show_arrows: bool = True, unit_name: str = None,vmin=0,vmax=None):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -121,8 +121,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
     if point_color is None:
         try:
             point_movement.plot(ax=ax, column=displacement_column_name, legend=True, markersize=point_size, marker=".",
-                                    alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"},
-                                vmin=vmin
+                                alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"},
+                                vmin=vmin,vmax=vmax
                                     )
         except Exception as e:
             raise ValueError(f"Could not plot using column '{displacement_column_name}': {e}")
@@ -190,7 +190,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_transform,
                                             point_movement: gpd.GeoDataFrame,
                                             save_path: str = None,
-                                            unit_name: str = None,vmin=0):
+                                            unit_name: str = None,vmin=0,vmax=None):
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
     colour scale, while the movement direction is shown with arrows for selected pixels.
@@ -210,6 +210,8 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
         saved.
     unit_name : str = None
         The unit name to label the colorbar of displacement values
+    vmin,vmax=0,None
+        Bounds of the colorscale for showing velocities. If not supplied, default to minimum and maximum valid velocities
     Returns
     ----------
     None
@@ -221,7 +223,7 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray",
                             show_arrows=False, fig=fig, ax=ax)
     plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None,
-                            unit_name=unit_name,vmin=vmin)
+                            unit_name=unit_name,vmin=vmin,vmax=vmax)
 
     if save_path is None:
         fig.show()
