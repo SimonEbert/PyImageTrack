@@ -178,8 +178,11 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 
     if displacement_column_name == "3d_displacement_distance_per_year":
         plt.title("3d-displacement distance per year")
+        ax.set_xlabel("Pixel (columns)")
+        ax.set_ylabel("Pixel (rows)")
     else:
         plt.title("Movement velocity in " + unit_name + " per year")
+
 
     if show_figure:
         fig.show()
