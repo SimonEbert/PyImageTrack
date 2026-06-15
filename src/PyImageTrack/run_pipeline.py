@@ -632,6 +632,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
         "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
         "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
+        "maximal_fraction_depth_change_of_3d_displacement": _get(cfg,"filter", "maximal_fraction_depth_change_of_3d_displacement")
     })
     downsample_tracking_results_resolution = _as_optional_value(_get(cfg, "filter", "downsample_tracking_results_resolution"),)
 

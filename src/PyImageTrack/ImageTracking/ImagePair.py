@@ -982,7 +982,7 @@ class ImagePair:
         """
         if self.tracking_results is not None:
             plot_movement_of_points(self.image1_matrix_original, self.image1_transform, self.tracking_results,
-                                    unit_name=self.coordinate_system_unit_name)
+                                    unit_name=self.coordinate_system_unit_name,vmin=self.level_of_detection)
         else:
             console = get_console()
             console.warning("No results calculated yet. Plot not provided")
@@ -1000,7 +1000,7 @@ class ImagePair:
         """
         if self.tracking_results is not None:
             plot_movement_of_points_with_valid_mask(self.image1_matrix_original, self.image1_transform, self.tracking_results,
-                                                    unit_name=self.coordinate_system_unit_name)
+                                                    unit_name=self.coordinate_system_unit_name,vmin=self.level_of_detection)
         else:
             console = get_console()
             console.warning("No results calculated yet. Plot not provided")
@@ -1331,7 +1331,8 @@ class ImagePair:
                 self.image1_transform,
                 downsampled_tracking_results,
                 save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
+                unit_name=self.coordinate_system_unit_name,
+                vmin=self.level_of_detection
             )
 
         # --- Prepare common subsets and guards ---
@@ -1830,7 +1831,8 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
+                unit_name=self.coordinate_system_unit_name,
+                vmin=self.level_of_detection
             )
         else:
             plot_movement_of_points(
@@ -1838,7 +1840,8 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name
+                unit_name=self.coordinate_system_unit_name,
+                vmin=self.level_of_detection
             )
 
     def load_results(self, file_path, reference_area):

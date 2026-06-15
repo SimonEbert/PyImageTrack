@@ -411,7 +411,6 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
 
     if "is_movement_rate_standard_deviation_outlier" not in tracking_results.columns:
         tracking_results["is_movement_rate_standard_deviation_outlier"] = False
-    outlier_count = 0
     for i in list(tracking_results.index.values):
         list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
                                                                              inclusion_distance)
@@ -445,7 +444,8 @@ def filter_outliers_depth_change_fraction(tracking_results: gpd.GeoDataFrame,fil
 
     tracking_results_prepared["is_depth_fraction_outlier"] = (
             maximal_fraction <
-            tracking_results_prepared["depth_change"] / tracking_results_prepared["3d_displacement_distance_per_year"])
+            (tracking_results_prepared["depth_change"] / tracking_results_prepared["3d_displacement_distance"]))
+
     tracking_results_prepared["is_outlier"] = (tracking_results_prepared["is_outlier"]
                                                | tracking_results_prepared["is_depth_fraction_outlier"])
     tracking_results_prepared["valid"] = (tracking_results_prepared["valid"]
@@ -516,7 +516,6 @@ def filter_outliers_movement_rate_mad(tracking_results: gpd.GeoDataFrame,
 
     if "is_movement_rate_standard_deviation_outlier" not in tracking_results.columns:
         tracking_results["is_movement_rate_standard_deviation_outlier"] = False
-    outlier_count = 0
     for i in list(tracking_results.index.values):
         list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
                                                                              inclusion_distance)
@@ -659,12 +658,20 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     md_df = filter_outliers_movement_rate_difference(base_df.copy(), filter_parameters, displacement_column_name)
     msd_df = filter_outliers_movement_rate_mad(base_df.copy(), filter_parameters, displacement_column_name)
 
+
     mask_bd = _mask_from(bd_df, "is_bearing_difference_outlier")
     mask_bsd = _mask_from(bsd_df, "is_bearing_standard_deviation_outlier")
     mask_md = _mask_from(md_df, "is_movement_rate_difference_outlier")
     mask_msd = _mask_from(msd_df, "is_movement_rate_standard_deviation_outlier")
 
-    combined_outlier_mask = mask_bd | mask_bsd | mask_md | mask_msd
+    if displacement_column_name == "3d_displacement_distance_per_year":
+        depth_fraction_df = filter_outliers_depth_change_fraction(base_df.copy(), filter_parameters,
+                                                                      displacement_column_name)
+        mask_depth_fraction = _mask_from(depth_fraction_df, "is_depth_fraction_outlier")
+        combined_outlier_mask = mask_depth_fraction | mask_bd | mask_bsd | mask_md | mask_msd
+        base_df["is_depth_fraction_outlier"] = mask_depth_fraction
+    else:
+        combined_outlier_mask = mask_bd | mask_bsd | mask_md | mask_msd
 
     base_df["is_bearing_difference_outlier"] = mask_bd
     base_df["is_bearing_standard_deviation_outlier"] = mask_bsd

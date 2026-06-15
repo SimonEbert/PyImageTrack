@@ -43,6 +43,8 @@ class FilterParameters:
         Modified Z-score threshold for filtering movement rate outliers using median and MAD. Points with a modified Z-score (absolute deviation from median divided by MAD) greater than this value are filtered. Common values are 2 or 3.
     standard_deviation_movement_rate_moving_window_size : float
         Distance window for movement rate standard deviation filtering.
+    maximal_fraction_depth_change_of_3d_displacement : float
+        Maximal fraction (float between 0 and 1) of 3d displacement that can originate from changes in the underlying depth image.
     """
 
     def __init__(self, parameter_dict):
@@ -84,8 +86,8 @@ class FilterParameters:
             if self.number_of_points_for_level_of_detection <= 0:
                 raise ValueError(f"number_of_points_for_level_of_detection must be positive, got {self.number_of_points_for_level_of_detection}")
         if self.maximal_fraction_depth_change_of_3d_displacement is not None:
-            if self.maximal_fraction_depth_change_of_3d_displacement <= 0:
-                raise ValueError(f"maximal_fraction_depth_change_of_3d_displacement must be positive, got {self.maximal_fraction_depth_change_of_3d_displacement}")
+            if (self.maximal_fraction_depth_change_of_3d_displacement <= 0) | (self.maximal_fraction_depth_change_of_3d_displacement > 1):
+                raise ValueError(f"maximal_fraction_depth_change_of_3d_displacement must be between 0 and 1, got {self.maximal_fraction_depth_change_of_3d_displacement}")
         
         # Validate threshold values (must be non-negative)
         for name in ["difference_movement_bearing_threshold", "standard_deviation_movement_bearing_threshold",
