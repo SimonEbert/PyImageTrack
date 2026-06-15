@@ -640,9 +640,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # IMAGE ENHANCEMENT PARAMETERS
     # ==============================
     enhancement_params = {
-        "type": _get(cfg, "image_enhancement", "type", "none"),
-        "kernel_size": _get(cfg, "image_enhancement", "kernel_size"),
-        "clip_limit": _get(cfg, "image_enhancement", "clip_limit"),
+        "type": _get(cfg, "image_enhancement", "type", "clahe"),
+        "kernel_size": _get(cfg, "image_enhancement", "kernel_size", 50),
+        "clip_limit": _get(cfg, "image_enhancement", "clip_limit", 0.9),
     }
     # If enhancement is disabled, force type to "none" for correct folder naming
     if not do_image_enhancement:
@@ -847,7 +847,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             )
 
             pair_tracking_config_for_code = {
-                "image_bands": tracking_params.image_bands,
+                "image_bands": alignment_params.image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
@@ -855,7 +855,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             }
 
             pair_tracking_config = {
-                "image_bands": tracking_params.image_bands,
+                "image_bands": alignment_params.image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
@@ -926,7 +926,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # Adaptive tracking window
             param_dict["use_adaptive_tracking_window"]     = use_adaptive_tracking_window
             # Image bands (ensure both key names are available for compatibility)
-            param_dict["image_bands"]                      = tracking_params.image_bands
+            param_dict["image_bands"]                      = alignment_params.image_bands
 
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column
@@ -939,7 +939,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 observation_date_1=date_1,
                 filename_2=filename_2,
                 observation_date_2=date_2,
-                selected_channels=tracking_params.image_bands
+                selected_channels=alignment_params.image_bands
             )
 
             # optional image enhancement (CLAHE) before alignment/tracking
@@ -1019,7 +1019,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 if not used_cache_tracking:
                     adaptive_info = f" (scaled by {years_between:.3f} years)" if use_adaptive_tracking_window else " (disabled)"
                     console.parameter_summary({
-                        "Image bands": tracking_params.image_bands,
+                        "Image bands": alignment_params.image_bands,
                         "Distance of tracked points": f"{tracking_params.distance_of_tracked_points_px} px",
                         "Movement cell size": f"{tracking_params.movement_cell_size} px",
                         "Search extent": f"{tracking_params.search_extent_px} px",

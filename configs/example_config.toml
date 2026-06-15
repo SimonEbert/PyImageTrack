@@ -124,7 +124,7 @@ do_filtering = true      # Remove outliers from tracking results
 
 # Optional image enhancement via CLAHE (Contrast Limited Adaptive Histogram Equalization)
 # Improves contrast in areas with low contrast (e.g., shadows)
-do_image_enhancement = false
+do_image_enhancement = false# if true defaults to clahe
 
 [image_enhancement]
 # Enhancement type: "clahe", "none", or future types
@@ -133,6 +133,7 @@ type = "clahe"
 # CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
 # kernel_size: Size of the grid for histogram equalization (larger = more global contrast)
 # clip_limit: Contrast enhancement limit (higher = more contrast, but may amplify noise)
+# if not given defaults to kernel_size = 50 and clip_limit = 0.9
 kernel_size = 50
 clip_limit = 0.9
 

@@ -155,9 +155,15 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
     rows = tracked_points["row"]
     columns = tracked_points["column"]
     georeferenced_tracked_pixels = gpd.GeoDataFrame(tracked_points, geometry=gpd.points_from_xy(x=columns, y=-rows))
-    georeferenced_tracked_pixels["x"] = points_3d1[:,0]
-    georeferenced_tracked_pixels["y"] = points_3d1[:,1]
-    georeferenced_tracked_pixels["z"] = points_3d1[:,2]
+    georeferenced_tracked_pixels["x_pre"] = points_3d1[:,0]
+    georeferenced_tracked_pixels["y_pre"] = points_3d1[:,1]
+    georeferenced_tracked_pixels["z_pre"] = points_3d1[:,2]
+
+    georeferenced_tracked_pixels["x_post"] = points_3d2[:,0]
+    georeferenced_tracked_pixels["y_post"] = points_3d2[:,1]
+    georeferenced_tracked_pixels["z_post"] = points_3d2[:,2]
+
+
 
     georeferenced_tracked_pixels["valid"] = True
     georeferenced_tracked_pixels.loc[

@@ -257,8 +257,8 @@ class ImagePair:
         if selected_channels is None:
             selected_channels = [0, 1, 2]
         if len(self.image1_matrix.shape) == 3:
-            self.image1_matrix = self.image1_matrix[selected_channels, :, :]
-            self.image2_matrix = self.image2_matrix[selected_channels, :, :]
+            self.image1_matrix = np.squeeze(self.image1_matrix[selected_channels, :, :])
+            self.image2_matrix = np.squeeze(self.image2_matrix[selected_channels, :, :])
 
 
     def make_safe_bounds(self,buffer_to_image_bounds: int):
@@ -1165,9 +1165,11 @@ class ImagePair:
         unfiltered_level_of_detection_points = self.track_lod_points(
             points_for_lod_calculation=points_for_lod_calculation,
             years_between_observations=years_between_observations)
-        self.level_of_detection_points = unfiltered_level_of_detection_points
+        filtered_level_of_detection_points = filter_outliers_full(unfiltered_level_of_detection_points,self.filter_parameters,self.displacement_column_name)
 
-        self.level_of_detection = np.nanquantile(unfiltered_level_of_detection_points[self.displacement_column_name],
+        self.level_of_detection_points = filtered_level_of_detection_points
+
+        self.level_of_detection = np.nanquantile(filtered_level_of_detection_points[self.displacement_column_name],
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:
@@ -1197,6 +1199,8 @@ class ImagePair:
             return
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection,
                                                   self.displacement_column_name)
+
+
     # ToDO: Remove?
     # def full_filter(self, reference_area, filter_parameters: FilterParameters):
     #     """
@@ -1240,12 +1244,16 @@ class ImagePair:
         -------
         None
         """
+        console = get_console()
+        console.processing("Enhancing images using " + self.enhancement_type + " enhancement type. This may take a moment.")
         self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
                                                        kernel_size=self.enhancement_kernel_size,
                                                        clip_limit=self.enhancement_clip_limit)
         self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
                                                        kernel_size=self.enhancement_kernel_size,
                                                        clip_limit=self.enhancement_clip_limit)
+
+        console.success("Finished image enhancement.")
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """
