@@ -1109,7 +1109,7 @@ class ImagePair:
         return tracked_points
 
     def calculate_lod(self, points_for_lod_calculation: gpd.GeoDataFrame,
-                      filter_parameters: FilterParameters = None) -> None:
+                      filter_parameters_lod_points: FilterParameters = None) -> None:
         """
         Calculate the Level of Detection (LoD) for the image pair.
 
@@ -1124,7 +1124,7 @@ class ImagePair:
             Points in the stable area for calculating the level of detection.
             A random distribution is recommended to avoid bias from the
             evenly-spaced grid used for alignment.
-        filter_parameters : FilterParameters, optional
+        filter_parameters_lod_points : FilterParameters, optional
             Filter parameters containing the quantile for LoD calculation.
             If None, uses the filter_parameters already set on the object.
 
@@ -1134,13 +1134,13 @@ class ImagePair:
         """
 
         # Set used filter parameters if given as a variable, also set them as correct object for ImagePair
-        if filter_parameters is None:
+        if filter_parameters_lod_points is None:
             if self.filter_parameters is None:
                 return
             else:
-                filter_parameters = self.filter_parameters
+                filter_parameters_lod_points = self.filter_parameters
         else:
-            self.filter_parameters = filter_parameters
+            self.filter_parameters = filter_parameters_lod_points
 
         if self.safe_image_bounds_tracking is not None:
             self.safe_image_bounds_tracking = self.make_safe_bounds(
@@ -1156,20 +1156,22 @@ class ImagePair:
         years_between_observations = delta_hours / (24.0 * 365.25)
 
         # check if a LoD filter parameter is provided, if this is None, don't perform LoD calculation
-        if (filter_parameters.level_of_detection_quantile is None
-                or filter_parameters.number_of_points_for_level_of_detection is None):
+        if (filter_parameters_lod_points.level_of_detection_quantile is None
+                or filter_parameters_lod_points.number_of_points_for_level_of_detection is None):
             return
 
-        level_of_detection_quantile = filter_parameters.level_of_detection_quantile
+        level_of_detection_quantile = filter_parameters_lod_points.level_of_detection_quantile
 
         unfiltered_level_of_detection_points = self.track_lod_points(
             points_for_lod_calculation=points_for_lod_calculation,
             years_between_observations=years_between_observations)
-        filtered_level_of_detection_points = filter_outliers_full(unfiltered_level_of_detection_points,self.filter_parameters,self.displacement_column_name)
+        filter_parameters_lod_points.difference_movement_bearing_threshold = 360
+        filter_parameters_lod_points.standard_deviation_movement_bearing_threshold = 360
 
+        filtered_level_of_detection_points = filter_outliers_full(unfiltered_level_of_detection_points, filter_parameters_lod_points, self.displacement_column_name)
         self.level_of_detection_points = filtered_level_of_detection_points
 
-        self.level_of_detection = np.nanquantile(filtered_level_of_detection_points[self.displacement_column_name],
+        self.level_of_detection = np.nanquantile(filtered_level_of_detection_points.loc[filtered_level_of_detection_points["valid"],self.displacement_column_name],
                                                  level_of_detection_quantile)
 
         if points_for_lod_calculation.crs is not None:

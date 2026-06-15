@@ -125,7 +125,7 @@ class ImageBatch:
             raise ValueError("Was not able to define LoD points.")
 
         for image_pair in self.list_of_image_pairs:
-            image_pair.calculate_lod(self.lod_points, filter_parameters=filter_parameters)
+            image_pair.calculate_lod(self.lod_points, filter_parameters_lod_points=filter_parameters)
             image_pair.filter_lod_points()
 
     def filter_outliers(self, filter_parameters: FilterParameters):

@@ -121,13 +121,15 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
     if point_color is None:
         try:
             point_movement.plot(ax=ax, column=displacement_column_name, legend=True, markersize=point_size, marker=".",
-                                    alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"}
+                                    alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"},
+                                vmin=0
                                     )
         except Exception as e:
             raise ValueError(f"Could not plot using column '{displacement_column_name}': {e}")
 
     else:
-        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0)
+        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0,
+                                vmin=0)
 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:

@@ -1094,7 +1094,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             lod_polygon,
                             filter_params.number_of_points_for_level_of_detection
                         )
-                        image_pair.calculate_lod(lod_points, filter_parameters=filter_params)
+                        image_pair.calculate_lod(lod_points, filter_parameters_lod_points=filter_params)
                     
                     # Save LoD results only if not loaded from cache
                     if not used_cache_lod:
