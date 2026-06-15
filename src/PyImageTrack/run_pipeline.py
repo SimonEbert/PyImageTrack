@@ -1143,7 +1143,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
                 # final results go to the filter level
                 console.section_header("OUTPUT", "Saving results", f"({pair_id_short})", level=2)
-                print(min_cmap_value,max_cmap_value)
                 if save_files:
                     console.processing("Saving results.")
                     image_pair.save_full_results(filter_dir, save_files=save_files,min_cmap_value=min_cmap_value, max_cmap_value=max_cmap_value)
