@@ -23,6 +23,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import logging
 import warnings
 
 from PyImageTrack.DataProcessing.ImagePreprocessing import undistort_polygon
@@ -576,6 +577,21 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
 
+    # Suppress known Matplotlib clipping message emitted via logging (not warnings module).
+    # Matplotlib emits this through logger 'matplotlib.image' at WARNING level.
+    class _SuppressImshowClippingFilter(logging.Filter):
+        def filter(self, record: logging.LogRecord) -> bool:
+            return "Clipping input data to the valid range for imshow with RGB data" not in record.getMessage()
+
+    logging.getLogger("matplotlib.image").addFilter(_SuppressImshowClippingFilter())
+
+    # Keep warnings-filter variant as fallback for environments/versions that emit a warning instead.
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*Clipping input data to the valid range for imshow with RGB data.*",
+        category=UserWarning,
+    )
+
     write_truecolor_aligned = bool(_get(cfg, "output", "write_truecolor_aligned", False))
 
     # output units mode (required)
@@ -1062,6 +1078,18 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             if do_tracking:
                 if do_filtering:
                     console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
+                    console.parameter_summary({
+                        "LoD quantile": filter_params.level_of_detection_quantile,
+                        "Points for LoD": filter_params.number_of_points_for_level_of_detection,
+                        "Bearing difference threshold": filter_params.difference_movement_bearing_threshold,
+                        "Bearing difference window size": filter_params.difference_movement_bearing_moving_window_size,
+                        "Bearing std-dev threshold": filter_params.standard_deviation_movement_bearing_threshold,
+                        "Bearing std-dev window size": filter_params.standard_deviation_movement_bearing_moving_window_size,
+                        "Rate difference threshold": filter_params.difference_movement_rate_threshold,
+                        "Rate difference window size": filter_params.difference_movement_rate_moving_window_size,
+                        "Rate std-dev threshold": filter_params.standard_deviation_movement_rate_threshold,
+                        "Rate std-dev window size": filter_params.standard_deviation_movement_rate_moving_window_size,
+                    })
                     
                     # First: Load or calculate Level of Detection
                     used_cache_lod = False

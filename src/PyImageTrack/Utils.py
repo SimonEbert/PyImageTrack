@@ -29,6 +29,13 @@ def _round_to_nearest_hour(dt: datetime) -> datetime:
         dt = dt.replace(minute=0, second=0, microsecond=0)
     return dt
 
+
+def normalize_image_shape(arr: np.ndarray) -> np.ndarray:
+    """Normalize image shape: ``(1,H,W)->(H,W)``, keep ``(H,W)`` and ``(C,H,W), C>1``."""
+    if arr.ndim == 3 and arr.shape[0] == 1:
+        return arr[0]
+    return arr
+
 def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap_per_side=None):
     """
     Convert delta-per-year extents (posx,negx,posy,negy) into effective absolute extents
@@ -132,6 +139,10 @@ def _validate_date_token(token: str, year_part: str) -> bool:
             # Check that we have even-length digits (no partial segments)
             if digit_count % 2 != 0:
                 return False  # Odd length means incomplete digit pair
+            
+            # Check that we don't have too many digits (max 10 = MMDDHHMMSS)
+            if digit_count > 10:
+                return False  # Too many digit pairs for a valid date/time
             
             # Validate only the segments we have so far - don't require completeness
             if digit_count >= 2:
@@ -245,18 +256,16 @@ def extract_date_token(s: str) -> Optional[str]:
         all_additional = all_additional.lstrip('-').rstrip('-')
         
         if all_additional:
-            # FIX: Base format decision on the actual extracted content, not the original string
-            # If all_additional contains hyphens, treat as separated format
-            # If all_additional is all digits, treat as compact format
-            extracted_has_hyphen = '-' in all_additional
-            
-            if extracted_has_hyphen:
+            # FIX: Base format decision on the original string's separator pattern,
+            # not on whether the extracted content contains hyphens (which can come
+            # from normalized underscores in compact-format filenames like 20260117_103852)
+            if has_separator:
                 # Separated mode: split by hyphens and add each segment as a whole
                 segments = all_additional.split('-')
                 validated_token = token
                 
                 for seg in segments:
-                    # FIX: Check for identifier pattern before proceeding
+                    # Check for identifier pattern before proceeding
                     if seg.startswith('id'):
                         # This is an identifier segment, stop extraction
                         break
@@ -308,17 +317,19 @@ def extract_date_token(s: str) -> Optional[str]:
                 
                 token = validated_token
             else:
-                # Compact mode: all_additional should be all digits
-                if not all_additional.isdigit():
-                    # Not pure digits - not a valid compact format
+                # Compact mode: strip hyphens (from normalized underscores) and use pure digits
+                all_additional_digits = all_additional.replace('-', '')
+                
+                if not all_additional_digits.isdigit():
+                    # Not pure digits after stripping hyphens - not a valid compact format
                     token = token
                 else:
                     # Compact mode: add characters in 2-character pairs (month, day, etc.)
                     validated_token = token
                     pos = 0
                     
-                    while pos + 2 <= len(all_additional):
-                        seg = all_additional[pos:pos+2]
+                    while pos + 2 <= len(all_additional_digits):
+                        seg = all_additional_digits[pos:pos+2]
                         
                         # Try adding this 2-character segment directly
                         test_token = validated_token + seg
@@ -740,8 +751,9 @@ def collect_pairs(input_folder: str,
     id_hastime_from_filename = {}
 
     for f in img_files:
-        # Extract date token using our helper function
-        lead = extract_date_token(f)
+        # Extract date token from filename without extension to avoid trailing digits from suffixes (e.g. _HS_10)
+        filename_without_ext = os.path.splitext(f)[0]
+        lead = extract_date_token(filename_without_ext)
         if lead is None:
             continue
         
@@ -768,7 +780,6 @@ def collect_pairs(input_folder: str,
         
         # Check if this file has a date override in the CSV file
         # First try to match by full filename (without extension), then by token
-        filename_without_ext = os.path.splitext(f)[0]
         csv_date_str = None
         if filename_without_ext in csv_year_to_date:
             csv_date_str = csv_year_to_date[filename_without_ext]
@@ -879,21 +890,86 @@ def collect_pairs(input_folder: str,
 
         # Map CSV token -> ID used in id_to_file
         def _resolve_csv_token_to_id(raw: str) -> str:
-            lead = extract_date_token(raw)
-            if lead is None:
-                raise ValueError(f"Unrecognized pair token: {raw!r}")
-            
+            # Always parse first, then normalize to canonical date token
+            # so CSV values like "2024-07" and IDs like "2024-07_HS_10" compare consistently.
+            try:
+                raw_dt = parse_date(str(raw).strip())
+            except Exception:
+                lead = extract_date_token(raw)
+                if lead is None:
+                    raise ValueError(f"Unrecognized pair token: {raw!r}")
+                try:
+                    raw_dt = parse_date(lead)
+                except Exception:
+                    raise ValueError(f"Unrecognized pair token: {raw!r}")
+
+            # Canonical token precision based on provided CSV value
+            raw_s = str(raw).strip()
+            raw_token = extract_date_token(raw_s)
+            if raw_token is None:
+                raw_token = raw_s
+
+            # Determine requested precision from CSV token
+            if re.match(r"^\d{4}$", raw_token):
+                lead = raw_dt.strftime("%Y")
+            elif re.match(r"^\d{4}-\d{2}$", raw_token):
+                lead = raw_dt.strftime("%Y-%m")
+            elif re.match(r"^\d{4}-\d{2}-\d{2}$", raw_token):
+                lead = raw_dt.strftime("%Y-%m-%d")
+            elif re.match(r"^\d{8}$", raw_token):
+                lead = raw_dt.strftime("%Y%m%d")
+            elif re.match(r"^\d{12}$", raw_token):
+                lead = raw_dt.strftime("%Y%m%d%H%M")
+            else:
+                # fallback for full timestamp or mixed separator forms
+                lead = raw_dt.strftime("%Y-%m-%d-%H-%M") if (raw_dt.hour or raw_dt.minute or raw_dt.second) else raw_dt.strftime("%Y-%m-%d")
+
             # Try exact match first
             if lead in id_to_file:
                 return lead
-            
-            # Try prefix match (for cases where filename has additional suffixes)
-            candidates = [k for k in id_to_file.keys() if k.startswith(lead)]
-            if candidates:
-                return sorted(candidates)[0]
-            
+
+            # Match by parsed date with flexible precision
+            candidates = []
+            for k in id_to_file.keys():
+                k_base = k.rsplit("_", 1)[0] if "_" in k else k
+                try:
+                    k_dt = parse_date(k_base)
+                except Exception:
+                    k_token = extract_date_token(k)
+                    if k_token is None:
+                        continue
+                    try:
+                        k_dt = parse_date(k_token)
+                    except Exception:
+                        continue
+
+                if re.match(r"^\d{4}$", raw_token):
+                    ok = (k_dt.year == raw_dt.year)
+                elif re.match(r"^\d{4}-\d{2}$", raw_token):
+                    ok = (k_dt.year == raw_dt.year and k_dt.month == raw_dt.month)
+                elif re.match(r"^\d{4}-\d{2}-\d{2}$", raw_token) or re.match(r"^\d{8}$", raw_token):
+                    ok = (k_dt.year == raw_dt.year and k_dt.month == raw_dt.month and k_dt.day == raw_dt.day)
+                elif re.match(r"^\d{12}$", raw_token):
+                    ok = (
+                        k_dt.year == raw_dt.year and k_dt.month == raw_dt.month and k_dt.day == raw_dt.day
+                        and k_dt.hour == raw_dt.hour and k_dt.minute == raw_dt.minute
+                    )
+                else:
+                    ok = (k_dt == raw_dt)
+
+                if ok:
+                    candidates.append(k)
+
+            if len(candidates) == 1:
+                return candidates[0]
+            if len(candidates) > 1:
+                raise KeyError(
+                    f"Ambiguous token '{raw}': multiple file IDs match {sorted(candidates)}. "
+                    "Please disambiguate in image_pairs.csv (e.g., include identifier suffix)."
+                )
+
             raise KeyError(
-                f"No file ID matching token '{lead}' found in input folder. "
+                f"No file ID matching token '{raw}' found in input folder. "
                 f"Make sure a file with that date prefix exists."
             )
 

@@ -136,9 +136,19 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
     tracked = tracked_cell_matrix.astype(np.float32)
     search = search_cell_matrix.astype(np.float32)
 
+    # Guard against invalid/empty windows and dimensionality mismatches
+    if tracked.size == 0 or search.size == 0:
+        return None
+    if tracked.ndim != search.ndim:
+        return None
+    if tracked.ndim not in (2, 3):
+        return None
+    if tracked.ndim == 3 and tracked.shape[0] != search.shape[0]:
+        return None
+
     # --- Normalized cross-correlation ---
     try:
-        if len(search.shape) == 2:
+        if search.ndim == 2:
             corr_map = match_template(
                 search,
                 tracked,
@@ -158,6 +168,12 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
     except ValueError:
         return None
 
+    # match_template can return empty/degenerate maps near borders; reject safely
+    if getattr(corr_map, "size", 0) == 0 or np.ndim(corr_map) != 2:
+        return None
+    if corr_map.shape[0] == 0 or corr_map.shape[1] == 0:
+        return None
+
     if tracking_parameters is not None:
         min_distance_initial_estimates = getattr(tracking_parameters, "min_distance_initial_estimates", 1)
         nb_initial_estimates = getattr(tracking_parameters, "nb_initial_estimate_peaks", 1)
@@ -165,17 +181,31 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
         correlation_threshold = getattr(tracking_parameters, "correlation_threshold_initial_estimates", None)
 
         if initial_estimate_mode == "count":
-           peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
-                                  min_distance=min_distance_initial_estimates)
+            peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
+                                   min_distance=min_distance_initial_estimates)
         elif initial_estimate_mode == "threshold":
             peaks = peak_local_max(corr_map,
                                    threshold_abs=correlation_threshold,
                                    min_distance=min_distance_initial_estimates)
         else:
             raise ValueError("Unknown initial estimates mode " + str(initial_estimate_mode))
-    else:# Default fallback when tracking parameters are not given (this happens normally in alignment mode)
+    else:  # Default fallback when tracking parameters are not given (this happens normally in alignment mode)
         peaks = peak_local_max(corr_map, num_peaks=1,
                                min_distance=1)
+
+    if peaks is None or len(peaks) == 0:
+        return None
+
+    peaks = np.asarray(peaks)
+    # Guard against rare malformed outputs under multiprocessing/error states
+    if peaks.size == 0:
+        return None
+    if peaks.ndim == 1:
+        if peaks.size != 2:
+            return None
+        peaks = np.expand_dims(peaks, axis=0)
+    if peaks.ndim != 2 or peaks.shape[1] != 2:
+        return None
 
     # --- Convert top-left index to center coordinates ---
     template_center_row = tracked.shape[-2] // 2
@@ -195,10 +225,11 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
         peaks_centered -
         np.array([central_row, central_col])
     )
-    # ToDo: Necessary?
-    # Fallback for single initial values (1d) returns from peak_local_max
-    # if len(movement.shape) == 1:
-    #     movement = np.expand_dims(movement, axis=0)
+
+    if movement.ndim == 1:
+        movement = np.expand_dims(movement, axis=0)
+    if movement.ndim != 2 or movement.shape[1] != 2:
+        return None
 
     return movement
 
@@ -625,7 +656,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
             raise ValueError("Movement: search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
                              "Transformation from relative extents to full cell extents can be achieved using the"
                              "function 'make_effective_extents_from_deltas' in the Utils module")
-    initial_shift_values = getattr(tracking_parameters, "initial_shift_values", None)
+    # Keep mode-specific initial shifts. For alignment mode this was set above from
+    # alignment_parameters and must not be overwritten from tracking_parameters.
 
 
 
@@ -650,6 +682,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     )
 
     tracking_results = []
+    failed_in_pool = False
     try:
         procs = max(1, multiprocessing.cpu_count() - 1)
         with multiprocessing.Pool(processes=procs) as pool:
@@ -664,6 +697,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
                 )
             )
     except Exception as e:
+        failed_in_pool = True
         get_console().warning("Failed to assemble multiprocessing. Error: " + str(e))
     finally:
         # Clean-up image matrices from shared memory - always execute, even on error
@@ -678,9 +712,44 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         except Exception:
             pass  # Ignore cleanup errors
 
+    if failed_in_pool or len(tracking_results) != len(list_of_central_indices):
+        # Robust continuation: preserve output cardinality by filling failed/missing points with invalid results
+        n_missing = len(list_of_central_indices) - len(tracking_results)
+        if n_missing > 0:
+            get_console().warning(
+                f"Tracking results incomplete ({len(tracking_results)}/{len(list_of_central_indices)}). "
+                f"Filling {n_missing} points with NaN results."
+            )
+        else:
+            get_console().warning(
+                "Tracking results could not be assembled reliably. "
+                "Filling all points with NaN results."
+            )
+
+        nan_result = TrackingResults(
+            movement_rows=np.nan,
+            movement_cols=np.nan,
+            tracking_method="least-squares",
+            transformation_matrix=None,
+            cross_correlation_coefficient=np.nan,
+            tracking_success=False
+        )
+
+        if failed_in_pool and len(tracking_results) == 0:
+            tracking_results = [nan_result for _ in list_of_central_indices]
+        elif len(tracking_results) < len(list_of_central_indices):
+            tracking_results.extend([nan_result for _ in range(n_missing)])
+        elif len(tracking_results) > len(list_of_central_indices):
+            tracking_results = tracking_results[:len(list_of_central_indices)]
+
     # access the respective tracked point coordinates and its movement
-    movement_row_direction = [results.movement_rows for results in tracking_results]
-    movement_column_direction = [results.movement_cols for results in tracking_results]
+    def _safe_component(results_obj, attr_name):
+        if isinstance(results_obj, TrackingResults):
+            return getattr(results_obj, attr_name, np.nan)
+        return np.nan
+
+    movement_row_direction = [_safe_component(results, "movement_rows") for results in tracking_results]
+    movement_column_direction = [_safe_component(results, "movement_cols") for results in tracking_results]
     # create dataframe with all tracked points results
     tracked_pixels = pd.DataFrame({"row": rows, "column": cols})
 
@@ -706,10 +775,16 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         # Convert from mathematical convention (0° = East) to geographic convention (0° = North)
         tracked_pixels['movement_bearing_pixels'] = (90 - tracked_pixels['movement_bearing_pixels']) % 360
     if "transformation_matrix" in save_columns:
-        tracked_pixels["transformation_matrix"] = [results.transformation_matrix for results in tracking_results]
+        tracked_pixels["transformation_matrix"] = [
+            (results.transformation_matrix if isinstance(results, TrackingResults) else None)
+            for results in tracking_results
+        ]
 
     # Add correlation coefficient column BEFORE filtering on it
-    tracked_pixels["correlation_coefficient"] = [results.cross_correlation_coefficient for results in tracking_results]
+    tracked_pixels["correlation_coefficient"] = [
+        (results.cross_correlation_coefficient if isinstance(results, TrackingResults) else np.nan)
+        for results in tracking_results
+    ]
 
     # Filter by correlation threshold - handle case where column might not exist
     if "correlation_coefficient" in tracked_pixels.columns:

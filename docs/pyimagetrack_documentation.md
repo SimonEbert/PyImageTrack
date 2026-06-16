@@ -183,6 +183,52 @@ if __name__ == "__main__":
 This is due to the tracking routine making use of the multiprocessing package for parallelization and without this
 safety measure, the tracking routine will be called several times with identical parameters.
 
+## Module: BatchProcessor.py
+Utilities for class-based batch execution over multiple config files.
+
+### read_table_a(path: str, config_col: str, class_col: str) -> pd.DataFrame
+Reads and validates table A (config-to-class mapping).
+
+### read_table_b(path: str, identifier_col: str, class_col: str) -> pd.DataFrame
+Reads and validates table B (identifier-to-class mapping).
+
+### filter_identifiers_by_class(table_b: pd.DataFrame, class_name: str, ...)
+Filters identifiers in table B by class.
+
+### get_input_folder_from_config(config_path: str) -> str
+Reads the input folder from a TOML configuration.
+
+### get_identifiers_in_folder(input_folder: str) -> set
+Extracts available identifiers from files in the input folder.
+
+### run_batch(...)
+Runs batch processing by matching classes between table A and table B.
+
+### main(argv=None)
+CLI entrypoint for `pyimagetrack-batch`.
+
+## Module: ConsoleOutput.py
+Centralized console and logging output helpers.
+
+### class ConsoleOutput
+Provides colored terminal output, verbosity/quiet handling, and optional rotating file logs.
+
+### get_console(verbose: bool = False, quiet: bool = False, use_colors: bool = True, ...)
+Returns the shared ConsoleOutput instance.
+
+### reset_console()
+Resets the shared ConsoleOutput instance.
+
+### Important methods
+- `_setup_logging()`
+- `_colorize(text, color)`
+- `_log(message, level='info')`
+- `print(...)`, `section_header(...)`, `status(...)`
+- `show_banner()`, `show_batch_banner(...)`
+- `parameter_summary(...)`, `config_info(...)`, `config_loaded(...)`
+- `cache_info(...)`, `file_list(...)`
+- `timer(...)`, `get_elapsed(...)`, `print_summary(...)`, `format_duration(...)`
+
 ### Programmatic Usage with Output Control
 
 When calling `run_from_config()` from Python scripts, you can pass the same options as the CLI:
@@ -447,6 +493,13 @@ Orchestrates the full pipeline:
 - Aligns and tracks with cache support
 - Filters, displays interactive plots (optional), saves outputs and summary statistics
 
+### Additional internal helpers
+- `_resolve_config_path(path)`: resolve and normalize config path.
+- `_resolve_path(value, base_dir)`: resolve optional relative path values.
+- `_find_file_recursive(search_folder, filename)`: recursive filename search.
+- `_resolve_input_path(value, input_folder, config_dir)`: locate optional input-side files.
+- `_crs_label(crs)`, `_normalize_crs(crs)`, `_resolve_common_crs(...)`: CRS handling utilities.
+
 ## Module: Utils.py
 ### _round_to_nearest_hour(dt: datetime) -> datetime
 Rounds a datetime to the nearest hour (>=30 min rounds up).
@@ -458,6 +511,26 @@ Rounds a datetime to the nearest hour (>=30 min rounds up).
 #### Returns
 `dt_rounded` : datetime
     Rounded datetime.
+
+### normalize_image_shape(arr: np.ndarray) -> np.ndarray
+Normalizes image arrays at pipeline input boundaries to avoid shape mismatches.
+
+Rules:
+- `(1, H, W)` → `(H, W)`
+- `(H, W)` remains unchanged
+- `(C, H, W)` with `C > 1` remains 3D
+
+The function is intentionally conservative and does not reorder axes. It is used
+after image loading and after alignment cache loading to keep downstream shape
+handling consistent.
+
+#### Parameters
+`arr` : np.ndarray
+    Input image array (typically from `rasterio.read()`).
+
+#### Returns
+`normalized_arr` : np.ndarray
+    Shape-normalized image array.
 
 ### parse_date(s: str) -> datetime
 Parses ISO-standard date strings with flexible separators.
@@ -508,6 +581,12 @@ The identifier is extracted from filenames that contain the pattern `id<identifi
 - `2008_id9111_az315.tif` → `9111`
 - `2008_9109_az315.tif` → `None` (no `id` prefix)
 
+### extract_date_token(s: str) -> Optional[str]
+Extracts and validates date tokens from filenames before datetime parsing.
+
+### _validate_date_token(token: str, year_part: str) -> bool
+Internal validator used by date-token extraction.
+
 ### collect_pairs(input_folder, date_csv_path=None, pairs_csv_path=None, pairing_mode="all", extensions=None, identifier=None)
 Builds image pairs from filenames and returns:
 - year_pairs: list of (id1, id2)
@@ -550,6 +629,12 @@ Builds image pairs from filenames and returns:
 - See `parse_date()` documentation for supported date formats.
 - When `identifier` is provided, only images with matching identifiers are paired.
 - See `extract_identifier()` documentation for identifier extraction pattern.
+
+### _successive_pairs(...)
+Internal helper for generating successive pairs.
+
+### find_files_recursive_with_duplicates(base_folder, extensions)
+Recursively finds files and supports duplicate-safe lookup behavior.
 
 ### ensure_dir(path: str)
 Creates a directory if missing.
@@ -632,6 +717,15 @@ Builds a short enhancement code for output folders.
 #### Returns
 ``code`` : str
     Folder code (e.g., "E_none", "E_clahe_K50_C0.9").
+
+### _part(prefix: str, value: str | None) -> str | None
+Internal helper for compact code component creation.
+
+### abbr_output_units(mode: str) -> str
+Builds output-units path code.
+
+### _recompute_lod_from_points(image_pair, filter_params) -> bool
+Recomputes LoD from available points (cache/consistency helper).
 
 ## Image Enhancement Configuration
 
@@ -880,7 +974,7 @@ Loads tracking GeoJSON into an ImagePair.
     True if cache was loaded.
 
 ## Module: Parameters
-### AlignmentParameters
+### class AlignmentParameters
 Container for alignment parameters.
 
 #### Parameters
@@ -905,7 +999,7 @@ to_dict()
 
 Keys expected by ImagePair(parameter_dict=...).
 
-### TrackingParameters
+### class TrackingParameters
 Container for tracking parameters.
 
 #### Parameters
@@ -931,7 +1025,7 @@ to_dict()
 
 Keys expected by ImagePair(parameter_dict=...).
 
-### FilterParameters
+### class FilterParameters
 Container for filtering parameters.
 
 #### Parameters
@@ -956,6 +1050,13 @@ Container for filtering parameters.
 __str__()
 
 Human-readable summary.
+
+### Internal validation
+- `AlignmentParameters._validate()`
+- `TrackingParameters._validate()`
+- `FilterParameters._validate()`
+
+These methods validate constraints when parameter objects are initialized.
 
 ## Module: CreateGeometries/HandleGeometries.py
 ### get_submatrix_symmetric(central_index, shape, matrix)
@@ -1065,95 +1166,8 @@ Computes circular standard deviation (degrees).
 ``std_deg`` : float
     Circular standard deviation.
 
-### grid_points_on_polygon_by_distance(polygon, distance_of_points=10, distance_px=None, pixel_size=None)
-Creates an evenly spaced grid of points inside a polygon at a given spacing.
-
-#### Parameters
-``polygon`` : gpd.GeoDataFrame
-    Single-polygon GeoDataFrame.
-
-``distance_of_points`` : float
-    Desired spacing in CRS units.
-
-``distance_px`` : float or None
-    Optional pixel spacing for logging.
-
-``pixel_size`` : float or None
-    Pixel size in CRS units (for logging).
-
-#### Returns
-``points`` : gpd.GeoDataFrame
-    Grid points inside the polygon.
-
-### random_points_on_polygon_by_number(polygon, number_of_points)
-Creates randomly distributed points inside a polygon.
-
-#### Parameters
-``polygon`` : gpd.GeoDataFrame
-    Single-polygon GeoDataFrame.
-
-``number_of_points`` : int
-    Number of points to generate.
-
-#### Returns
-``points`` : gpd.GeoDataFrame
-    Random points inside the polygon.
-
-### get_raster_indices_from_points(points, raster_matrix_transform)
-Converts point coordinates to raster row/column indices.
-
-#### Parameters
-``points`` : gpd.GeoDataFrame
-    Points in CRS coordinates.
-
-``raster_matrix_transform`` : Affine
-    Raster transform.
-
-#### Returns
-``rows``, ``cols`` : list
-    Row/column indices for points.
-
-### crop_images_to_intersection(file1, file2)
-Crops two rasters to their spatial intersection and returns arrays + transforms.
-
-#### Parameters
-``file1``, ``file2``
-    Rasterio-opened datasets.
-
-#### Returns
-[``array_file1``, ``array_file1_transform``], [``array_file2``, ``array_file2_transform``]
-    Cropped arrays and transforms.
-
-### georeference_tracked_points(tracked_pixels, raster_transform, crs, years_between_observations=1)
-Converts tracked pixel offsets into georeferenced movement vectors and yearly rates.
-
-#### Parameters
-``tracked_pixels`` : pd.DataFrame
-    Must include row/column and movement direction fields.
-
-``raster_transform`` : Affine
-    Raster transform.
-
-``crs`` : any
-    CRS identifier.
-
-``years_between_observations`` : float
-    Time span between images.
-
-#### Returns
-``georeferenced_tracked_pixels`` : gpd.GeoDataFrame
-    GeoDataFrame with movement distance and movement per year.
-
-### circular_std_deg(angles_deg)
-Computes circular standard deviation (degrees).
-
-#### Parameters
-``angles_deg`` : array-like
-    Angles in degrees.
-
-#### Returns
-``std_deg`` : float
-    Circular standard deviation.
+### make_safe_bounds_from_buffer(px_size, buffer, base_polygon, crs)
+Builds a safe bounds polygon from buffer settings and CRS/pixel size.
 
 ### get_submatrix_rect_from_extents(central_index, extents, matrix)
 Extracts an asymmetric rectangular window given extents (posx, negx, posy, negy).
@@ -1381,6 +1395,9 @@ Multiprocessing helper that tracks a single cell using shared memory for the ful
 ``tracking_results`` : TrackingResults
     Result for the given index.
 
+### perform_lsm_loop(...)
+Internal iterative least-squares core loop used by LSM tracking.
+
 ### track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked, tracking_parameters=None, alignment_parameters=None, alignment_tracking=False, save_columns=None, task_label="Tracking points")
 Tracks a set of points using the least-squares approach.
 
@@ -1417,6 +1434,9 @@ Tracks a set of points using the least-squares approach.
     Movement vectors and correlation coefficients (filtered by threshold).
 
 ## Module: ImageTracking/AlignImages.py
+### move_image_matrix_from_transformation(image_matrix, transformation, target_shape=None)
+Applies an affine-like transformation to an image matrix.
+
 ### align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area, alignment_parameters)
 Aligns image2 to image1 using least-squares tracking on control points within a reference area.
 
@@ -1441,6 +1461,16 @@ Aligns image2 to image1 using least-squares tracking on control points within a 
 ``moved_image2_matrix`` : np.ndarray
 ``tracked_control_points`` : pd.DataFrame
     Control points and tracking info.
+
+## Module: ImageTracking/ImageInterpolator.py
+### class ImageInterpolator
+Interpolator used by least-squares movement tracking.
+
+#### __init__(image_matrix)
+Initializes interpolation on image matrix.
+
+#### ev(yq, xq, dx=0, dy=0, shape=None)
+Evaluates interpolated values at query coordinates.
 
 ## Module: ImageTracking/ImagePair.py
 ### class ImagePair
@@ -1471,6 +1501,9 @@ Scales an affine transform by `factor` for downsampling.
 
 #### select_image_channels(selected_channels=None)
 Selects bands for tracking. Default uses first three channels.
+
+#### make_safe_bounds(buffer_to_image_bounds)
+Computes geometry bounds that are safe for sampling near image borders.
 
 #### Parameters
 ``selected_channels`` : list[int] or int or None
@@ -1675,6 +1708,9 @@ Loads saved tracking results and aligns images to a reference area.
     Loads tracking results into `self.tracking_results` and aligns images if needed.
 
 ## Module: DataProcessing/ImagePreprocessing.py
+### get_optimal_camera_model(image_matrix_shape, camera_intrinsic_matrix, distortion_coefficients)
+Computes optimized camera matrix/ROI for undistortion.
+
 ### undistort_camera_image(image_matrix, camera_intrinsic_matrix, distortion_coefficients)
 Undistorts a camera image using OpenCV and returns the undistorted image cropped to a rectangular shape containing only valid pixels.
 
@@ -1694,6 +1730,24 @@ Undistorts a camera image using OpenCV and returns the undistorted image cropped
 ### equalize_adapthist_images(image_matrix, kernel_size, clip_limit)
 Applies CLAHE (adaptive histogram equalization) using scikit-image.
 
+### convert_float_to_uint(image_matrix)
+Converts float arrays to unsigned integer representation for downstream processing.
+
+### convert_to_uint16(image_matrix)
+Converts images to uint16 where required.
+
+### harmonize_dtypes(image1_matrix, image2_matrix)
+Ensures both images share compatible dtype.
+
+### harmonize_resolution(image1_matrix, image2_matrix, ...)
+Ensures both images share compatible resolution/shape assumptions.
+
+### check_channels_compatible(image1_matrix, image2_matrix)
+Checks channel compatibility between image pair.
+
+### undistort_polygon(polygon, image_shape, camera_intrinsic_matrix, ...)
+Applies consistent undistortion to vector polygons.
+
 #### Parameters
 ``image_matrix`` : np.ndarray
     Input image matrix.
@@ -1709,8 +1763,14 @@ Applies CLAHE (adaptive histogram equalization) using scikit-image.
     Equalized image.
 
 ## Module: DataProcessing/DataPostprocessing.py
+### circular_median_deg(angles)
+Computes circular median for directional angles.
+
 ### calculate_lod_points(image1_matrix, image2_matrix, image_transform, points_for_lod_calculation,tracking_parameters, crs, years_between_observations)
 Tracks random points to estimate LoD (level of detection).
+
+### prepare_tracking_results_for_filtering(tracking_results)
+Normalizes tracking-results schema before filter execution.
 
 #### Parameters
 ``image1_matrix``, image2_matrix : np.ndarray
@@ -1853,6 +1913,12 @@ Removes outliers based on a Z-score approach using the mean and standard deviati
 ### filter_outliers_full(tracking_results, filter_parameters, displacement_column_name)
 Applies all outlier filters in sequence.
 
+### filter_outliers_depth_change_fraction(tracking_results, filter_parameters, ...)
+Optional outlier criterion based on depth-change fraction behavior.
+
+### downsample_tracking_results(tracking_results, point_distance)
+Downsamples dense tracking result points for lighter outputs.
+
 #### Parameters
 ``tracking_results`` : gpd.GeoDataFrame
     Tracking results GeoDataFrame.
@@ -1873,6 +1939,25 @@ The pipeline applies filters in the following order:
 2. **Outlier filtering**: Statistical filters (bearing difference, bearing standard deviation, rate difference, rate standard deviation) are then applied to the remaining points above the LoD threshold.
 
 ## Module: Plots/MakePlots.py
+
+### _prepare_raster_for_plotting(raster_matrix, context_label="plot")
+Prepares a raster array for robust plotting with rasterio/matplotlib. For 3D inputs with more than 3 bands, this falls back to band 1 as grayscale visualization and emits a console warning. 2D inputs are returned unchanged.
+
+#### Parameters
+``raster_matrix`` : np.ndarray
+    The raster array to prepare for plotting. May be 2D (rows, cols), or 3D (bands, rows, cols) or (rows, cols, bands).
+
+``context_label`` : str
+    A label used in console messages to identify which plot context triggered the fallback (e.g., "raster+geometry plot", "movement plot").
+
+#### Returns
+``prepared_raster`` : np.ndarray
+    A 2D array (grayscale) if the input had more than 3 bands, or the original array if it was already 2D or had 3 or fewer bands.
+
+#### Notes
+- The band axis is detected heuristically as the axis with the smallest dimension.
+- When a fallback to band 1 occurs, a warning is emitted via `console.warning(...)` (always visible), and additional shape/axis info is logged via `console.info_verbose(...)` (only in verbose mode).
+
 ### plot_raster_and_geometry(raster_matrix, raster_transform, geometry, alpha=0.6)
 Plots a raster with a geometry overlay.
 
@@ -1889,7 +1974,7 @@ Plots a raster with a geometry overlay.
 ``None``
 
 ### plot_movement_of_points(raster_matrix, raster_transform, point_movement, point_color=None, masking_polygon=None,
-fig=None, ax=None, save_path=None, show_arrows=True)
+fig=None, ax=None, save_path=None, show_arrows=True, unit_name=None)
 Plots tracked point movement with optional masking and saving.
 
 #### Parameters
@@ -1909,10 +1994,13 @@ Plots tracked point movement with optional masking and saving.
 
 ``show_arrows`` : bool
 
+``unit_name`` : str or None
+    Name of the unit to display in the plot legend. If None, the unit is inferred from the CRS of ``point_movement`` (e.g., "meter" for projected CRS), defaulting to "pixel" if no CRS is available.
+
 #### Returns
 ``None``
 
-### plot_movement_of_points_with_valid_mask(raster_matrix, raster_transform, point_movement, save_path=None)
+### plot_movement_of_points_with_valid_mask(raster_matrix, raster_transform, point_movement, save_path=None, unit_name=None)
 Plots valid vs invalid points in different colors. When `save_path` is provided, saves the plot to a file. When `save_path` is None, displays the plot interactively (requires a graphical display).
 
 #### Parameters
@@ -1924,6 +2012,9 @@ Plots valid vs invalid points in different colors. When `save_path` is provided,
 
 ``save_path`` : str or None
     If provided, saves the plot to this path. If None, displays the plot interactively.
+
+``unit_name`` : str or None
+    Name of the unit to display in the plot legend. Passed through to ``plot_movement_of_points``.
 
 #### Returns
 ``None``
@@ -1940,3 +2031,6 @@ Scatter plot of movement row vs column directions.
 ## Package __init__.py
 The top-level `src/PyImageTrack/__init__.py` is a namespace package wrapper. It optionally appends a
 `PyImageTrack_scripts` subdirectory to `__path__` to support legacy imports.
+
+### __getattr__(name: str)
+Package-level lazy/compatibility attribute resolver.
