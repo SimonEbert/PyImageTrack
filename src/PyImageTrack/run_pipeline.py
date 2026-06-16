@@ -763,7 +763,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         # When poly_outside is None, use polygon_inside CRS
         polygons_crs = polygon_inside.crs
 
-    align_code  = abbr_alignment(alignment_params)
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
 
     successes, skipped = [], []
@@ -841,7 +840,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "cross_correlation_threshold_alignment": alignment_params.cross_correlation_threshold_alignment,
                 "control_search_extent_px": base_align_deltas,
             }
-            align_code = abbr_alignment(pair_alignment_config_for_code)
+            align_code = abbr_alignment(alignment_params and pair_alignment_config_for_code)
 
             # movement: convert user-entered deltas -> effective extents
             base_track_deltas = tracking_params.search_extent_px

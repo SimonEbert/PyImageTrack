@@ -11,6 +11,7 @@ import scipy
 import sklearn
 from pathlib import Path
 import datetime as dt
+from pyproj import CRS as PyprojCRS
 
 from ..Utils import make_effective_extents_from_deltas, extract_datetime_from_token
 
@@ -322,11 +323,17 @@ class ImagePair:
             if file1.crs != file2.crs:
                 raise ValueError("Got images with crs " + str(file1.crs) + " and " + str(file2.crs) +
                                  " but the two images must have the same crs.")
-            if self.crs != file1.crs:
-                raise ValueError(
-                    "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
-                    str(file1.crs))
-            self.coordinate_system_unit_name = file1.crs.axis_info[0].unit_name
+            if self.crs is not None:
+                if self.crs != file1.crs:
+                    raise ValueError(
+                        "Specified crs of data in config to be " + str(self.crs) + "but images are given with crs" +
+                        str(file1.crs))
+            else:
+                self.crs = file1.crs
+
+            crs_obj = PyprojCRS.from_user_input(file1.crs)
+
+            self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)

@@ -166,7 +166,7 @@ def extract_datetime_from_token(s: str) -> datetime:
     s_norm = s_norm.replace('T', '-')
 
     # Extract possible datetime matches
-    full_match = re.match(r'(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
+    full_match = re.search(r'(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
     datetime_part = full_match.group(0)
 
     # Normalize string with separating date and time options
@@ -1124,9 +1124,7 @@ def abbr_tracking(tp):
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
         _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
         _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
-        _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),
-    ]
-
+        _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),    ]
 
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "T_" + "_".join(parts)
