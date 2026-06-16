@@ -871,7 +871,6 @@ class ImagePair:
         if len(points_to_be_tracked) == 0:
             console.warning("No tracking points fall within image bounds!")
 
-        # ToDo: Check performance on office PC: Is there a new bottleneck?
         tracked_points = track_movement_lsm(self.image1_matrix, self.image2_matrix, self.image1_transform,
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,

@@ -195,10 +195,6 @@ def track_cell_cc(tracked_cell_matrix: np.ndarray,
         peaks_centered -
         np.array([central_row, central_col])
     )
-    # ToDo: Necessary?
-    # Fallback for single initial values (1d) returns from peak_local_max
-    # if len(movement.shape) == 1:
-    #     movement = np.expand_dims(movement, axis=0)
 
     return movement
 
@@ -611,10 +607,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     full_cell_shared_search_extents = None  # Will hold the appropriate extents based on mode
 
     if alignment_tracking:
-        # ToDo: Are full_cell_shared_search_extents needed here?
         if getattr(alignment_parameters, "control_search_extent_px", None):
             shared_control_search_extents = tuple(int(v) for v in alignment_parameters.control_search_extent_px)
-            full_cell_shared_search_extents = shared_control_search_extents
         else:
             raise ValueError("Alignment: control_search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
                              "Transformation from relative extents to full cell extents can be achieved using the"
@@ -622,7 +616,6 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     else:
         if getattr(tracking_parameters, "search_extent_px", None):
             shared_search_extents = tuple(int(v) for v in tracking_parameters.search_extent_px)
-            full_cell_shared_search_extents = shared_search_extents
         else:
             raise ValueError("Movement: search_extent_full_cell must be set (tuple posx,negx,posy,negy)."
                              "Transformation from relative extents to full cell extents can be achieved using the"
