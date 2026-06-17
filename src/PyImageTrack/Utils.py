@@ -1177,12 +1177,7 @@ def abbr_output_units(mode: str) -> str:
     str
         Short code string starting with "U_".
     """
-    if mode == "per_year":
-        return "U_per_year"
-    elif mode == "total":
-        return "U_total"
-    else:
-        return f"U_{mode}"
+    return "U_" + mode
 
 
 def abbr_enhancement(ep) -> str:

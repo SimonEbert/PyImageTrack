@@ -579,10 +579,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # output units mode (required)
     output_units_mode = _require(cfg, "output_units", "mode")
-    if output_units_mode not in ("per_year", "total"):
+    if output_units_mode not in ("per_year", "per_second", "per_hour", "total"):
         raise ValueError(
             f"Invalid output_units.mode: '{output_units_mode}'. "
-            "Must be either 'per_year' or 'total'."
+            "Must be one of 'per_second', 'per_hour', 'per_year' or 'total'."
         )
 
     # adaptive tracking window options
@@ -594,7 +594,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # Get image_bands from tracking configuration (used by both alignment and tracking)
     image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
     unit_name_distance = _as_optional_value(_get(cfg, "image", "unit_name_distance", None))
-    unit_name_time = _as_optional_value(_get(cfg, "image", "unit_name_time", None))
 
 
     alignment_params = AlignmentParameters({
@@ -845,6 +844,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # movement: convert user-entered deltas -> effective extents
             base_track_deltas = tracking_params.search_extent_px
 
+            # ToDo: Adapt this to variable timesteps
             years_between_observations_float = time_between_observations / dt.timedelta(days=365.25)
             adaptive_extents = make_effective_extents_from_deltas(
                 deltas=base_track_deltas,
@@ -894,7 +894,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
             # Directories
             # Use formatted dates for directory names (guaranteed correct, handles all date formats)
-            base_pair_dir = os.path.join(output_folder, f"{dt1_string}_{dt2_string}")
+            base_pair_dir = os.path.join(output_folder, f"{dt1_string.replace(" ","_")}_{dt2_string.replace(" ","_")}")
             enhancement_dir = os.path.join(base_pair_dir, enhancement_code)
             align_dir  = os.path.join(enhancement_dir, align_code)
             track_dir  = os.path.join(align_dir,     track_code)
@@ -930,7 +930,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["output_units_mode"]                 = output_units_mode
             # Unit name (if specified, for plotting)
             param_dict["unit_name_distance"]                = unit_name_distance
-            param_dict["unit_name_time"]                    = unit_name_time
             # Adaptive tracking window
             param_dict["use_adaptive_tracking_window"]      = use_adaptive_tracking_window
             # Image bands (ensure both key names are available for compatibility)

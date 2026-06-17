@@ -249,6 +249,11 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         georeferenced_tracked_pixels["movement_distance_per_second"] = (georeferenced_tracked_pixels["movement_distance"]
                                                                         / time_between_observations.seconds)
         displacement_column_name = "movement_distance_per_second"
+
+    elif output_unit_mode == "per_hour":
+        georeferenced_tracked_pixels["movement_distance_per_hour"] = (georeferenced_tracked_pixels["movement_distance"] /
+                                                                      time_between_observations.seconds * 3600)
+        displacement_column_name = "movement_distance_per_hour"
         # Todo: Change displacement column name throughout the code
 
     else:

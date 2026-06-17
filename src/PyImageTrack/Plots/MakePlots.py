@@ -106,16 +106,20 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
 
     # Determine displacement column name (supports both per_year and total modes)
     displacement_column_name = None
-    for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_year",
-                "movement_distance_total", "movement_distance_per_year"]:
+    for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_second",
+                "3d_displacement_distance_per_hour", "3d_displacement_distance_per_year",
+                "movement_distance_total", "movement_distance_per_second",
+                "movement_distance_per_hour", "movement_distance_per_year"]:
         if col in list(point_movement.columns):
             displacement_column_name = col
             break
 
     if displacement_column_name is None:
         raise ValueError("Could not find any displacement column. "
-                         "Expected one of: 'movement_distance_per_year', 'movement_distance_total', "
-                         "'3d_displacement_distance_per_year', or '3d_displacement_distance_total'.")
+                         "Expected one of: '3d_displacement_distance_total', '3d_displacement_distance_per_second',"
+                "'3d_displacement_distance_per_hour', '3d_displacement_distance_per_year',"
+                "'movement_distance_total', 'movement_distance_per_second',"
+                "'movement_distance_per_hour', 'movement_distance_per_year'")
     legend_title_part = "Point velocity in "
 
     if unit_name_distance is None:
@@ -181,8 +185,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray, raster_transform, point_m
                 zorder=5
             )
 
-    if displacement_column_name == "3d_displacement_distance_per_year":
-        plt.title("3d-displacement distance per year")
+    if displacement_column_name[0:2] == "3d":
+        plt.title("3d-displacement distance per " + unit_name_time)
     else:
         plt.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time)
 

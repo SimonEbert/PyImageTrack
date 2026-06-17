@@ -92,8 +92,6 @@ mode = "custom"
 
 [image]
 image_bands = [0,1,2]
-unit_name_distance = "meter"
-unit_name_time = "year"
 
 [no_georef]
 # Set to true ONLY when processing non-georeferenced images (e.g., JPG photos)
@@ -289,11 +287,16 @@ write_truecolor_aligned = false
 display_plots = false
 
 [output_units]
+# Spatial unit for outputs
+unit_name_distance = "meter"
 # How movement rates are calculated:
+# - "per_second": Movement rates normalized to per-second values
+# - "per_hour": Movement rates normalized to per-hour values
 # - "per_year": Movement rates normalized to per-year values (default for time-series)
 # - "total": Raw displacement values without dividing by years between images
 #   (useful for one-time events like landslides or single event monitoring)
 mode = "per_year"
+
 
 [cache]
 # Enable caching to speed up re-runs with modified parameters
