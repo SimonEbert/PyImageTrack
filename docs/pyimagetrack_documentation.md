@@ -595,13 +595,17 @@ Builds image pairs from filenames and returns:
 
 #### Parameters
 ``input_folder`` : str
-    Folder containing images. Filenames must contain date tokens in ISO format (year-first).
+    Folder containing images. Filenames can contain date tokens in ISO format (year-first),
+    or they can be resolved through `date_csv_path` by filename/ID.
 
 ``date_csv_path`` : str or None
-    Optional CSV with `date` column for resolving dates from filenames. Dates in CSV use the same format as filename dates.
+    Optional CSV with `date` column for resolving dates from filenames, image IDs, or
+    arbitrary dataset IDs. Dates in CSV use the same format as filename dates.
 
 ``pairs_csv_path`` : str or None
-    Optional CSV specifying custom pairs (date_earlier/date_later).
+    Optional CSV specifying custom pairs. Preferred columns are
+    dataset_earlier/dataset_later; legacy date_earlier/date_later columns are
+    still accepted.
 
 ``pairing_mode`` : str
     all | successive | first_to_all | custom.
@@ -625,7 +629,10 @@ Builds image pairs from filenames and returns:
 
 #### Notes
 - Date tokens in filenames are extracted using the same `parse_date()` function as CSV dates.
-- All dates must start with year (YY or YYYY) and use ISO-standard format.
+- If an image matches `date_csv_path` by filename without extension or image ID, no date
+  token is required in the filename.
+- Custom pair CSVs can reference those dataset IDs directly.
+- All actual dates must start with year (YY or YYYY) and use ISO-standard format.
 - See `parse_date()` documentation for supported date formats.
 - When `identifier` is provided, only images with matching identifiers are paired.
 - See `extract_identifier()` documentation for identifier extraction pattern.

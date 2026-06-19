@@ -592,6 +592,35 @@ def _successive_pairs(sorted_years):
     return [(sorted_years[i], sorted_years[i + 1]) for i in range(len(sorted_years) - 1)]
 
 
+def _match_csv_image_key(filename_without_ext: str, filename: str, csv_keys) -> Optional[str]:
+    """
+    Resolve an image_dates.csv key for a filename.
+
+    Exact filename matches are preferred. If no exact match exists, allow a CSV
+    key to match the beginning of the filename stem when the next character is a
+    separator. This supports dataset IDs like "1953002" in filenames such as
+    "1953002_HS.tif" without treating "19530020.tif" as the same dataset.
+    """
+    for candidate in (filename_without_ext, filename):
+        if candidate in csv_keys:
+            return os.path.splitext(candidate)[0] if candidate == filename else candidate
+
+    prefix_matches = []
+    for key in csv_keys:
+        if not filename_without_ext.startswith(key):
+            continue
+        if len(filename_without_ext) == len(key) or filename_without_ext[len(key)] in ("_", "-", ".", " "):
+            prefix_matches.append(key)
+
+    if not prefix_matches:
+        return None
+
+    prefix_matches.sort(key=len, reverse=True)
+    if len(prefix_matches) > 1 and len(prefix_matches[0]) == len(prefix_matches[1]):
+        return None
+    return prefix_matches[0]
+
+
 def find_files_recursive_with_duplicates(base_folder: str, extensions: tuple):
     """
     Recursively find all files with specified extensions and check for duplicates.
@@ -679,12 +708,16 @@ def collect_pairs(input_folder: str,
       - id_hastime_from_filename: id -> bool (True if time came from filename)
       - id_to_identifier: id -> identifier (only if identifier parameter is provided)
     
-    Date extraction from filenames:
-      - Extracts leading numeric token (YY or YYYY followed by optional parts)
-      - Passes token directly to parse_date() for parsing
-      - CSV dates handled identically to filename dates
+    Date extraction:
+      - If image_dates.csv contains the filename without extension or image ID,
+        its date is used even when the filename has no date token.
+      - Otherwise, extracts a numeric token (YY or YYYY followed by optional parts)
+        from the filename and passes it directly to parse_date().
+      - CSV dates are parsed identically to filename dates.
     
     ID Generation:
+      - When image_dates.csv matches a filename without extension or image ID,
+        that CSV key becomes the image ID.
       - When an identifier is present in the filename, IDs are generated as "date_token_identifier"
         to ensure uniqueness when multiple files share the same date token (e.g., year).
       - When no identifier is present, IDs use only the date token.
@@ -717,21 +750,33 @@ def collect_pairs(input_folder: str,
     csv_year_to_date: dict[str, str] = {}
     if date_csv_path is not None and os.path.exists(date_csv_path):
         try:
-            date_df = pd.read_csv(date_csv_path)
-            date_df.columns = date_df.columns.str.strip()
-            # Check for either "file" or "year" column (or "file/year")
-            if "file" in date_df.columns:
+            date_df = pd.read_csv(date_csv_path, sep=None, engine="python", encoding="utf-8-sig")
+            date_df.columns = (
+                date_df.columns
+                .str.replace("\ufeff", "", regex=False)
+                .str.strip()
+                .str.lower()
+            )
+            # Check for either "dataset", "file", or legacy "year" columns.
+            if "dataset" in date_df.columns:
+                id_col = "dataset"
+            elif "file" in date_df.columns:
                 id_col = "file"
             elif "year" in date_df.columns:
                 id_col = "year"
             elif "file/year" in date_df.columns:
                 id_col = "file/year"
             else:
-                raise ValueError("image_dates.csv must contain a 'file', 'year', or 'file/year' column.")
+                raise ValueError("image_dates.csv must contain a 'dataset', 'file', 'year', or 'file/year' column.")
             if "date" not in date_df.columns:
                 raise ValueError("image_dates.csv must contain a 'date' column.")
-            date_df[id_col] = date_df[id_col].astype(str)
-            csv_year_to_date = dict(zip(date_df[id_col], date_df["date"]))
+            date_df[id_col] = date_df[id_col].astype(str).str.strip()
+            date_df["date"] = date_df["date"].astype(str).str.strip()
+            csv_year_to_date = {
+                key: value
+                for key, value in zip(date_df[id_col], date_df["date"])
+                if key and key.lower() != "nan" and value and value.lower() != "nan"
+            }
         except Exception as e:
             raise ValueError(f"Failed to read image_dates.csv at {date_csv_path}: {e}")
     elif date_csv_path is not None:
@@ -749,27 +794,46 @@ def collect_pairs(input_folder: str,
     id_to_file = {}
     id_to_date = {}
     id_hastime_from_filename = {}
+    id_to_identifier = {}
 
     for f in img_files:
-        # Extract date token from filename without extension to avoid trailing digits from suffixes (e.g. _HS_10)
         filename_without_ext = os.path.splitext(f)[0]
+        path = filename_to_path[f]
+        file_identifier = extract_identifier(f)
+
+        csv_date_str = None
+        csv_id = _match_csv_image_key(filename_without_ext, f, csv_year_to_date.keys())
+        if csv_id is not None:
+            csv_date_str = csv_year_to_date[csv_id]
+
+        if csv_date_str is not None:
+            try:
+                dt = parse_date(csv_date_str)
+                id_ = csv_id
+                id_to_file[id_] = path
+                id_to_identifier[id_] = file_identifier
+                id_hastime_from_filename[id_] = False
+                if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
+                    id_to_date[id_] = dt.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    id_to_date[id_] = dt.strftime("%Y-%m-%d")
+                continue
+            except ValueError:
+                # Fall back to filename parsing below if the CSV date is invalid.
+                pass
+
+        # Extract date token from filename without extension to avoid trailing digits from suffixes (e.g. _HS_10)
         lead = extract_date_token(filename_without_ext)
         if lead is None:
             continue
-        
-        # Use the full path from recursive search
-        path = filename_to_path[f]
-        
+
         # Parse the date token
         try:
             dt = parse_date(lead)
         except ValueError:
             # Skip files with invalid date tokens
             continue
-        
-        # Extract identifier from filename to make ID unique
-        file_identifier = extract_identifier(f)
-        
+
         # Use the original token as ID, but make it unique by appending identifier if present
         if file_identifier:
             id_ = f"{lead}_{file_identifier}"
@@ -777,14 +841,14 @@ def collect_pairs(input_folder: str,
             id_ = lead
         
         id_to_file[id_] = path
+        id_to_identifier[id_] = file_identifier
         
-        # Check if this file has a date override in the CSV file
-        # First try to match by full filename (without extension), then by token
+        # Check if this parsed file ID or date token has a date override in the CSV file.
         csv_date_str = None
-        if filename_without_ext in csv_year_to_date:
-            csv_date_str = csv_year_to_date[filename_without_ext]
-        elif id_ in csv_year_to_date:
+        if id_ in csv_year_to_date:
             csv_date_str = csv_year_to_date[id_]
+        elif lead in csv_year_to_date:
+            csv_date_str = csv_year_to_date[lead]
         
         if csv_date_str is not None:
             # Use the date from CSV, parsing it with the same logic as filename dates
@@ -810,19 +874,10 @@ def collect_pairs(input_folder: str,
     ordered_ids = [k for k, _ in items]
 
     # 3.5) Filter by identifier if provided
-    id_to_identifier = {}
     if identifier is not None:
         # Build mapping of file IDs to their identifiers
         for id_ in list(id_to_file.keys()):
-            # Extract identifier from the ID (format: "date_token_identifier" or "date_token")
-            # The identifier is the part after the last underscore if it exists
-            parts = id_.rsplit('_', 1)
-            if len(parts) == 2 and parts[1].isalnum():
-                file_identifier = parts[1]
-            else:
-                # No identifier in ID, extract from filename
-                file_identifier = extract_identifier(os.path.basename(id_to_file[id_]))
-            
+            file_identifier = id_to_identifier.get(id_) or extract_identifier(os.path.basename(id_to_file[id_]))
             id_to_identifier[id_] = file_identifier
             # Filter out files that don't match the specified identifier
             if file_identifier != identifier:
@@ -861,7 +916,8 @@ def collect_pairs(input_folder: str,
             console.error("To fix this, you have two options:")
             console.error("  1. Provide a valid path to an image_pairs.csv file in your config:")
             console.error("     pairs_csv_path = '/path/to/image_pairs.csv'")
-            console.error("     The CSV must contain columns 'date_earlier' and 'date_later'.")
+            console.error("     The CSV must contain columns 'dataset_earlier' and 'dataset_later'")
+            console.error("     or the legacy columns 'date_earlier' and 'date_later'.")
             console.error("  2. Change the pairing mode to an automatic option:")
             console.error("     - 'all': Pair each image with every other image")
             console.error("     - 'successive': Pair consecutive images (1-2, 2-3, 3-4, ...)")
@@ -881,19 +937,27 @@ def collect_pairs(input_folder: str,
             .str.strip()
             .str.lower()
         )
-        if not {"date_earlier", "date_later"}.issubset(pairs_df.columns):
+        if {"dataset_earlier", "dataset_later"}.issubset(pairs_df.columns):
+            left_col, right_col = "dataset_earlier", "dataset_later"
+        elif {"date_earlier", "date_later"}.issubset(pairs_df.columns):
+            left_col, right_col = "date_earlier", "date_later"
+        else:
             raise ValueError(
-                "image_pairs.csv must contain columns 'date_earlier' and 'date_later'."
+                "image_pairs.csv must contain columns 'dataset_earlier' and 'dataset_later' "
+                "or legacy columns 'date_earlier' and 'date_later'."
             )
-
-        left_col, right_col = "date_earlier", "date_later"
 
         # Map CSV token -> ID used in id_to_file
         def _resolve_csv_token_to_id(raw: str) -> str:
+            raw_s = str(raw).strip()
+
+            if raw_s in id_to_file:
+                return raw_s
+
             # Always parse first, then normalize to canonical date token
             # so CSV values like "2024-07" and IDs like "2024-07_HS_10" compare consistently.
             try:
-                raw_dt = parse_date(str(raw).strip())
+                raw_dt = parse_date(raw_s)
             except Exception:
                 lead = extract_date_token(raw)
                 if lead is None:
@@ -904,7 +968,6 @@ def collect_pairs(input_folder: str,
                     raise ValueError(f"Unrecognized pair token: {raw!r}")
 
             # Canonical token precision based on provided CSV value
-            raw_s = str(raw).strip()
             raw_token = extract_date_token(raw_s)
             if raw_token is None:
                 raw_token = raw_s

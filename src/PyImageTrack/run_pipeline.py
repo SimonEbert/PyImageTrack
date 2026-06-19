@@ -801,22 +801,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             dt1 = parse_date(date_1)
             dt2 = parse_date(date_2)
 
-            def _fmt_label(id_key, dt):
-                return dt.strftime("%Y-%m-%d %H:00") if id_hastime_from_filename.get(id_key, False) \
-                    else dt.strftime("%Y-%m-%d")
-
-            label_1 = _fmt_label(year1, dt1)
-            label_2 = _fmt_label(year2, dt2)
-            
-            # Extract date tokens (years) from IDs for display and paths
-            # IDs are now in format "date_token_identifier" or "date_token"
-            date_token_1 = year1.split('_')[0] if '_' in year1 else year1
-            date_token_2 = year2.split('_')[0] if '_' in year2 else year2
-            
             # Use the already-parsed dates for folder naming (guaranteed correct)
             # This avoids malformed tokens from extraction issues
             folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
             folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
+            date_token_1 = folder_date_1
+            date_token_2 = folder_date_2
             
             # Image pair header
             pair_id_short = f"{date_token_1} -> {date_token_2}"
@@ -987,11 +977,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     except ValueError as e:
                         console.error(f"Alignment failed for pair {date_token_1} -> {date_token_2}: {e}")
                         console.error("Skipping this pair. Please check your alignment parameters or input data.")
-                        skipped.append((year1, year2, f"Alignment failed: {str(e)}"))
+                        skipped.append((date_token_1, date_token_2, f"Alignment failed: {str(e)}"))
                         continue
                     
                     if not image_pair.valid_alignment_possible:
-                        skipped.append((year1, year2, "Alignment not possible"))
+                        skipped.append((date_token_1, date_token_2, "Alignment not possible"))
                         continue
                 
                 # Save alignment results only if not loaded from cache

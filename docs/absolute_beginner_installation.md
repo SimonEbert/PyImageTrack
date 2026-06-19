@@ -153,10 +153,10 @@ moving_area_filename = "moving_area.shp"
 
 ### image_dates.csv
 
-This CSV file maps abbreviated date tokens from image names to full dates. When provided, the dates from this file **override** the dates extracted from filenames. This is useful when the filename contains an abbreviated date (e.g., `2024`) but you need to specify the full date (e.g., `2024-06-15`). If this file is not provided or set to `"none"`, dates are extracted directly from the filenames.
+This CSV file maps image names, image IDs, or abbreviated date tokens to full dates. When provided, matching rows **override** the dates extracted from filenames. This is useful when the filename contains an abbreviated date (e.g., `2024`) but you need to specify the full date (e.g., `2024-06-15`), or when your filenames use arbitrary dataset IDs instead of date tokens. If this file is not provided or set to `"none"`, dates are extracted directly from the filenames.
 
 **Required columns:**
-- `file` or `year` or `file/year`: The filename (without extension) or the date token as it appears in the image filename
+- `dataset` or `file` or `year` or `file/year`: The filename without extension, the image ID, or the date token as it appears in the image filename. `year` and `file/year` are legacy aliases.
 - `date`: The date in any supported format (see "Supported Date Token Formats" below). Missing parts default to standard values (month=01, day=01, hour=00, minute=00, second=00).
 
 **Example:**
@@ -175,6 +175,13 @@ year;date
 2024;2024-06        # Will be parsed as 2024-06-01
 ```
 
+Or using arbitrary dataset IDs from filenames:
+```csv
+dataset;date
+1935002;2024-06-15
+1935003;2025-07-08
+```
+
 **Note:** The delimiter can be either comma (`,`) or semicolon (`;`).
 
 ### image_pairs.csv
@@ -182,20 +189,22 @@ year;date
 This CSV file defines custom image pairs for tracking. It is required when `pairing.mode` is set to `"custom"`.
 
 **Required columns:**
-- `date_earlier`: The date token of the earlier image
-- `date_later`: The date token of the later image
+- `dataset_earlier`: The dataset ID or date token of the earlier image
+- `dataset_later`: The dataset ID or date token of the later image
+
+Legacy fallback columns `date_earlier` and `date_later` are still accepted.
 
 **Example:**
 ```csv
-date_earlier;date_later
-2024_07;2025_06
-2024_07;2024_09
-2024_09;2025_06
+dataset_earlier;dataset_later
+1935002;1935003
+1935002;1935004
+1935003;1935004
 ```
 
 **Important notes:**
 - The delimiter can be either comma (`,`) or semicolon (`;`)
-- The date tokens must match the leading numeric tokens in your image filenames
+- Dataset IDs must match the IDs used in `image_dates.csv` or the internal image IDs; date tokens must match the leading numeric tokens in your image filenames
 - The system extracts the leading numeric token from filenames (e.g., `2024-06-09.tif` → `2024-06-09`)
 - You can use abbreviated tokens if they uniquely identify the images (e.g., `24` for `2024-06-09.tif` if there's only one image from 2024)
 
