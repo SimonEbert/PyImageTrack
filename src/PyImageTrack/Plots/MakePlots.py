@@ -1,8 +1,54 @@
 import geopandas as gpd
+
+from ..ConsoleOutput import get_console
 import matplotlib.pyplot as plt
 import numpy as np
 import rasterio.plot
 from pyproj import CRS as PyprojCRS
+
+
+def _prepare_raster_for_plotting(raster_matrix: np.ndarray, context_label: str = "plot"):
+    """
+    Prepare raster input for robust plotting with rasterio/matplotlib.
+
+    For 3D inputs with more than 3 bands, this falls back to band 1 as
+    grayscale visualization and emits a console message in standard output
+    formatting.
+    """
+    if raster_matrix is None:
+        return None
+
+    arr = np.asarray(raster_matrix)
+    if arr.ndim == 2:
+        return arr
+
+    if arr.ndim != 3:
+        # Defensive fallback for unexpected dimensions
+        get_console().warning(
+            f"Unexpected raster shape {arr.shape} for {context_label}. Trying to squeeze for plotting."
+        )
+        arr = np.squeeze(arr)
+        return arr
+
+    # Heuristic: the axis with smallest size is treated as channel/band axis.
+    # This works for common forms: (bands, rows, cols) and (rows, cols, bands).
+    channel_axis = int(np.argmin(arr.shape))
+    n_channels = int(arr.shape[channel_axis])
+
+    if n_channels > 3:
+        get_console().warning(
+            f"Raster for {context_label} has {n_channels} bands. Using band 1 in grayscale for visualization."
+        )
+        get_console().info_verbose(
+            f"Original raster shape: {arr.shape}; detected band axis: {channel_axis}."
+        )
+        if channel_axis == 0:
+            return arr[0, :, :]
+        if channel_axis == 1:
+            return arr[:, 0, :]
+        return arr[:, :, 0]
+
+    return arr
 
 
 def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geometry: gpd.GeoDataFrame, alpha=0.6):
@@ -25,10 +71,11 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
     None
     """
 
+    raster_matrix = _prepare_raster_for_plotting(raster_matrix, context_label="raster+geometry plot")
     plot_extent = rasterio.plot.plotting_extent(raster_matrix, raster_transform)
     fig, ax = plt.subplots()
     geometry.plot(ax=ax, color="blue", alpha=alpha, markersize=1)
-    rasterio.plot.show(raster_matrix, ax=ax, extent=plot_extent, cmap="Greys")
+    rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
     plt.show()
 
 
@@ -73,13 +120,28 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
     None
     """
 
+    if point_movement.empty:
+        get_console().info(
+            "Plot layer skipped (empty GeoDataFrame). This usually occurs when a subset is empty after filtering or if filters are disabled."
+        )
+        if ax is None and fig is None:
+            fig, ax = plt.subplots(dpi=200)
+        if raster_matrix is not None:
+            raster_matrix = _prepare_raster_for_plotting(raster_matrix, context_label="movement plot")
+            rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+        plt.title("Movement velocity (no valid points)")
+        if save_path is not None and fig is not None:
+            fig.savefig(save_path, bbox_inches='tight')
+        return
+
     # --- Estimate median point spacing in map units ---
     coords = np.vstack([point_movement.geometry.x, point_movement.geometry.y]).T
 
     # Sort by x then y for fast nearest-neighbor estimate
     coords_sorted = coords[np.lexsort((coords[:, 1], coords[:, 0]))]
     deltas = np.sqrt(np.sum(np.diff(coords_sorted, axis=0) ** 2, axis=1))
-    median_spacing = np.nanmedian(deltas[deltas > 0])
+    positive_deltas = deltas[deltas > 0]
+    median_spacing = np.nanmedian(positive_deltas) if positive_deltas.size > 0 else np.nan
 
     if not np.isfinite(median_spacing):
         median_spacing = 1.0
@@ -133,6 +195,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
+        raster_matrix = _prepare_raster_for_plotting(raster_matrix, context_label="movement plot")
         rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
 
 

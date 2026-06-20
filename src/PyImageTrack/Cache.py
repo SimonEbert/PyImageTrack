@@ -19,6 +19,7 @@ from shapely import box
 from rasterio.transform import array_bounds
 from affine import Affine
 from PyImageTrack.CreateGeometries.HandleGeometries import make_safe_bounds_from_buffer
+from PyImageTrack.Utils import normalize_image_shape
 
 from PyImageTrack.ConsoleOutput import get_console
 
@@ -214,7 +215,8 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     src = rasterio.open(aligned_tif, "r")
     arr = src.read()
     image_pair.crs = src.crs
-    image_pair.image2_matrix = arr[0] if arr.shape[0] == 1 else arr
+    image_pair.image1_matrix = normalize_image_shape(image_pair.image1_matrix)
+    image_pair.image2_matrix = normalize_image_shape(arr)
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
@@ -257,7 +259,7 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     if image_pair.depth_image1 is not None:
         with rasterio.open(aligned_depth_tif, "r") as src:
             depth_arr = src.read()
-        image_pair.depth_image2 = np.squeeze(depth_arr)
+        image_pair.depth_image2 = normalize_image_shape(depth_arr)
 
     console = get_console()
     if image_pair.image1_matrix.shape != image_pair.image2_matrix.shape:

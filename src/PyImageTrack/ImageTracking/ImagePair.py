@@ -12,7 +12,7 @@ import sklearn
 from pathlib import Path
 from pyproj import CRS as PyprojCRS
 
-from ..Utils import make_effective_extents_from_deltas
+from ..Utils import make_effective_extents_from_deltas, normalize_image_shape
 
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
@@ -343,6 +343,7 @@ class ImagePair:
                 self.crs = file1.crs
 
             crs_obj = PyprojCRS.from_user_input(file1.crs)
+
             self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
 
             # Spatial intersection (true georef)
@@ -386,11 +387,8 @@ class ImagePair:
             arr1 = file1.read()  # (bands, rows, cols)
             arr2 = file2.read()
 
-            def squeeze(arr):
-                return arr[0] if arr.shape[0] == 1 else arr
-
-            arr1 = squeeze(arr1)
-            arr2 = squeeze(arr2)
+            arr1 = normalize_image_shape(arr1)
+            arr2 = normalize_image_shape(arr2)
 
             if self.undistort_image:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
@@ -479,7 +477,7 @@ class ImagePair:
         if not ext:
             raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
         eff_search_radius_px = max(ext)
-        
+
         image_bounds = gpd.GeoDataFrame(
             gpd.GeoDataFrame({'geometry': [bounds_poly]}, crs=self.crs))
         # set correct geometry column
@@ -1078,7 +1076,7 @@ class ImagePair:
                           "movement_bearing_pixels",
                           "correlation_coefficient",
                           ],
-            task_label="Tracking points for LoD"
+            task_label="[~] Tracking points for LoD"
         )
         tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
