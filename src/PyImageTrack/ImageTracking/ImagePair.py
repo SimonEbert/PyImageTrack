@@ -423,8 +423,8 @@ class ImagePair:
                 
                 depth_image1 = rasterio.open(depth_image1_path, 'r').read()
                 depth_image2 = rasterio.open(depth_image2_path, 'r').read()
-                depth_image1 = squeeze(depth_image1)
-                depth_image2 = squeeze(depth_image2)
+                depth_image1 = np.squeeze(depth_image1)
+                depth_image2 = np.squeeze(depth_image2)
                 if self.undistort_image:
                     depth_image1 = undistort_camera_image(depth_image1, self.camera_intrinsics_matrix,
                                                           self.camera_distortion_coefficients)
