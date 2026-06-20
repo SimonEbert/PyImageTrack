@@ -444,7 +444,7 @@ def filter_outliers_depth_change_fraction(tracking_results: gpd.GeoDataFrame,fil
 
     tracking_results_prepared["is_depth_fraction_outlier"] = (
             maximal_fraction <
-            (tracking_results_prepared["depth_change"] / tracking_results_prepared["3d_displacement_distance"]))
+            (np.abs(tracking_results_prepared["depth_change"]) / tracking_results_prepared["3d_displacement_distance"]))
 
     tracking_results_prepared["is_outlier"] = (tracking_results_prepared["is_outlier"]
                                                | tracking_results_prepared["is_depth_fraction_outlier"])
