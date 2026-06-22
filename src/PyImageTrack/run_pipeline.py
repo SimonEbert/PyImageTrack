@@ -608,8 +608,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # PARAMETERS (alignment, tracking, filter)
     # ==============================
-    # Get image_bands from tracking configuration (used by both alignment and tracking)
-    image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
+    # Get image_bands from tracking configuration (used by both alignment and tracking).
+    # Older configs may still define this in [image], so keep that as a fallback.
+    image_bands = _as_optional_value(_get(cfg, "tracking", "image_bands", _get(cfg, "image", "image_bands", None)))
     unit_name = _as_optional_value(_get(cfg, "image", "unit_name", None))
 
     alignment_params = AlignmentParameters({
@@ -623,6 +624,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     })
 
     tracking_params = TrackingParameters({
+        "image_bands": image_bands,
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),

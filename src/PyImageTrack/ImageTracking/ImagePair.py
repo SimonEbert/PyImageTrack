@@ -251,14 +251,27 @@ class ImagePair:
         Parameters
         ----------
         selected_channels : int | list[int] | tuple[int] | None, optional
-            Channel index/indices to select. ``None`` defaults to ``[0, 1, 2]``.
+            Channel index/indices to select. ``None`` keeps the original channels.
             Only applied when images are 3D (bands, height, width).
         """
         if selected_channels is None:
-            selected_channels = [0, 1, 2]
-        if len(self.image1_matrix.shape) == 3:
-            self.image1_matrix = self.image1_matrix[selected_channels, :, :]
-            self.image2_matrix = self.image2_matrix[selected_channels, :, :]
+            return
+
+        def _select_channels(arr, label):
+            if arr.ndim == 3:
+                return arr[selected_channels, :, :]
+            if arr.ndim == 2:
+                channels = selected_channels
+                if isinstance(channels, int):
+                    channels = [channels]
+                if list(channels) == [0]:
+                    return arr
+            raise ValueError(
+                f"Cannot select channel(s) {selected_channels} from {label} with shape {arr.shape}."
+            )
+
+        self.image1_matrix = _select_channels(self.image1_matrix, "image 1")
+        self.image2_matrix = _select_channels(self.image2_matrix, "image 2")
 
 
     def make_safe_bounds(self,buffer_to_image_bounds: int):
@@ -297,7 +310,7 @@ class ImagePair:
         observation_date_2 : str
             Observation date of the second image.
         selected_channels : int | list[int] | tuple[int] | None, optional
-            Channels to select from 3D inputs. Defaults to ``[0, 1, 2]`` when None.
+            Channels to select from 3D inputs. ``None`` keeps the original channels.
         NA_value : float, optional
             If provided, pixels equal to this value are set to 0 in both images.
 
@@ -354,6 +367,9 @@ class ImagePair:
             ([self.image1_matrix, self.image1_transform],
              [self.image2_matrix, self.image2_transform]) = crop_images_to_intersection(file1, file2)
 
+            if selected_channels is not None:
+                self.select_image_channels(selected_channels=selected_channels)
+
             # Store original matrices for true-color alignment output (before harmonization)
             self.image1_matrix_original = self.image1_matrix.copy()
             self.image2_matrix_original = self.image2_matrix.copy()
@@ -405,6 +421,9 @@ class ImagePair:
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2
+
+            if selected_channels is not None:
+                self.select_image_channels(selected_channels=selected_channels)
 
 
             if self.convert_to_3d_displacement:
@@ -533,10 +552,8 @@ class ImagePair:
             buffer_to_image_bounds=max(getattr(self.alignment_parameters, "control_search_extent_px", None))
             + getattr(self.alignment_parameters, "control_cell_size", None)/2)
 
-        # Select image bands
-        if self.image_bands is not None:
-            self.select_image_channels(selected_channels=self.image_bands)
-        elif self.image1_matrix.ndim == 3:
+        # Record selected image bands. Selection already happened before compatibility checks.
+        if self.image_bands is None and self.image1_matrix.ndim == 3:
             self.image_bands = self.image1_matrix.shape[0]
 
 
