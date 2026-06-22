@@ -1,40 +1,9 @@
-import skimage
 import numpy as np
 import scipy.ndimage
 import geopandas as gpd
 from shapely.geometry import Polygon
 
 from ..ConsoleOutput import get_console
-
-
-def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
-    """
-    Applies adaptive histogram equalization to enhance image contrast.
-    
-    This function uses Contrast Limited Adaptive Histogram Equalization (CLAHE)
-    to improve local contrast while limiting noise amplification.
-    
-    Parameters
-    ----------
-    image_matrix : np.ndarray
-        The input image matrix to be enhanced.
-    kernel_size : tuple or int
-        Defines the shape of contextual regions used for local contrast
-        enhancement. If tuple, should be (height, width). If int, a square
-        kernel of that size is used.
-    clip_limit : float
-        Contrast limiting threshold. Higher values allow more contrast
-        enhancement but may increase noise. Typical values are between 0.0
-        and 1.0.
-    
-    Returns
-    -------
-    np.ndarray
-        The contrast-enhanced image matrix.
-    """
-    equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix.astype(np.uint16), kernel_size=kernel_size,
-                                                          clip_limit=clip_limit)
-    return equalized_image
 
 
 def get_optimal_camera_model(image_matrix_shape: tuple, camera_intrinsic_matrix: np.ndarray,
@@ -434,4 +403,3 @@ def undistort_polygon(polygon: gpd.GeoDataFrame, image_shape: tuple, camera_intr
     # Make_valid returns a Geoseries, so turn it to a GeoDataFrame
     undistorted_polygon = gpd.GeoDataFrame(geometry=undistorted_polygon, crs=polygon.crs)
     return undistorted_polygon
-

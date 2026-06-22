@@ -1279,11 +1279,34 @@ def abbr_enhancement(ep) -> str:
         Short code string starting with "E_".
     """
     fc = float_compact
+    image_enhancement = _get(ep, "steps", None)
+    
+    if image_enhancement:
+        step_codes = [_abbr_enhancement_step(step, fc) for step in image_enhancement]
+        step_codes = [code for code in step_codes if code not in (None, "", "NA")]
+        if step_codes:
+            return "E_" + "__".join(step_codes)
+
+    return "E_none"
+
+
+def _abbr_enhancement_step(ep, fc) -> str:
+    """
+    Generate a short code fragment for one image enhancement step.
+
+    Parameters
+    ----------
+    ep : dict or object
+        Enhancement step parameters.
+    fc : callable
+        Float formatting helper.
+
+    Returns
+    -------
+    str
+        Short code fragment without the leading "E_".
+    """
     enhancement_type = _get(ep, "type", "none")
-    
-    if enhancement_type == "none" or not enhancement_type:
-        return "E_none"
-    
     parts = []
     
     if enhancement_type == "clahe":
@@ -1292,25 +1315,12 @@ def abbr_enhancement(ep) -> str:
         parts.append(f"clahe")
         parts.append(f"K{kernel_size}")
         parts.append(f"C{fc(clip_limit)}")
-    elif enhancement_type == "gamma":
-        gamma = _get(ep, "gamma", 1.0)
-        parts.append(f"gamma")
-        parts.append(f"G{fc(gamma)}")
-    elif enhancement_type == "histeq":
-        parts.append(f"histeq")
-    elif enhancement_type == "denoise":
-        denoise_type = _get(ep, "denoise_type", "gaussian")
-        strength = _get(ep, "strength", 1.0)
-        parts.append(f"denoise")
-        parts.append(f"D{denoise_type}")
-        parts.append(f"S{fc(strength)}")
     else:
-        # Unknown enhancement type - just use the type name
-        parts.append(enhancement_type)
+        raise ValueError(f"Unsupported image enhancement type: {enhancement_type}")
     
     # Drop empty/None/NA fragments
     parts = [p for p in parts if p not in (None, "", "NA")]
-    return "E_" + "_".join(parts)
+    return "_".join(parts)
 
 def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     points = getattr(image_pair, "level_of_detection_points", None)

@@ -26,6 +26,7 @@ from typing import Optional
 import logging
 import warnings
 
+from PyImageTrack.DataProcessing.ImageEnhancement import normalize_image_enhancement
 from PyImageTrack.DataProcessing.ImagePreprocessing import undistort_polygon
 
 try:
@@ -657,15 +658,13 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # IMAGE ENHANCEMENT PARAMETERS
     # ==============================
-    enhancement_params = {
-        "type": _get(cfg, "image_enhancement", "type", "none"),
-        "kernel_size": _get(cfg, "image_enhancement", "kernel_size"),
-        "clip_limit": _get(cfg, "image_enhancement", "clip_limit"),
-    }
-    # If enhancement is disabled, force type to "none" for correct folder naming
-    if not do_image_enhancement:
-        enhancement_params["type"] = "none"
-    enhancement_code = abbr_enhancement(enhancement_params)
+    image_enhancement_params = dict(cfg.get("image_enhancement", {}))
+    image_enhancement = normalize_image_enhancement(
+        image_enhancement_params,
+        enabled=do_image_enhancement,
+    )
+    image_enhancement_params["steps"] = image_enhancement
+    enhancement_code = abbr_enhancement(image_enhancement_params)
     
     # Output units code (combined with enhancement for cache key)
     output_units_code = abbr_output_units(output_units_mode)
@@ -924,9 +923,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
             # Image enhancement parameters
-            param_dict["enhancement_type"]                 = enhancement_params.get("type", "none")
-            param_dict["enhancement_kernel_size"]           = enhancement_params.get("kernel_size", 50)
-            param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
+            param_dict["image_enhancement"]                = image_enhancement
             # Output units mode
             param_dict["output_units_mode"]                = output_units_mode
             # Unit name (if specified, for plotting)
@@ -950,9 +947,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 selected_channels=tracking_params.image_bands
             )
 
-            # optional image enhancement (CLAHE) before alignment/tracking
-            if do_image_enhancement and hasattr(image_pair, "equalize_adapthist_images"):
-                image_pair.equalize_adapthist_images()
+            # Optional image enhancement before alignment/tracking.
+            if do_image_enhancement and hasattr(image_pair, "enhance_images"):
+                image_pair.enhance_images()
 
             # alignment with cache
             if do_alignment:

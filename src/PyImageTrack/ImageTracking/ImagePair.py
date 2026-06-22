@@ -37,8 +37,8 @@ from ..DataProcessing.DataPostprocessing import (
 )
 
 # DataPreProcessing
+from ..DataProcessing.ImageEnhancement import apply_image_enhancement
 from ..DataProcessing.ImagePreprocessing import (
-    equalize_adapthist_images,
     undistort_camera_image,
     convert_float_to_uint,
     harmonize_dtypes,
@@ -68,14 +68,14 @@ class ImagePair:
     - Save results (vector/raster products, masks, statistics)
 
     Supported modes include optional camera undistortion, fake georeferencing with
-    synthetic pixel size, CLAHE enhancement, downsampling, and 3D displacement from
+    synthetic pixel size, image enhancement, downsampling, and 3D displacement from
     depth images. Output units can be yearly or total.
 
     Parameters
     ----------
     parameter_dict : dict, optional
         Configuration for alignment, tracking, filtering, output units, georeferencing
-        mode (real vs fake), pixel size overrides, downsample factor, CLAHE settings,
+        mode (real vs fake), pixel size overrides, downsample factor, image enhancement settings,
         camera calibration, and 3D displacement.
 
     Attributes
@@ -161,9 +161,7 @@ class ImagePair:
         self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
         self.camera_to_3d_coordinates_transform = parameter_dict.get("camera_to_3d_coordinates_transform", None)
         # Image enhancement parameters
-        self.enhancement_type = parameter_dict.get("enhancement_type", "none")
-        self.enhancement_kernel_size = parameter_dict.get("enhancement_kernel_size", 50)
-        self.enhancement_clip_limit = parameter_dict.get("enhancement_clip_limit", 0.9)
+        self.image_enhancement = parameter_dict.get("image_enhancement", [])
         # Image bands (delegates to tracking_parameters.image_bands)
         self.image_bands = parameter_dict.get("image_bands")
         # Adaptive tracking window
@@ -1244,23 +1242,18 @@ class ImagePair:
     #     self.calculate_lod(points_for_lod_calculation, filter_parameters)
     #     self.filter_lod_points()
 
-    def equalize_adapthist_images(self):
+    def enhance_images(self):
         """
-        Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) in-place.
+        Apply configured image enhancement steps in-place.
 
-        Uses ``enhancement_kernel_size`` and ``enhancement_clip_limit`` on
-        ``image1_matrix`` and ``image2_matrix``. Mutates the stored matrices.
+        Mutates ``image1_matrix`` and ``image2_matrix``.
 
         Returns
         -------
         None
         """
-        self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
-                                                       kernel_size=self.enhancement_kernel_size,
-                                                       clip_limit=self.enhancement_clip_limit)
-        self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
-                                                       kernel_size=self.enhancement_kernel_size,
-                                                       clip_limit=self.enhancement_clip_limit)
+        self.image1_matrix = apply_image_enhancement(self.image1_matrix, self.image_enhancement)
+        self.image2_matrix = apply_image_enhancement(self.image2_matrix, self.image_enhancement)
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """

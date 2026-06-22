@@ -736,7 +736,7 @@ Recomputes LoD from available points (cache/consistency helper).
 
 ## Image Enhancement Configuration
 
-The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations.
+The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations. One or more enhancement steps can be applied in the configured order.
 
 ### Configuration Section
 
@@ -747,22 +747,22 @@ The pipeline supports optional image enhancement before alignment and tracking. 
 do_image_enhancement = true
 
 [image_enhancement]
-# Enhancement type: "clahe", "none", or future types
-type = "clahe"
-# CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
-kernel_size = 50
-clip_limit = 0.9
+steps = ["clahe"]
+
+# CLAHE improves local contrast; kernel_size controls region size, clip_limit limits contrast and noise.
+clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 ```
 
 ### Enhancement Types
 
 #### CLAHE (Contrast Limited Adaptive Histogram Equalization)
-- `type = "clahe"`
+- Add `"clahe"` to `steps`
+- `clahe = [kernel_size, clip_limit]`
 - `kernel_size`: Size of the grid for histogram equalization
 - `clip_limit`: Contrast limiting threshold
 
 #### None (no enhancement)
-- `type = "none"` or omit the section
+- Set `do_image_enhancement = false` or use `steps = []`.
 
 ### Output Path Structure
 
@@ -1493,9 +1493,7 @@ Parameters are read from `parameter_dict`. Common keys:
 - ``camera_intrinsics_matrix``        # 3x3 matrix (if undistortion or 3D conversion is enabled)
 - ``camera_distortion_coefficients``  # 2- or 4-element array (OpenCV format)
 - ``camera_to_3d_coordinates_transform``  # optional 4x4 homogeneous transform for output coordinates
-- ``enhancement_type``                # image enhancement type ("clahe", "none")
-- ``enhancement_kernel_size``         # kernel size for CLAHE
-- ``enhancement_clip_limit``          # clip limit for CLAHE
+- ``image_enhancement``              # ordered image enhancement steps
 
 #### _effective_pixel_size() -> float
 Returns CRS units per pixel (assumes square pixels).
@@ -1672,8 +1670,8 @@ Runs outlier filtering, LoD calculation, and LoD filtering.
 #### Returns
 ``None``
 
-#### equalize_adapthist_images()
-Applies CLAHE to both images.
+#### enhance_images()
+Applies configured image enhancement steps to both images.
 
 #### Returns
 ``None``
@@ -1734,8 +1732,8 @@ Undistorts a camera image using OpenCV and returns the undistorted image cropped
 #### Returns
 ``image_matrix_undistorted`` : np.ndarray
     The undistorted image matrix, cropped to a rectangular shape where all pixels are valid.
-### equalize_adapthist_images(image_matrix, kernel_size, clip_limit)
-Applies CLAHE (adaptive histogram equalization) using scikit-image.
+### apply_image_enhancement(image_matrix, image_enhancement)
+Applies configured image enhancement steps using the ordered `image_enhancement` list.
 
 ### convert_float_to_uint(image_matrix)
 Converts float arrays to unsigned integer representation for downstream processing.

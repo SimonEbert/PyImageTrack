@@ -124,19 +124,15 @@ do_alignment = true      # Co-register image pairs
 do_tracking = true       # Detect movement between images
 do_filtering = true      # Remove outliers from tracking results
 
-# Optional image enhancement via CLAHE (Contrast Limited Adaptive Histogram Equalization)
-# Improves contrast in areas with low contrast (e.g., shadows)
+# Optional image enhancement before alignment and tracking.
+# If enabled, methods are applied in the order listed in steps.
 do_image_enhancement = false
 
 [image_enhancement]
-# Enhancement type: "clahe", "none", or future types
-type = "clahe"
+steps = ["clahe"]
 
-# CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
-# kernel_size: Size of the grid for histogram equalization (larger = more global contrast)
-# clip_limit: Contrast enhancement limit (higher = more contrast, but may amplify noise)
-kernel_size = 50
-clip_limit = 0.9
+# CLAHE improves local contrast; kernel_size controls region size, clip_limit limits contrast and noise.
+clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 
 # ==============================================================================
 # SECTION 3: ALIGNMENT
