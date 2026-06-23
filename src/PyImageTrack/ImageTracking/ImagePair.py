@@ -870,8 +870,7 @@ class ImagePair:
                                                self.camera_intrinsics_matrix,
                                                self.camera_distortion_coefficients)
             self.safe_image_bounds_tracking = self.make_safe_bounds(
-                max(getattr(self.tracking_parameters, "search_extent_px", None))
-                + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
+                np.max(np.array(getattr(self.tracking_parameters, "search_extent_px", None))))
 
         if not self.images_aligned:
             console = get_console()
@@ -890,13 +889,17 @@ class ImagePair:
             tracking_area = gpd.GeoDataFrame(tracking_area.intersection(self.safe_image_bounds_tracking))
             tracking_area.rename(columns={0: 'geometry'}, inplace=True)
             tracking_area.set_geometry('geometry', inplace=True)
-
+        print(tracking_area.geometry.iloc[0])
         points_to_be_tracked = grid_points_on_polygon_by_distance(
             polygon=tracking_area,
             distance_of_points=spacing_crs,
             distance_px=dp_px,
             pixel_size=px_size,
         )
+        print(self.safe_image_bounds_tracking)
+        print(np.max(points_to_be_tracked.geometry.x))
+        print(np.min(points_to_be_tracked.geometry.y))
+
 
         if len(points_to_be_tracked) == 0:
             console.warning("No tracking points fall within image bounds!")
@@ -909,6 +912,10 @@ class ImagePair:
         # calculate the years between observations from the two given observation dates
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
+
+        print(np.max(tracked_points["row"]))
+        print(np.max(tracked_points["column"]))
+
         if self.convert_to_3d_displacement:
             georeferenced_tracked_points = calculate_displacement_from_depth_images(
                 tracked_points, depth_image_time1=self.depth_image1,
@@ -1142,10 +1149,11 @@ class ImagePair:
         else:
             self.filter_parameters = filter_parameters_lod_points
 
-        if self.safe_image_bounds_tracking is not None:
+        if self.safe_image_bounds_tracking is None:
             self.safe_image_bounds_tracking = self.make_safe_bounds(
                 max(getattr(self.tracking_parameters, "search_extent_px", None))
                 + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
+
 
         points_for_lod_calculation = gpd.GeoDataFrame(
             points_for_lod_calculation[points_for_lod_calculation.geometry.intersects(self.safe_image_bounds_tracking.geometry.iloc[0])])

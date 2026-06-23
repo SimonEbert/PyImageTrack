@@ -3,6 +3,8 @@ import pandas as pd
 import numpy as np
 import logging
 
+from PyImageTrack.ConsoleOutput import get_console
+
 
 def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.ndarray,
                                            camera_intrinsics_matrix: np.ndarray,
@@ -136,6 +138,17 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         and the Z-coordinate is given by the optical axis of the camera. Otherwise the 'x', 'y' and 'z' coordinates
         belong to the coordinate system corresponding to the specified 'camera_to_3d_coordinates_transform'.
     """
+    if (any(tracked_points["row"].values+tracked_points["movement_row_direction"].values > depth_image_time2.shape[0]) or
+        any(tracked_points["column"].values+tracked_points["movement_column_direction"].values > depth_image_time2.shape[1])):
+        console = get_console()
+        console.warning("Removed points with movement vectors leaving the safe image bounds. This may be due to "
+                        "erroneous tracking at the boundaries and is fine in most cases. However, check if relevant "
+                        "movement vectors were removed and increase the image extent or decrease the respective "
+                        "tracking/alignment area if needed.")
+        tracked_points = tracked_points[
+            (tracked_points["row"].values+tracked_points["movement_row_direction"].values < depth_image_time2.shape[0]) &
+            (tracked_points["column"].values+tracked_points["movement_column_direction"].values < depth_image_time2.shape[1])].copy()
+
 
     points1 = np.array([tracked_points["row"].values,
                         tracked_points["column"].values], dtype=np.float32).transpose()
