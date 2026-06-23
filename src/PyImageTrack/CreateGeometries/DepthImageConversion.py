@@ -63,8 +63,6 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
         f"Depth image width {depth_image.shape[1]} is smaller than max column index {np.max(point_columns)}"
 
     point_depths = depth_image[point_rows, point_columns]
-    # Swap row-major style to x-axis major style
-    # points_uv = np.hstack((points[:, [1,0]], np.ones((len(points),1))))
     points_uv = np.column_stack((point_columns, point_rows, np.ones(len(points))))
     points_normalized = np.linalg.inv(camera_intrinsics_matrix) @ points_uv.transpose()
     points_normalized = points_normalized

@@ -1051,10 +1051,12 @@ class ImagePair:
         tracked_points : gpd.GeoDataFrame
             The tracked points which can be used for calculating the LoD.
         """
-        points = points_for_lod_calculation.intersection(self.safe_image_bounds_tracking.geometry[0])
+        points = points_for_lod_calculation[points_for_lod_calculation.geometry.intersects(self.safe_image_bounds_tracking.geometry.iloc[0])]
+
         points = points[~points.geometry.is_empty]
+
         points = gpd.GeoDataFrame(
-            geometry=points,
+            geometry=points["geometry"],
             crs=self.crs
         )
 
@@ -1146,7 +1148,8 @@ class ImagePair:
                 + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
 
         points_for_lod_calculation = gpd.GeoDataFrame(
-            points_for_lod_calculation.intersection(self.safe_image_bounds_tracking.geometry[0]))
+            points_for_lod_calculation[points_for_lod_calculation.geometry.intersects(self.safe_image_bounds_tracking.geometry.iloc[0])])
+
         points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
         points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
