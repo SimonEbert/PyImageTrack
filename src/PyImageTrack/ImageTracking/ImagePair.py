@@ -1365,7 +1365,7 @@ class ImagePair:
             ) as dst:
                 dst.write(raster_to_write)
 
-                # --- Save input images if requested ---
+        # --- Save input images if requested ---
 
         if "first_image_matrix_jpg" in save_files:
             _save_raster_as_tif(
