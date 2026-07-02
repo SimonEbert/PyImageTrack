@@ -190,7 +190,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
             raise ValueError(f"Could not plot using column '{displacement_column_name}': {e}")
 
     else:
-        point_movement.plot(ax=ax, color=point_color, markersize=1, marker=".", alpha=1.0,
+        point_movement.plot(ax=ax, color=point_color, markersize=point_size, marker=".", alpha=1.0,
                                 vmin=0)
 
     ax.ticklabel_format(scilimits=(-3, 4))

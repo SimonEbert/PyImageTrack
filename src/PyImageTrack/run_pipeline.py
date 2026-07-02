@@ -830,8 +830,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             console.info_verbose(f"File 1: {filename_1}")
             console.info_verbose(f"File 2: {filename_2}")
 
+            image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
+
             try:
-                image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
                 # compute years_between (hour-precise)
                 delta_hours = (dt2 - dt1).total_seconds() / 3600.0
                 years_between = delta_hours / (24.0 * 365.25)
