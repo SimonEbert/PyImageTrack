@@ -344,4 +344,7 @@ def make_safe_bounds_from_buffer(px_size, buffer, base_polygon, crs):
     safe_bounds = gpd.GeoDataFrame(geometry=safe_bounds, crs=crs)
     safe_bounds = safe_bounds.rename(columns={0: "geometry"})
     safe_bounds.set_geometry("geometry", inplace=True)
+    # Fallback for non-georeferenced situation
+    if crs is None:
+        safe_bounds = safe_bounds.geometry.map(lambda g: shapely.ops.transform(lambda x, y: (-y, -x), g))
     return safe_bounds
