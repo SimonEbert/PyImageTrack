@@ -1450,9 +1450,7 @@ class ImagePair:
 
         if "second_image_matrix_jpg" in save_files:
 
-            print(self.image2_matrix.max())
             image2_matrix_uint = (self.image2_matrix * 255/self.image2_matrix.max())
-            rasterio.plot.show(image2_matrix_uint.astype(np.uint8))
             _save_raster_as_file(
                 path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
                 raster=image2_matrix_uint.astype(np.uint8),
