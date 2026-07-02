@@ -889,16 +889,12 @@ class ImagePair:
             tracking_area = gpd.GeoDataFrame(tracking_area.intersection(self.safe_image_bounds_tracking))
             tracking_area.rename(columns={0: 'geometry'}, inplace=True)
             tracking_area.set_geometry('geometry', inplace=True)
-        print(tracking_area.geometry.iloc[0])
         points_to_be_tracked = grid_points_on_polygon_by_distance(
             polygon=tracking_area,
             distance_of_points=spacing_crs,
             distance_px=dp_px,
             pixel_size=px_size,
         )
-        print(self.safe_image_bounds_tracking)
-        print(np.max(points_to_be_tracked.geometry.x))
-        print(np.min(points_to_be_tracked.geometry.y))
 
 
         if len(points_to_be_tracked) == 0:
@@ -913,8 +909,6 @@ class ImagePair:
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
 
-        print(np.max(tracked_points["row"]))
-        print(np.max(tracked_points["column"]))
 
         if self.convert_to_3d_displacement:
             georeferenced_tracked_points = calculate_displacement_from_depth_images(
