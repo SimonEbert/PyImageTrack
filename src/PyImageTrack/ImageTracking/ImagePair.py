@@ -344,7 +344,7 @@ class ImagePair:
 
             crs_obj = PyprojCRS.from_user_input(file1.crs)
 
-            self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
+            self.coordinate_system_unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "pixel"
 
             # Spatial intersection (true georef)
             poly1 = box(*file1.bounds)
@@ -1651,7 +1651,7 @@ class ImagePair:
                         "\t\t" + str(int(tr_all[
                                              "is_movement_rate_standard_deviation_outlier"].sum())) + " movement rate standard deviation outliers\n"
                     )
-                if getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None):
+                if (getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None) is not None) & (self.displacement_column_name == "3d_displacement_distance_per_year"):
                     statistics_file.write(
                         "\t\t" + str(int(tr_all["is_depth_fraction_outlier"].sum())) + " depth fraction outliers\n"
                     )
