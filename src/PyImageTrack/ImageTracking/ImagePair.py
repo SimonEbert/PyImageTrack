@@ -1438,7 +1438,7 @@ class ImagePair:
                 # --- Save input images if requested ---
 
         if "first_image_matrix_jpg" in save_files:
-            image1_matrix_uint = (self.image1_matrix * 255/self.image1_matrix.max())
+            image1_matrix_uint = (self.image1_matrix * self.image1_matrix_original.max()/self.image1_matrix.max())
 
             _save_raster_as_file(
                 path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
@@ -1449,8 +1449,7 @@ class ImagePair:
             )
 
         if "second_image_matrix_jpg" in save_files:
-
-            image2_matrix_uint = (self.image2_matrix * 255/self.image2_matrix.max())
+            image2_matrix_uint = (self.image2_matrix * self.image2_matrix_original.max()/self.image2_matrix.max())
             _save_raster_as_file(
                 path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
                 raster=image2_matrix_uint.astype(np.uint8),
