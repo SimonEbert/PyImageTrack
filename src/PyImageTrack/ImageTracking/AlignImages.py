@@ -237,7 +237,7 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
             console.print(line, color='dim')
     
     console.processing("Resampling second image matrix with transformation matrix\n" + str(sampling_transformation_matrix) +
-          "\nThis may take some time.")
+          "\nThis may take a lot of time, especially for large multi-channel images.")
     moved_image2_matrix = move_image_matrix_from_transformation(image2_matrix, sampling_transformation_matrix,
                                                                 target_shape=image1_matrix.shape)
     console.success("Second image resampled.")
