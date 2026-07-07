@@ -3,6 +3,35 @@
 Version: 0.2
 Date: 2026-02-18
 
+
+<!-- TOC -->
+* [PyImageTrack Documentation](#pyimagetrack-documentation)
+  * [Overview](#overview)
+  * [Running The Pipeline](#running-the-pipeline)
+  * [Command-Line Interface Options](#command-line-interface-options)
+  * [Batch Processing](#batch-processing)
+  * [Entry point for Python Scripts](#entry-point-for-python-scripts)
+  * [Module: BatchProcessor.py](#module-batchprocessorpy)
+  * [Module: ConsoleOutput.py](#module-consoleoutputpy)
+  * [Configuration Files (TOML)](#configuration-files-toml)
+  * [Module: run_pipeline.py](#module-run_pipelinepy)
+  * [Module: Utils.py](#module-utilspy)
+  * [Image Enhancement Configuration](#image-enhancement-configuration)
+  * [Module: Cache.py](#module-cachepy)
+  * [Module: Parameters](#module-parameters)
+  * [Module: CreateGeometries/HandleGeometries.py](#module-creategeometrieshandlegeometriespy)
+  * [Module: CreateGeometries/DepthImageConversion.py](#module-creategeometriesdepthimageconversionpy)
+  * [Module: ImageTracking/TrackingResults.py](#module-imagetrackingtrackingresultspy)
+  * [Module: ImageTracking/TrackMovement.py](#module-imagetrackingtrackmovementpy)
+  * [Module: ImageTracking/AlignImages.py](#module-imagetrackingalignimagespy)
+  * [Module: ImageTracking/ImageInterpolator.py](#module-imagetrackingimageinterpolatorpy)
+  * [Module: ImageTracking/ImagePair.py](#module-imagetrackingimagepairpy)
+  * [Module: DataProcessing/ImagePreprocessing.py](#module-dataprocessingimagepreprocessingpy)
+  * [Module: DataProcessing/DataPostprocessing.py](#module-dataprocessingdatapostprocessingpy)
+  * [Module: Plots/MakePlots.py](#module-plotsmakeplotspy)
+  * [Package __init__.py](#package-__init__py)
+<!-- TOC -->
+
 ## Overview
 PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and output visualization.
 The main entry point is the CLI command `pyimagetrack-run`, configured via TOML files in `configs/`.
@@ -71,6 +100,7 @@ pyimagetrack-run --config configs/example_config.toml --no-color
 ```
 
 ## Batch Processing
+
 
 PyImageTrack supports batch processing of multiple configurations with automatic filtering based on identifiers extracted from filenames. This is useful when processing multiple rock glaciers or similar datasets.
 
@@ -182,6 +212,77 @@ if __name__ == "__main__":
 ```
 This is due to the tracking routine making use of the multiprocessing package for parallelization and without this
 safety measure, the tracking routine will be called several times with identical parameters.
+
+
+## Tracking of oblique images
+
+PyImageTrack provides the possibility to track oblique non-georeferenced images. The images can be provided in different
+file formats (e.g. .jpg, .png, .tiff) and will be read using a trivial coordinate reference system based on the image's
+pixels. Thus, they will be treated similarly as a non-georeferenced image in GIS systems. It is therefore
+possible to define the moving and stable areas as shapefiles for example in QGIS, and remove their (incorrect) CRS
+information after creation, by deleting the associated .prj file. If the flag `use_no_georeferencing` is set to `true` 
+in the respective configuration file, the whole tracking pipeline will work in the pixel coordinate system given by the
+image, and thus not require any georeference information. However, this means that also any resulting velocities will be
+given in pixels. For an alternative to this, see [Extracting 3d velocities from depth images](#extracting-3d-velocities-from-depth-images)
+
+## Extracting 3d velocities from depth images
+
+For non-georeferenced, oblique images it is possible to convert calculated pixel-velocities obtained as described in 
+[Tracking of oblique images](#tracking-of-oblique-images) to 3d-velocities in metre by providing corresponding depth 
+images. This behaviour is triggered by the flag `convert_to_3d_displacement` in the configuration file and relies on 
+so-called depth-images that are further described in [Conversion from depth images to 3d-coordinates](#conversion-from-depth-images-to-3d-coordinates).
+Corresponding depth-images are expected to be stored in a subfolder named `Depth_images` of the folder that contains the 
+tracked images (given by `input_folder`in the config file). For a given image with filename `image_filename.jpg`, the
+corresponding depth-image is expected to be called `image_filename_depth.tiff`, e.g. for an image `image_2019-07-03_id9109.jpg`, 
+the depth-image must be called `image_2019-07-03_id9109_depth.tiff`. Until now, only `.tiff`files are supported for
+depth images and the behaviour of calculating 3d-velocities for georeferenced images is untested.
+
+### Conversion from depth images to 3d-coordinates
+
+A camera frame defines a 3d-coordinate system via its width and height axes (typically called `x`- and `y`-axis) and the
+axis that is perpendicular to the two (the `z`-axis), which we call the depth. The depth of a single pixel is therefore
+given by the distance of the respective world point to the camera perpendicular to the camera plane. A depth-image is a 
+one-channel image that for each pixel of the original image contains the corresponding depth (e.g. in metre). Using this
+information, we can calculate the 3d position of every pixel and thus extract 3d velocities from pixel displacements.
+This behaviour is triggered by the flag `convert_to_3d_displacement` in the config file and adds columns `x_pre`, `y_pre`
+and `z_pre` as well as the respective `_post` to the tracking_results dataframe that is saved after each tracking. These
+values are initially given in the camera coordinate system but can be transformed to an arbitrary 3d coordinate system
+by supplying the affine transformation matrix (being a 4d matrix with the last row [0,0,0,1]) from the camera coordinate
+system to the new 3d coordinate system. In that case the 3d location columns  `x_pre`, `y_pre`, `z_pre`, `x_post`,
+`y_post`, and `z_post` will correspond to the new coordinate system.
+
+3d-displacements are calculated by subtracting the position of a matched point in the second image from its position in
+the first image. 
+
+### Filtering 3d displacement results
+
+It is important to note that displacements in the `z`-direction (the direction perpendicular to the image plane) are
+solely based on the difference of the depth for the two coordinates. Thus, they tend to be less reliable than
+displacements in the `x-y` image plane. It is therefore possible to limit the fraction of displacement that stems from
+depth changes by using the `maximal_fraction_depth_change_of_3d_displacement` flag in the `filter` section. This is
+usually a less critical value, but setting it to a high value, such as 0.8 prevents clear outliers from being considered
+as valid tracked points. This may be particularly useful if the same depth image is being used for two oblique images
+(although the camera position with high lateral displacement (within the image plane), would be more important in this
+latter case).
+
+
+### A note on distortions and intrinsic matrices
+Almost all camera lenses produce images that are distorted, which needs to be considered when calculating 3d positions
+from depth data. The usual distortion coefficients (up to 4) can be supplied as a list in the config file to account for
+lens distortion. When distortion coefficients are given, all input data is assumed to refer to the distorted input
+images, i.e. for example tracking and stable polygons should be defined on the original distorted image. They will be
+modified accordingly during the undistortion step.
+
+Since distortion coefficients are not always readily available, undistorting the images can be switched off by setting
+the flag `undistort_image` to `false`.
+
+Contrary to the distortion coefficients, the intrinsic matrix needs to be supplied for the calculation of 3d-coordinates
+of non-georeferenced images. If the intrinsic matrix is not available, it may be sufficient to supply a matrix of the form
+
+    [[w, 0, w/2],
+     [0, h, h/2],
+     [0, 0, 1]]
+where `w` is the width of the image and `h`is its height.
 
 ## Module: BatchProcessor.py
 Utilities for class-based batch execution over multiple config files.
