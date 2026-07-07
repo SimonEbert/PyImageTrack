@@ -50,7 +50,7 @@ from .AlignImages import align_images_lsm_scarce, move_image_matrix_from_transfo
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
-    plot_movement_of_points_with_valid_mask, )
+    plot_movement_of_points_with_valid_mask, plot_raster_and_geometry, )
 # Date Handling
 from ..Utils import parse_date
 from ..ConsoleOutput import get_console
@@ -259,6 +259,8 @@ class ImagePair:
         if len(self.image1_matrix.shape) == 3:
             self.image1_matrix = np.squeeze(self.image1_matrix[selected_channels, :, :])
             self.image2_matrix = np.squeeze(self.image2_matrix[selected_channels, :, :])
+            self.image1_matrix_original = np.squeeze(self.image1_matrix_original[selected_channels, :, :])
+            self.image2_matrix_original = np.squeeze(self.image2_matrix_original[selected_channels, :, :])
 
 
     def make_safe_bounds(self,buffer_to_image_bounds: int):
@@ -371,6 +373,8 @@ class ImagePair:
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
+                self.image1_matrix_original = self._downsample_array(self.image1_matrix_original, factor)
+                self.image2_matrix_original = self._downsample_array(self.image2_matrix_original, factor)
                 self.image1_transform = self._downsample_transform(self.image1_transform, factor)
                 self.image2_transform = self._downsample_transform(self.image2_transform, factor)
             
