@@ -135,13 +135,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         return
 
     # --- Estimate median point spacing in map units ---
-    coords = np.vstack([point_movement.geometry.x, point_movement.geometry.y]).T
 
-    # Sort by x then y for fast nearest-neighbor estimate
-    coords_sorted = coords[np.lexsort((coords[:, 1], coords[:, 0]))]
-    deltas = np.sqrt(np.sum(np.diff(coords_sorted, axis=0) ** 2, axis=1))
-    positive_deltas = deltas[deltas > 0]
-    median_spacing = np.nanmedian(positive_deltas) if positive_deltas.size > 0 else np.nan
+    median_spacing = np.nanmedian(np.diff(np.unique(point_movement["column"].to_numpy())))
 
     if not np.isfinite(median_spacing):
         median_spacing = 1.0
@@ -156,7 +151,7 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         masking_polygon = masking_polygon.to_crs(crs=point_movement.crs)
         point_movement = gpd.overlay(point_movement, masking_polygon, how="intersection")
 
-    point_size = np.clip((median_spacing ** 2) * 0.04, 2, 30)
+    point_size = np.clip((median_spacing ** 2) * 0.02, 2, 30)
 
     # Determine displacement column name (supports both per_year and total modes)
     displacement_column_name = None
@@ -202,8 +197,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 
     # Arrow plotting
     if show_arrows:
-        arrow_spacing = median_spacing * 3
-        arrow_length = median_spacing * 1.2
+        arrow_spacing = median_spacing * 7
+        arrow_length = median_spacing * 5
 
         xmin, ymin, xmax, ymax = point_movement.total_bounds
 
