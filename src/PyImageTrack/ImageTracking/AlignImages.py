@@ -188,6 +188,19 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     console = get_console()
     total_points = len(reference_area_point_grid)
     valid_points = len(tracked_control_pixels_valid)
+
+    if valid_points < 6:
+        console.warning("Was only able to track " + str(valid_points) + " valid points for alignment such that the "
+                                                                       "calculation of the alignment transformation is "
+                                                                       "underdetermined (needs at least 6 points).\n"
+                                                                       "This may be due to insufficient image quality "
+                                                                       "for the chosen alignment cross-correlation "
+                                                                       "threshold of "
+                         + str(alignment_parameters.cross_correlation_threshold_alignment) + ".\nAborting alignment of images.")
+        if return_alignment_transformation_matrix:
+            return [image1_matrix, image2_matrix, tracked_control_pixels_valid, np.array([[1, 0, 0],[0,1,0]])]
+        return [image1_matrix, image2_matrix, tracked_control_pixels_valid]
+
     percentage = (valid_points / total_points * 100) if total_points > 0 else 0
     console.success(f"Used {valid_points} pixels for alignment ({percentage:.1f}% of {total_points} points passed threshold).")
     tracked_control_pixels_valid["new_row"] = (tracked_control_pixels_valid["row"]
