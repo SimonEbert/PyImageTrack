@@ -2,6 +2,7 @@ import geopandas as gpd
 import pandas as pd
 import numpy as np
 import logging
+import datetime as dt
 
 from PyImageTrack.ConsoleOutput import get_console
 
@@ -83,7 +84,7 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
 
 def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth_image_time1: np.ndarray,
                                              depth_image_time2: np.ndarray, camera_intrinsics_matrix: np.ndarray,
-                                             years_between_observations: float,
+                                             time_between_observations: dt.timedelta,
                                              camera_to_3d_coordinates_transform: np.ndarray = None,
                                              output_unit_mode: str = "per_year") -> gpd.GeoDataFrame:
     """
@@ -111,9 +112,9 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
                                                                         [0, 0, 1]]
         This matrix is used (if applicable together with 'camera_to_3d_coordinates_transform') to transform points
         in the image coordinate system to 3d points.
-    years_between_observations: float
-        The difference in time (given in years) between the two observations. Used to normalize displacements to
-        full years and thereby obtaining comparable velocities
+    time_between_observations: dt.timedelta
+        The difference in time as timedelta object between the two observations. Used to normalize displacements to
+        full time units and thereby obtaining comparable velocities
     camera_to_3d_coordinates_transform: np.ndarray = None
         In some cases it might be useful to get the position of tracked points in a specific 3d coordinate system
         (e.g. when georeferencing tracked points afterwards using their 3d positions). In this case there is the
@@ -180,12 +181,22 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
     georeferenced_tracked_pixels.loc[
         np.isnan(georeferenced_tracked_pixels["3d_displacement_distance"]),
         "valid"] = False
-    
+
     if output_unit_mode == "total":
         georeferenced_tracked_pixels["3d_displacement_distance_total"] = georeferenced_tracked_pixels["3d_displacement_distance"]
-    else:  # per_year
-        georeferenced_tracked_pixels["3d_displacement_distance_per_year"] \
-            = georeferenced_tracked_pixels["3d_displacement_distance"] / years_between_observations
+    elif output_unit_mode == "per_year":  # per_year
+        georeferenced_tracked_pixels["3d_displacement_distance_per_year"] = (georeferenced_tracked_pixels["3d_displacement_distance"]
+                                                                       / (time_between_observations.total_seconds() / (86400 * 365.25)))
+    elif output_unit_mode == "per_second":
+        georeferenced_tracked_pixels["3d_displacement_distance_per_second"] = (georeferenced_tracked_pixels["3d_displacement_distance"]
+                                                                        / time_between_observations.total_seconds())
+
+    else:
+        raise ValueError("Did not recognize output unit mode " + output_unit_mode + ". Expected 'total', 'per_year',"
+                                                                                    " or 'per_second'.")
+
+
+
 
     return georeferenced_tracked_pixels
 

@@ -81,7 +81,8 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
-                            save_path: str = None, show_arrows: bool = True, unit_name: str = None,vmin=0,vmax=None):
+                            save_path: str = None, show_arrows: bool = True, unit_name_distance: str = None,
+                            unit_name_time: str = None,vmin=0,vmax=None):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -113,8 +114,10 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         saved.
     show_arrows: bool = True
         Wether to show direction arrows on the resulting image
-    unit_name: str = None
-        Name of the unit to display in the plot
+    unit_name_distance: str = None
+        Name of the unit for distances to display in the plot (e.g. cm, m, ...)
+    unit_name_time: str = None
+        Name of the unit for time to display in the plot (e.g. year, month, day, ...)
     Returns
     ----------
     None
@@ -133,6 +136,12 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         if save_path is not None and fig is not None:
             fig.savefig(save_path, bbox_inches='tight')
         return
+
+    # Fallback for None unit names
+    if unit_name_distance is None:
+        unit_name_distance = "meter"
+    if unit_name_time is None:
+        unit_name_time = "year"
 
     # --- Estimate median point spacing in map units ---
 
@@ -155,30 +164,34 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 
     # Determine displacement column name (supports both per_year and total modes)
     displacement_column_name = None
-    for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_year",
-                "movement_distance_total", "movement_distance_per_year"]:
+    for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_second",
+                "3d_displacement_distance_per_hour", "3d_displacement_distance_per_year",
+                "movement_distance_total", "movement_distance_per_second",
+                "movement_distance_per_hour", "movement_distance_per_year"]:
         if col in list(point_movement.columns):
             displacement_column_name = col
             break
-    
+
     if displacement_column_name is None:
         raise ValueError("Could not find any displacement column. "
-                         "Expected one of: 'movement_distance_per_year', 'movement_distance_total', "
-                         "'3d_displacement_distance_per_year', or '3d_displacement_distance_total'.")
+                         "Expected one of: '3d_displacement_distance_total', '3d_displacement_distance_per_second',"
+                "'3d_displacement_distance_per_hour', '3d_displacement_distance_per_year',"
+                "'movement_distance_total', 'movement_distance_per_second',"
+                "'movement_distance_per_hour', 'movement_distance_per_year'")
     legend_title_part = "Point velocity in "
 
-    if unit_name is None:
+    if unit_name_distance is None:
         if point_movement.crs is not None:
             crs_obj = PyprojCRS.from_user_input(point_movement.crs)
-            unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
+            unit_name_distance = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
         else:
-            unit_name = "pixel"
+            unit_name_distance = "pixel"
 
 
     if point_color is None:
         try:
             point_movement.plot(ax=ax, column=displacement_column_name, legend=True, markersize=point_size, marker=".",
-                                alpha=1.0,legend_kwds={"label":legend_title_part + unit_name + " / year"},
+                                alpha=1.0,legend_kwds={"label":legend_title_part + unit_name_distance + " / " + unit_name_time},
                                 vmin=vmin,vmax=vmax
                                     )
         except Exception as e:
@@ -234,12 +247,12 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
                 zorder=5
             )
 
-    if displacement_column_name == "3d_displacement_distance_per_year":
-        plt.title("3d-displacement distance per year")
+    if displacement_column_name[0:2] == "3d":
+        plt.title("3d-displacement distance per " + unit_name_time)
         ax.set_xlabel("Pixel (columns)")
         ax.set_ylabel("Pixel (rows)")
     else:
-        plt.title("Movement velocity in " + unit_name + " per year")
+        plt.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time)
 
 
     if show_figure:
@@ -251,7 +264,9 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_transform,
                                             point_movement: gpd.GeoDataFrame,
                                             save_path: str = None,
-                                            unit_name: str = None,vmin=0,vmax=None):
+                                            unit_name_distance: str = None,
+                                            unit_name_time: str = "year",
+                                            vmin=0,vmax=None):
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
     colour scale, while the movement direction is shown with arrows for selected pixels.
@@ -269,8 +284,10 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     save_path : str = None
         The file location, where the created plot is stored. When no path is given (the default), the figure is not
         saved.
-    unit_name : str = None
-        The unit name to label the colorbar of displacement values
+    unit_name_distance : str = None
+        The unit name of distances to label the colorbar of displacement values
+    unit_name_time : str = "year"
+        The unit name for time to label the plots
     vmin,vmax=0,None
         Bounds of the colorscale for showing velocities. If not supplied, default to minimum and maximum valid velocities
     Returns
@@ -284,7 +301,9 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray",
                             show_arrows=False, fig=fig, ax=ax)
     plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None,
-                            unit_name=unit_name,vmin=vmin,vmax=vmax)
+                            unit_name_distance=unit_name_distance,
+                            unit_name_time=unit_name_time,
+                            vmin=vmin,vmax=vmax)
 
     if save_path is None:
         fig.show()

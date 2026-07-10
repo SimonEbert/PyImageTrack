@@ -10,9 +10,10 @@ from shapely.geometry import box
 import scipy
 import sklearn
 from pathlib import Path
+import datetime as dt
 from pyproj import CRS as PyprojCRS
 
-from ..Utils import make_effective_extents_from_deltas, normalize_image_shape
+from ..Utils import make_effective_extents_from_deltas, normalize_image_shape, extract_datetime_from_token
 
 # Parameter classes
 from ..Parameters.TrackingParameters import TrackingParameters
@@ -52,7 +53,6 @@ from ..Plots.MakePlots import (
     plot_movement_of_points,
     plot_movement_of_points_with_valid_mask, plot_raster_and_geometry, )
 # Date Handling
-from ..Utils import parse_date
 from ..ConsoleOutput import get_console
 
 
@@ -148,7 +148,8 @@ class ImagePair:
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
         self.image_bands = parameter_dict.get("image_bands", None)
-        self.coordinate_system_unit_name = parameter_dict.get("unit_name", None)
+        self.coordinate_system_unit_name = parameter_dict.get("unit_name_distance", None)
+        self.time_between_observations = None
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
@@ -171,15 +172,10 @@ class ImagePair:
         # Output units mode
         self.output_units_mode = parameter_dict.get("output_units_mode", "per_year")
         if self.convert_to_3d_displacement:
-            if self.output_units_mode == "total":
-                self.displacement_column_name = "3d_displacement_distance_total"
-            else:
-                self.displacement_column_name = "3d_displacement_distance_per_year"
+            self.displacement_column_name = "3d_displacement_distance_" + self.output_units_mode
         else:
-            if self.output_units_mode == "total":
-                self.displacement_column_name = "movement_distance_total"
-            else:
-                self.displacement_column_name = "movement_distance_per_year"
+            self.displacement_column_name = "movement_distance_" + self.output_units_mode
+
         self.safe_image_bounds_tracking = None
         self.safe_image_bounds_alignment = None
 
@@ -272,8 +268,9 @@ class ImagePair:
         return safe_bounds
 
 
-    def load_images_from_file(self, filename_1: str, observation_date_1: str, filename_2: str, observation_date_2: str,
-                              selected_channels=None, NA_value: float = None):
+    def load_images_from_file(self, filename_1: str, observation_date_1: str | dt.datetime,
+                              filename_2: str, observation_date_2: str,selected_channels:int | list[int] | tuple[int] | None,
+                              NA_value: float = None):
         """
         Load two image files, crop/align extents, harmonize dtypes/resolution, and store metadata.
 
@@ -363,6 +360,8 @@ class ImagePair:
             # Check channel compatibility
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
 
+            self.select_image_channels(selected_channels)
+
             # Harmonize datatypes
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
 
@@ -398,12 +397,12 @@ class ImagePair:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
                 arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
 
-            # Automatically convert float images to uint16 for better alignment
 
             # Store original matrices for true-color alignment output (before harmonization and dtype change)
             self.image1_matrix_original = arr1.copy()
             self.image2_matrix_original = arr2.copy()
 
+            # Automatically convert float images to uint16 for better alignment
             arr1 = convert_float_to_uint(arr1)
             arr2 = convert_float_to_uint(arr2)
 
@@ -453,7 +452,9 @@ class ImagePair:
 
             # Check channel compatibility for non-georeferenced images
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
-            
+            self.select_image_channels(selected_channels)
+
+
             # Harmonize dtypes (may already be uint16, but verifies)
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
             
@@ -464,8 +465,9 @@ class ImagePair:
             if factor > 1:
                 self.image1_matrix = self._downsample_array(self.image1_matrix, factor)
                 self.image2_matrix = self._downsample_array(self.image2_matrix, factor)
-                self.depth_image1 = self._downsample_array(self.depth_image1, factor)
-                self.depth_image2 = self._downsample_array(self.depth_image2, factor)
+                if self.convert_to_3d_displacement:
+                    self.depth_image1 = self._downsample_array(self.depth_image1, factor)
+                    self.depth_image2 = self._downsample_array(self.depth_image2, factor)
 
             # Bounds in that CRS (pixel grid space)
             from rasterio.transform import array_bounds
@@ -489,12 +491,14 @@ class ImagePair:
         image_bounds.set_geometry("geometry", inplace=True)
         self.image_bounds = image_bounds
 
-        self.image1_observation_date = parse_date(observation_date_1)
-        self.image2_observation_date = parse_date(observation_date_2)
 
-        # Calculate years between observations
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        self.years_between_observations = delta_hours / (24.0 * 365.25)
+        self.image1_observation_date = extract_datetime_from_token(observation_date_1)\
+            if type(observation_date_1) is not dt.datetime else observation_date_1
+
+        self.image2_observation_date = extract_datetime_from_token(observation_date_2)\
+            if type(observation_date_2) is not dt.datetime else observation_date_2
+        # Calculate delta t between observations
+        self.time_between_observations = self.image2_observation_date - self.image1_observation_date
 
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
@@ -508,7 +512,7 @@ class ImagePair:
                 make_effective_extents_from_deltas(
                     self.tracking_parameters.search_extent_px,
                     self.tracking_parameters.movement_cell_size,
-                    years_between=self.years_between_observations if self.use_adaptive_tracking_window else 1.0,
+                    years_between=self.time_between_observations.total_seconds()/ (3600.0 * 24.0 * 365.25) if self.use_adaptive_tracking_window else 1.0,
                     cap_per_side=None
                 ))
         else:
@@ -543,85 +547,10 @@ class ImagePair:
         elif self.image1_matrix.ndim == 3:
             self.image_bands = self.image1_matrix.shape[0]
 
-
-    # ToDo: Remove?
-    # def load_images_from_matrix_and_transform(self, image1_matrix: np.ndarray, observation_date_1: str,
-    #                                           image2_matrix: np.ndarray, observation_date_2: str, image_transform, crs,
-    #                                           selected_channels=None):
-    #     """
-    #     Load two images from matrices with a common transform.
-    #
-    #     Stores the matrices, dates, CRS/transform, copies originals, builds bounds,
-    #     and optionally selects channels. No file I/O is performed.
-    #
-    #     Parameters
-    #     ----------
-    #     image1_matrix : np.ndarray
-    #         Matrix of the first image.
-    #     observation_date_1 : str
-    #         Observation date of the first image. Multiple ISO-like formats accepted by ``parse_date``.
-    #     image2_matrix : np.ndarray
-    #         Matrix of the second image.
-    #     observation_date_2 : str
-    #         Observation date of the second image.
-    #     image_transform : Affine
-    #         Common transform for both images.
-    #     crs : any
-    #         Coordinate reference system.
-    #     selected_channels : int | list[int] | tuple[int] | None, optional
-    #         Channels to select from 3D inputs. Defaults to no selection when ``None``.
-    #
-    #     Returns
-    #     -------
-    #     None
-    #     """
-    #     self.image1_matrix = image1_matrix
-    #     self.image1_transform = image_transform
-    #     self.image2_matrix = image2_matrix
-    #     self.image2_transform = image_transform
-    #
-    #     # Also store original matrices for potential true-color alignment output
-    #     self.image1_matrix_original = image1_matrix.copy()
-    #     self.image2_matrix_original = image2_matrix.copy()
-    #
-    #     self.image1_observation_date = parse_date(observation_date_1)
-    #     self.image2_observation_date = parse_date(observation_date_2)
-    #     self.crs = crs
-    #
-    #     bbox = rasterio.transform.array_bounds(image1_matrix.shape[-2], image1_matrix.shape[-1], image_transform)
-    #     poly1 = box(*bbox)
-    #
-    #     # Same idea as above: extents-only buffer
-    #     px_size = max(-image_transform[4], image_transform[0])
-    #     ext = getattr(self.tracking_parameters, "search_extent_px", None)
-    #     if not ext:
-    #         raise ValueError("TrackingParameters.search_extent_px must be set (tuple posx,negx,posy,negy).")
-    #     eff_search_radius_px = max(ext)
-    #
-    #     image_bounds = gpd.GeoDataFrame(
-    #         gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-px_size * eff_search_radius_px)
-    #     )
-    #     # set correct geometry column
-    #     image_bounds = image_bounds.rename(columns={0: "geometry"})
-    #     image_bounds.set_geometry("geometry", inplace=True)
-    #     self.image_bounds = image_bounds
-    #
-    #     # Also compute safe_image_bounds_alignment for align_images() method
-    #     alignment_ext = getattr(self.alignment_parameters, "control_search_extent_px", None)
-    #     if not alignment_ext:
-    #         raise ValueError("AlignmentParameters.control_search_extent_px must be set (tuple posx,negx,posy,negy).")
-    #     alignment_cell_size = getattr(self.alignment_parameters, "control_cell_size", None)
-    #     if alignment_cell_size is None:
-    #         raise ValueError("AlignmentParameters.control_cell_size must be set.")
-    #
-    #     alignment_buffer = px_size * max(alignment_ext) + px_size * alignment_cell_size / 2
-    #     safe_image_bounds_alignment = gpd.GeoDataFrame(
-    #         gpd.GeoDataFrame({'geometry': [poly1]}, crs=self.crs).buffer(-alignment_buffer)
-    #     )
-    #     safe_image_bounds_alignment = safe_image_bounds_alignment.rename(columns={0: "geometry"})
-    #     safe_image_bounds_alignment.set_geometry("geometry", inplace=True)
-    #     self.safe_image_bounds_alignment = safe_image_bounds_alignment
-
+        if type(observation_date_1) is not dt.datetime:
+            self.image1_observation_date = extract_datetime_from_token(observation_date_1)
+        if type(observation_date_2) is not dt.datetime:
+            self.image2_observation_date = extract_datetime_from_token(observation_date_2)
 
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
@@ -734,13 +663,12 @@ class ImagePair:
 
         self.valid_alignment_possible = True
 
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        years_between_observations = delta_hours / (24.0 * 365.25)
+        self.time_between_observations = self.image2_observation_date - self.image1_observation_date
 
         self.tracked_control_points = georeference_tracked_points(tracked_control_points,
                                                                   self.image1_transform,
                                                                   self.crs,
-                                                                  years_between_observations,
+                                                                  self.time_between_observations,
                                                                   self.output_units_mode)
 
         # Apply singleton dimension removal to image1_matrix as well for consistency
@@ -910,25 +838,21 @@ class ImagePair:
                                             alignment_tracking=False,
                                             task_label="[~] Tracking points for movement tracking")
         # calculate the years between observations from the two given observation dates
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        years_between_observations = delta_hours / (24.0 * 365.25)
-
 
         if self.convert_to_3d_displacement:
             georeferenced_tracked_points = calculate_displacement_from_depth_images(
                 tracked_points, depth_image_time1=self.depth_image1,
                 depth_image_time2=self.depth_image2, camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
-                years_between_observations=years_between_observations,
+                time_between_observations=self.time_between_observations,
                 output_unit_mode=self.output_units_mode)
             if (self.coordinate_system_unit_name == "pixel") | (self.coordinate_system_unit_name is None):
                 self.coordinate_system_unit_name = "meter"
         else:
             georeferenced_tracked_points = georeference_tracked_points(
                 tracked_pixels=tracked_points, raster_transform=self.image1_transform, crs=tracking_area.crs,
-                years_between_observations=years_between_observations,
+                time_between_observations=self.time_between_observations,
                 output_unit_mode=self.output_units_mode)
-
         return georeferenced_tracked_points
 
     def perform_point_tracking(self, reference_area: gpd.GeoDataFrame, tracking_area: gpd.GeoDataFrame) -> None:
@@ -985,7 +909,9 @@ class ImagePair:
         """
         if self.tracking_results is not None:
             plot_movement_of_points(self.image1_matrix_original, self.image1_transform, self.tracking_results,
-                                    unit_name=self.coordinate_system_unit_name,vmin=self.level_of_detection)
+                                    vmin=self.level_of_detection,
+                                    unit_name_distance=self.coordinate_system_unit_name,
+                                    unit_name_time=self.output_units_mode[4:])
         else:
             console = get_console()
             console.warning("No results calculated yet. Plot not provided")
@@ -1003,7 +929,9 @@ class ImagePair:
         """
         if self.tracking_results is not None:
             plot_movement_of_points_with_valid_mask(self.image1_matrix_original, self.image1_transform, self.tracking_results,
-                                                    unit_name=self.coordinate_system_unit_name,vmin=self.level_of_detection)
+                                                    unit_name_distance=self.coordinate_system_unit_name,
+                                                    unit_name_time=self.output_units_mode[4:],
+                                                    vmin=self.level_of_detection)
         else:
             console = get_console()
             console.warning("No results calculated yet. Plot not provided")
@@ -1036,8 +964,7 @@ class ImagePair:
                                                      self.displacement_column_name)
 
 
-    def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame,
-                         years_between_observations) -> gpd.GeoDataFrame:
+    def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
         """
         Track movement on stable points for level of detection calculation.
 
@@ -1048,8 +975,6 @@ class ImagePair:
         ----------
         points_for_lod_calculation : gpd.GeoDataFrame
             Points in the stable area for calculating the level of detection.
-        years_between_observations : float
-            Time span in years between the two observations.
 
         Returns
         -------
@@ -1102,13 +1027,13 @@ class ImagePair:
                 tracked_control_pixels_valid,self.depth_image1,self.depth_image2,
                 camera_intrinsics_matrix=self.camera_intrinsics_matrix,
                 camera_to_3d_coordinates_transform=self.camera_to_3d_coordinates_transform,
-                years_between_observations=years_between_observations,
+                time_between_observations=self.time_between_observations,
                 output_unit_mode=self.output_units_mode)
         else:
             tracked_points = georeference_tracked_points(tracked_control_pixels_valid,
                                                          self.image1_transform,
                                                          crs=self.crs,
-                                                         years_between_observations=years_between_observations,
+                                                         time_between_observations=self.time_between_observations,
                                                          output_unit_mode=self.output_units_mode)
 
         return tracked_points
@@ -1159,8 +1084,6 @@ class ImagePair:
         points_for_lod_calculation.rename(columns={0: 'geometry'}, inplace=True)
         points_for_lod_calculation.set_geometry('geometry', inplace=True)
 
-        delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
-        years_between_observations = delta_hours / (24.0 * 365.25)
 
         # check if a LoD filter parameter is provided, if this is None, don't perform LoD calculation
         if (filter_parameters_lod_points.level_of_detection_quantile is None
@@ -1170,8 +1093,8 @@ class ImagePair:
         level_of_detection_quantile = filter_parameters_lod_points.level_of_detection_quantile
 
         unfiltered_level_of_detection_points = self.track_lod_points(
-            points_for_lod_calculation=points_for_lod_calculation,
-            years_between_observations=years_between_observations)
+            points_for_lod_calculation=points_for_lod_calculation)
+        self.level_of_detection_points = unfiltered_level_of_detection_points
         filter_parameters_lod_points.difference_movement_bearing_threshold = 360
         filter_parameters_lod_points.standard_deviation_movement_bearing_threshold = 360
 
@@ -1183,13 +1106,13 @@ class ImagePair:
 
         if points_for_lod_calculation.crs is not None:
             crs_obj = PyprojCRS.from_user_input(points_for_lod_calculation.crs)
-            unit_name = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
+            unit_name_spatial = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
         elif self.coordinate_system_unit_name is not None:
-            unit_name = self.coordinate_system_unit_name
+            unit_name_spatial = self.coordinate_system_unit_name
         else:
-            unit_name = "pixel"
+            unit_name_spatial = "pixel"
         console = get_console()
-        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=5)} {unit_name}/year")
+        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=5)} {unit_name_spatial}/{self.output_units_mode[4:]}")
 
     def filter_lod_points(self) -> None:
         """
@@ -1321,7 +1244,7 @@ class ImagePair:
         # --- Save full tracking results if requested ---
         if "tracking_results_fgb" in save_files:
             self.tracking_results.to_file(
-                f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
+                f"{folder_path}/tracking_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
                 driver="FlatGeobuf"
             )
 
@@ -1329,16 +1252,16 @@ class ImagePair:
             downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
                                                                        point_distance=self.downsample_tracking_results_resolution)
             downsampled_tracking_results.to_file(
-                f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(
-                    format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
+                f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
                 driver="FlatGeobuf"
             )
             plot_movement_of_points(
                 self.image1_matrix_original,
                 self.image1_transform,
                 downsampled_tracking_results,
-                save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name,
+                save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.jpg",
+                unit_name_distance=self.coordinate_system_unit_name,
+                unit_name_time=self.output_units_mode[4:],
                 vmin=self.level_of_detection
             )
 
@@ -1385,14 +1308,7 @@ class ImagePair:
             height = int(np.ceil(height / res)) + 1  # + 1 needed for proper centering of points w.r.t. raster grid
             width = int(np.ceil(width / res)) + 1  # + 1 needed for proper centering of points w.r.t. raster grid
 
-            # if df.crs is not None:
-            #     transform = rasterio.transform.from_origin(bounds[0], bounds[3], res, res)
-            #     crs = df.crs
-            # else:
-            #     # If no crs is given, assume results in image coordinates and rasterize with identity transform (raster
-            #     # will also be given in image coordinates)
-            #     transform = rasterio.transform.from_origin(bounds[0],bounds[3],res,res)
-            #     crs = None
+
             transform = rasterio.transform.from_origin(bounds[0] - res / 2, bounds[3] + res / 2, res, res)
             crs = df.crs
 
@@ -1439,13 +1355,13 @@ class ImagePair:
             ) as dst:
                 dst.write(raster_to_write)
 
-                # --- Save input images if requested ---
+        # --- Save input images if requested ---
 
         if "first_image_matrix_jpg" in save_files:
             image1_matrix_uint = (self.image1_matrix * self.image1_matrix_original.max()/self.image1_matrix.max())
 
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
+                path=f"{folder_path}/image_{self.image1_observation_date.isoformat().replace(" ","_")}.jpeg",
                 raster=image1_matrix_uint.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1455,7 +1371,7 @@ class ImagePair:
         if "second_image_matrix_jpg" in save_files:
             image2_matrix_uint = (self.image2_matrix * self.image2_matrix_original.max()/self.image2_matrix.max())
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpeg",
+                path=f"{folder_path}/image_{self.image2_observation_date.isoformat().replace(" ","_")}.jpeg",
                 raster=image2_matrix_uint.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1463,7 +1379,7 @@ class ImagePair:
             )
         if "first_image_depth_matrix" in save_files:
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
+                path=f"{folder_path}/image_{self.image1_observation_date.isoformat().replace(" ","_")}_depth.tif",
                 raster=self.depth_image1.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1472,7 +1388,7 @@ class ImagePair:
 
         if "second_image_depth_matrix" in save_files:
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image2_observation_date.strftime(format='%Y-%m-%d')}_depth.tif",
+                path=f"{folder_path}/image_{self.image2_observation_date.isoformat().replace(" ","_")}_depth.tif",
                 raster=self.depth_image2.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1494,7 +1410,7 @@ class ImagePair:
         if raster_valid is not None:
             if "L2_movement-bearing_above-LoD_filtered_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L2_movement-bearing_above-LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L2_movement-bearing_above-LoD_filtered_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=raster_valid["raster"]["movement_bearing_pixels"],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
@@ -1502,7 +1418,7 @@ class ImagePair:
 
             if "L2_movement-rate_above-LoD_filtered_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L2_movement-rate_above-LoD_filtered_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L2_movement-rate_above-LoD_filtered_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=raster_valid["raster"][self.displacement_column_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
@@ -1512,14 +1428,14 @@ class ImagePair:
         if raster_lod_filtered is not None:
             if "L1_movement-bearing_above-LoD_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L1_movement-bearing_above-LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L1_movement-bearing_above-LoD_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=raster_lod_filtered["raster"]["movement_bearing_pixels"],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
             if "L1_movement-rate_above-LoD_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L1_movement-rate_above-LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L1_movement-rate_above-LoD_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=raster_lod_filtered["raster"][self.displacement_column_name],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
@@ -1529,7 +1445,7 @@ class ImagePair:
         if raster_all is not None:
             if "L0_movement-bearing_raw_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L0_movement-bearing_raw_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L0_movement-bearing_raw_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=raster_all["raster"]["movement_bearing_pixels"],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -1537,7 +1453,7 @@ class ImagePair:
 
             if "L0_movement-rate_raw_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L0_movement-rate_raw_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/L0_movement-rate_raw_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=raster_all["raster"][self.displacement_column_name],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -1552,7 +1468,7 @@ class ImagePair:
             invalid_raster = _make_raster(invalid_mask, ["invalid_int"])
             if invalid_raster is not None:
                 _save_raster_as_file(
-                    path=f"{folder_path}/mask_invalid_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                    path=f"{folder_path}/mask_invalid_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                     raster=invalid_raster["raster"]["invalid_int"],
                     transform=invalid_raster["transform"],
                     crs=invalid_raster["crs"]
@@ -1567,7 +1483,7 @@ class ImagePair:
                     mask_grid = _make_raster(mask_df, ["mask_int"])
                     if mask_grid is not None:
                         _save_raster_as_file(
-                            path=f"{folder_path}/{filename_root}_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                            path=f"{folder_path}/{filename_root}_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                             raster=mask_grid["raster"]["mask_int"],
                             transform=mask_grid["transform"],
                             crs=mask_grid["crs"]
@@ -1581,13 +1497,13 @@ class ImagePair:
         # LoD points
         if "LoD_points_fgb" in save_files and self.level_of_detection_points is not None:
             self.level_of_detection_points.to_file(
-                f"{folder_path}/LoD_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
+                f"{folder_path}/LoD_points_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
                 driver="FlatGeobuf"
             )
 
         if "alignment_points_fgb" in save_files and self.tracked_control_points is not None:
             self.tracked_control_points.to_file(
-                f"{folder_path}/alignment_points_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.fgb",
+                f"{folder_path}/alignment_points_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
                 driver="FlatGeobuf"
             )
 
@@ -1609,10 +1525,10 @@ class ImagePair:
                     return np.nan
 
             # Determine unit label for statistics
-            unit_label = "per year" if "per_year" in self.displacement_column_name else "total"
+            unit_label = "per " + self.output_units_mode[4:] if self.output_units_mode[0:4] == "per_" else "total"
             
             with (open(
-                    f"{folder_path}/statistical_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
+                    f"{folder_path}/statistical_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
                     "w",
             ) as statistics_file):
                 lod_str = (
@@ -1802,21 +1718,21 @@ class ImagePair:
         # --- Save parameters if requested ---
         if "parameters_txt" in save_files:
             with open(
-                    f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
+                    f"{folder_path}/parameters_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
                     "w",
             ) as text_file:
                 text_file.write(self.alignment_parameters.__str__())
 
             if self.tracking_parameters is not None:
                 with open(
-                        f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
+                        f"{folder_path}/parameters_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
                         "a",
                 ) as text_file:
                     text_file.write(self.tracking_parameters.__str__())
 
             if self.filter_parameters is not None:
                 with open(
-                        f"{folder_path}/parameters_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.txt",
+                        f"{folder_path}/parameters_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
                         "a",
                 ) as text_file:
                     text_file.write(self.filter_parameters.__str__())
@@ -1832,7 +1748,7 @@ class ImagePair:
                     lod_raster = _make_raster(lod_mask, ["is_below_LoD_int"])
                     if lod_raster is not None:
                         _save_raster_as_file(
-                            path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.tif",
+                            path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
                             raster=lod_raster["raster"]["is_below_LoD_int"],
                             transform=lod_raster["transform"],
                             crs=lod_raster["crs"]
@@ -1842,8 +1758,9 @@ class ImagePair:
                 self.image1_matrix_original,
                 self.image1_transform,
                 self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
-                unit_name=self.coordinate_system_unit_name,
+                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.jpg",
+                unit_name_distance=self.coordinate_system_unit_name,
+                unit_name_time=self.output_units_mode[4:],
                 vmin=min_cmap_value,vmax=max_cmap_value
             )
         else:
@@ -1851,7 +1768,7 @@ class ImagePair:
                 self.image1_matrix_original,
                 self.image1_transform,
                 self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.strftime(format='%Y-%m-%d')}_{self.image2_observation_date.strftime(format='%Y-%m-%d')}.jpg",
+                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.jpg",
                 unit_name=self.coordinate_system_unit_name,
                 vmin=min_cmap_value,vmax=max_cmap_value
             )

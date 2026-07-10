@@ -53,486 +53,549 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
         eff = half + int(round(float(v) * float(years_between)))
         if cap_per_side is not None:
             eff = min(int(cap_per_side), eff)
-        return max(half, eff)
+        return eff #max(half, eff)
+
     px, nx, py, ny = deltas
     return (one(px), one(nx), one(py), one(ny))
+#
+# def _validate_date_token(token: str, year_part: str) -> bool:
+#     """
+#     Validate if a date token is complete and parsable.
+#
+#     Returns True if all segments in the token are valid (no ignored invalid parts).
+#     Compact format: expects 4, 8, or 10+ digits (YYYYMMDD, YYYYMMDDHHMM, YYYYMMDDHHMMSS)
+#     Separated format: expects complete date/time pairs (YYYY-MM-DD-HH-MM)
+#
+#     Parameters
+#     ----------
+#     token : str
+#         The token to validate.
+#     year_part : str
+#         The year that was extracted first.
+#
+#     Returns
+#     -------
+#     bool
+#         True if token is complete and valid, False if parts are incomplete or invalid.
+#     """
+#
+#     # Extract year from token
+#     year_match = re.match(r'^(\d{2,4})', token)
+#     if not year_match:
+#         return False
+#
+#     year_len = len(year_match.group(1))
+#     remaining = token[year_len:]
+#
+#     # Determine format by checking for hyphens
+#     has_hyphens = '-' in remaining
+#
+#     try:
+#         if len(year_part) == 2:
+#             year = 2000 + int(year_part)
+#         else:
+#             year = int(year_part)
+#
+#         if has_hyphens:
+#             # Separated format - strip leading hyphen that was already counted by has_hyphens check
+#             remaining = remaining.lstrip('-')
+#             parts = remaining.split('-')
+#
+#             if len(parts) >= 1 and parts[0]:
+#                 m = int(parts[0])
+#                 if not (1 <= m <= 12):
+#                     return False
+#
+#             if len(parts) >= 2 and parts[1]:
+#                 d = int(parts[1])
+#                 if not (1 <= d <= 31):
+#                     return False
+#
+#             # If we have hour, we MUST have minute too (time must be complete)
+#             # Only check for hour if the part is non-empty (not just from trailing hyphen)
+#             if len(parts) >= 3 and parts[2] and parts[2].strip():
+#                 h = int(parts[2])
+#                 if not (0 <= h <= 23):
+#                     return False
+#                 # Hour without minute or with non-digit minute is incomplete
+#                 if len(parts) < 4 or not parts[3] or not parts[3].isdigit():
+#                     return False
+#                 m = int(parts[3])
+#                 if not (0 <= m <= 59):
+#                     return False
+#         else:
+#             # Compact format
+#             remaining_digits = remaining.replace('-', '')
+#             digit_count = len(remaining_digits)
+#
+#             # For progressive extraction, we need to accept intermediate states
+#             # 0 = year only (valid)
+#             # 2 = month only (potentially valid)
+#             # 4 = month + day (valid)
+#             # 6 = month + day + hour (potentially valid - could add minute)
+#             # 8 = month + day + hour + minute (valid)
+#             # 10 = month + day + hour + minute + second (valid)
+#
+#             # Check that we have even-length digits (no partial segments)
+#             if digit_count % 2 != 0:
+#                 return False  # Odd length means incomplete digit pair
+#
+#             # Validate only the segments we have so far - don't require completeness
+#             if digit_count >= 2:
+#                 m = int(remaining_digits[0:2])
+#                 if not (1 <= m <= 12):
+#                     return False
+#
+#             if digit_count >= 4:
+#                 d = int(remaining_digits[2:4])
+#                 if not (1 <= d <= 31):
+#                     return False
+#
+#             if digit_count >= 6:
+#                 h = int(remaining_digits[4:6])
+#                 if not (0 <= h <= 23):
+#                     return False
+#
+#             if digit_count >= 8:
+#                 m = int(remaining_digits[6:8])
+#                 if not (0 <= m <= 59):
+#                     return False
+#
+#         return True
+#
+#     except (ValueError, IndexError):
+#         return False
 
-def _validate_date_token(token: str, year_part: str) -> bool:
-    """
-    Validate if a date token is complete and parsable.
-    
-    Returns True if all segments in the token are valid (no ignored invalid parts).
-    Compact format: expects 4, 8, or 10+ digits (YYYYMMDD, YYYYMMDDHHMM, YYYYMMDDHHMMSS)
-    Separated format: expects complete date/time pairs (YYYY-MM-DD-HH-MM)
-    
-    Parameters
-    ----------
-    token : str
-        The token to validate.
-    year_part : str
-        The year that was extracted first.
-    
-    Returns
-    -------
-    bool
-        True if token is complete and valid, False if parts are incomplete or invalid.
-    """
-    from datetime import datetime
-    
-    # Extract year from token
-    year_match = re.match(r'^(\d{2,4})', token)
-    if not year_match:
-        return False
-    
-    year_len = len(year_match.group(1))
-    remaining = token[year_len:]
-    
-    # Determine format by checking for hyphens
-    has_hyphens = '-' in remaining
-    
-    try:
-        if len(year_part) == 2:
-            year = 2000 + int(year_part)
-        else:
-            year = int(year_part)
-        
-        if has_hyphens:
-            # Separated format - strip leading hyphen that was already counted by has_hyphens check
-            remaining = remaining.lstrip('-')
-            parts = remaining.split('-')
-            
-            if len(parts) >= 1 and parts[0]:
-                m = int(parts[0])
-                if not (1 <= m <= 12):
-                    return False
-                
-            if len(parts) >= 2 and parts[1]:
-                d = int(parts[1])
-                if not (1 <= d <= 31):
-                    return False
-                
-            # If we have hour, we MUST have minute too (time must be complete)
-            # Only check for hour if the part is non-empty (not just from trailing hyphen)
-            if len(parts) >= 3 and parts[2] and parts[2].strip():
-                h = int(parts[2])
-                if not (0 <= h <= 23):
-                    return False
-                # Hour without minute or with non-digit minute is incomplete
-                if len(parts) < 4 or not parts[3] or not parts[3].isdigit():
-                    return False
-                m = int(parts[3])
-                if not (0 <= m <= 59):
-                    return False
-        else:
-            # Compact format
-            remaining_digits = remaining.replace('-', '')
-            digit_count = len(remaining_digits)
-            
-            # For progressive extraction, we need to accept intermediate states
-            # 0 = year only (valid)
-            # 2 = month only (potentially valid)
-            # 4 = month + day (valid)
-            # 6 = month + day + hour (potentially valid - could add minute)
-            # 8 = month + day + hour + minute (valid)
-            # 10 = month + day + hour + minute + second (valid)
-            
-            # Check that we have even-length digits (no partial segments)
-            if digit_count % 2 != 0:
-                return False  # Odd length means incomplete digit pair
-            
-            # Check that we don't have too many digits (max 10 = MMDDHHMMSS)
-            if digit_count > 10:
-                return False  # Too many digit pairs for a valid date/time
-            
-            # Validate only the segments we have so far - don't require completeness
-            if digit_count >= 2:
-                m = int(remaining_digits[0:2])
-                if not (1 <= m <= 12):
-                    return False
-            
-            if digit_count >= 4:
-                d = int(remaining_digits[2:4])
-                if not (1 <= d <= 31):
-                    return False
-            
-            if digit_count >= 6:
-                h = int(remaining_digits[4:6])
-                if not (0 <= h <= 23):
-                    return False
-            
-            if digit_count >= 8:
-                m = int(remaining_digits[6:8])
-                if not (0 <= m <= 59):
-                    return False
-        
-        return True
-        
-    except (ValueError, IndexError):
-        return False
-
-
-def extract_date_token(s: str) -> Optional[str]:
-    """
-    Extract the complete date token from a string.
-    
-    Normalizes the string by replacing underscores with hyphens and extracts
-    the date token starting with a year (YY or YYYY) from anywhere in the string.
-    The token includes the year and any following date/time parts with separators.
-    
-    This is used in conjunction with parse_date() to ensure consistent token
-    extraction across the codebase. The extraction stops when an invalid part
-    is encountered (e.g., a letter or a value that doesn't make sense for dates).
-    
-    Parameters
-    ----------
-    s : str
-        String to extract date token from (e.g., filename).
-    
-    Returns
-    -------
-    Optional[str]
-        The extracted date token, or None if no valid token is found.
-    
-    Examples
-    --------
-    >>> extract_date_token("2023-09-01-1504")
-    '2023-09-01-1504'
-    >>> extract_date_token("HS_2023_09_01_1504_xyz.tif")
-    '2023-09-01-1504'
-    >>> extract_date_token("image_20230317_1504.tif")
-    '202303171504'
-    >>> extract_date_token("no_date.tif")
-    None
-    """
-    # Shortcut: if s looks like a complete date token already, return it
-    # This handles the case where parse_date is called on already-extracted tokens
-    # Completeness check: should have year, optionally month/day
-    # For separated format: YYYY-MM or YYYY-MM-DD or YYYY-MM-DD-HH-MM
-    # For compact format: YYYY, YYYYMMDD, YYYYMMDDHHMM, etc.
+import dateutil.parser
+def extract_datetime_from_token(s: str) -> datetime:
+    """Gets a filename part and extracts the found datetime token as a datetime object."""
     s_norm = s.replace('_', '-')
-    full_match = re.match(r'^(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2})?)?)?)?$', s_norm)
-    if full_match:
-        # Check if it's more than just year
-        matched_str = full_match.group(0)
-        year_only = full_match.group(1)
-        if len(matched_str) > len(year_only):
-            # Already looks like a valid complete token
-                return s_norm
-    
-    # Store original to check for separators before normalization
-    original = s
-    
-    # Normalize: replace underscores with hyphens for consistent parsing
-    normalized = s.replace('_', '-')
-    
-    # Extract date token starting with year (YY or YYYY) anywhere in the string
-    # The token may include separators and continues while the pattern makes sense for dates
-    match = re.search(r'(\d{2,4})', normalized)
-    if not match:
-        return None
-    
-    year_part = match.group(1)
-    token = year_part
-    # FIX: Use the actual match position, not just the year length
-    year_pos = match.start()
-    remaining = normalized[year_pos + len(year_part):]
-    
-    # Check if original has separator (hyphen or underscore) immediately after the year
-    # This determines whether we use separated format (2023-03-16)
-    # or compact format (20230316)
-    year_idx = original.find(year_part)
-    has_separator = False
-    if year_idx >= 0 and year_idx + len(year_part) < len(original):
-        next_char = original[year_idx + len(year_part)]
-        has_separator = next_char in ('-', '_')
-    
-    # Progressive extraction: build token incrementally and validate completeness
-    # Stop when adding more parts makes the date incomplete or invalid
-    
-    # Match all characters that could be part of the date
-    all_match = re.match(r'^([0-9\\-]*)(?=[^0-9\\-]|$)', remaining)
-    if all_match:
-        all_additional = all_match.group(1)
-        all_additional = all_additional.lstrip('-').rstrip('-')
-        
-        if all_additional:
-            # FIX: Base format decision on the original string's separator pattern,
-            # not on whether the extracted content contains hyphens (which can come
-            # from normalized underscores in compact-format filenames like 20260117_103852)
-            if has_separator:
-                # Separated mode: split by hyphens and add each segment as a whole
-                segments = all_additional.split('-')
-                validated_token = token
-                
-                for seg in segments:
-                    # Check for identifier pattern before proceeding
-                    if seg.startswith('id'):
-                        # This is an identifier segment, stop extraction
-                        break
-                    
-                    if not seg:
-                        continue
-                    
-                    # Only accept numeric segments at least 2 digits long
-                    if not seg.isdigit() or len(seg) < 2:
-                        break
-                    
-                    # FIX: Handle compact time segments (4 digits = HHMM)
-                    # If segment is 4 digits and we already have month/day, split it into hour/minute
-                    current_token_parts = len(validated_token.split('-'))
-                    if len(seg) == 4 and current_token_parts >= 3:
-                        # This is likely a compact time segment, try splitting it
-                        hour_part = seg[0:2]
-                        minute_part = seg[2:4]
-                        
-                        # First add just the hour
-                        hour_token = validated_token + '-' + hour_part
-                        if _validate_date_token(hour_token, year_part):
-                            validated_token = hour_token
-                            # Then add the minute
-                            minute_token = validated_token + '-' + minute_part
-                            if _validate_date_token(minute_token, year_part):
-                                validated_token = minute_token
-                            # If validation fails, stop
-                            break
-                        # If hour validation fails, stop
-                        break
-                    
-                    # Try adding this segment with a hyphen separator
-                    test_token = validated_token + '-' + seg
-                    
-                    # FIX: Don't validate partial tokens - only validate when we have a chance of being complete
-                    # For a date token to be valid after adding a segment, the segment should be:
-                    # - 2 digits (month or day or hour/minute)
-                    # - And make the token more complete
-                    valid = _validate_date_token(test_token, year_part)
-                    
-                    if valid:
-                        validated_token = test_token
-                    else:
-                        # If adding this segment makes it invalid, we're done
-                        # But also check if adding more might help (e.g., we added partial day)
-                        # For simplicity, stop here - the token is no longer valid
-                        break
-                
-                token = validated_token
-            else:
-                # Compact mode: strip hyphens (from normalized underscores) and use pure digits
-                all_additional_digits = all_additional.replace('-', '')
-                
-                if not all_additional_digits.isdigit():
-                    # Not pure digits after stripping hyphens - not a valid compact format
-                    token = token
-                else:
-                    # Compact mode: add characters in 2-character pairs (month, day, etc.)
-                    validated_token = token
-                    pos = 0
-                    
-                    while pos + 2 <= len(all_additional_digits):
-                        seg = all_additional_digits[pos:pos+2]
-                        
-                        # Try adding this 2-character segment directly
-                        test_token = validated_token + seg
-                        
-                        # Check if the test token's remaining length is valid
-                        remaining_after_add = len(test_token) - len(year_part)
-                        
-                        # Compact format should have even-length remainder after year
-                        # (2 for month, 4 for month+day, 6 for month+day+hour, etc.)
-                        if remaining_after_add % 2 != 0:
-                            # Odd length = incomplete, stop
-                            break
-                        
-                        if _validate_date_token(test_token, year_part):
-                            validated_token = test_token
-                            pos += 2
-                        else:
-                            # Invalid, stop
-                            break
-                    
-                    token = validated_token
-    
-    return token
+    s_norm = s_norm.replace(' ', '-')
+    s_norm = s_norm.replace(':', '-')
+    s_norm = s_norm.replace('T', '-')
 
+    # Extract possible datetime matches
+    full_match = re.search(r'(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
+    datetime_part = full_match.group(0)
 
-def parse_date(s: str) -> datetime:
-    """
-    Parse ISO-standard date strings with flexible separators.
-    
-    Only accepts dates starting with year (YY or YYYY).
-    Supports separators: '-', '_', or none.
-    Missing or invalid parts default to first standard (month=01, day=01, etc.).
-    No rounding - exact values are used.
-    
-    Parameters
-    ----------
-    s : str
-        Date string to parse.
-    
-    Returns
-    -------
-    datetime
-        Parsed datetime object.
-    
-    Raises
-    ------
-    ValueError
-        If the date format is not recognized or invalid.
-    
-    Supported Formats
-    ------------------
-    Year only:           2024, 24
-    Year-Month:          2024-09, 2024_09, 202409, 24-09, 24_09, 2409
-    Year-Month-Day:      2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901
-    With time:           2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045
-    
-    Separators: '-', '_', or none
-    Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00
-    No rounding - exact values are used
-    
-    Note
-    ----
-    If a part is present but invalid (e.g., month=13, day=47, hour=99), it is
-    ignored and the default value is used. This allows filenames like
-    "2008_9109" to be parsed as year-only (2008-01-01), or "2024_09_47" to
-    be parsed as year-month (2024-09-01).
-    """
-    console = get_console()
-    
-    # Pre-extract and normalize the date token using our helper
-    token = extract_date_token(s)
-    if token is None:
-        console.error(f"Invalid date format: {s!r}")
-        console.error("")
-        console.error("Supported formats (ISO standard, year-first):")
-        console.error("  Year only:           2024, 24")
-        console.error("  Year-Month:          2024-09, 2024_09, 202409, 24-09, 24_09, 2409")
-        console.error("  Year-Month-Day:      2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901")
-        console.error("  With time:           2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045")
-        console.error("")
-        console.error("Separators: '-', '_', or none")
-        console.error("Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00")
-        console.error("No rounding - exact values are used")
-        raise ValueError(f"Invalid date format: {s!r}")
-    
-    # Extract year from the token (first 2-4 digits)
-    year_match = re.match(r'^(\d{2,4})', token)
-    year_part = year_match.group(1)
-    
-    # Determine year (2-digit -> 2000s, 4-digit -> as-is)
-    if len(year_part) == 2:
-        year = 2000 + int(year_part)
-    elif len(year_part) == 4:
-        year = int(year_part)
+    # Normalize string with separating date and time options
+    datetime_parts = datetime_part.split('-')
+    # Fallback if a year with only two digits is provided:
+    # dateutils would read this as day-month-year, but we always consider year first
+    if len(datetime_parts[0]) == 2:
+        datetime_parts[0], datetime_parts[2] = datetime_parts[2], datetime_parts[0]
+    if len(datetime_parts) <= 3:
+        datetime_string = datetime_part  # date only, hyphens are fine
     else:
-        console.error(f"Invalid year format: {year_part!r}")
-        raise ValueError(f"Invalid year format: {year_part!r}")
-    
-    # Default values
-    month = 1
-    day = 1
-    hour = 0
-    minute = 0
-    second = 0
-    
-    # Get the remaining part after the year
-    remaining = token[len(year_part):]
-    
-    # Check if there are separators
-    if '-' in remaining:
-        # Strip leading hyphens that might be present from the year separator
-        remaining = remaining.lstrip('-')
-        # Parse with separators (e.g., 2016-03-19 or 2016-03-19-14-30-45)
-        parts = remaining.split('-')
-        
-        # Extract and validate values - ignore invalid parts
-        if len(parts) >= 1 and parts[0]:
-            try:
-                m = int(parts[0])
-                if 1 <= m <= 12:
-                    month = m
-            except ValueError:
-                pass  # Keep default month
-        
-        if len(parts) >= 2 and parts[1]:
-            try:
-                d = int(parts[1])
-                if 1 <= d <= 31:
-                    day = d
-            except ValueError:
-                pass  # Keep default day
-        
-        if len(parts) >= 3 and parts[2]:
-            try:
-                h = int(parts[2])
-                if 0 <= h <= 23:
-                    hour = h
-            except ValueError:
-                pass  # Keep default hour
-        
-        if len(parts) >= 4 and parts[3]:
-            try:
-                m = int(parts[3])
-                if 0 <= m <= 59:
-                    minute = m
-            except ValueError:
-                pass  # Keep default minute
-        
-        if len(parts) >= 5 and parts[4]:
-            try:
-                s = int(parts[4])
-                if 0 <= s <= 59:
-                    second = s
-            except ValueError:
-                pass  # Keep default second
-    else:
-        # Parse without separators (e.g., 20160319 or 20160319143045)
-        # Extract month (2 digits after year)
-        if len(remaining) >= 2:
-            try:
-                m = int(remaining[0:2])
-                if 1 <= m <= 12:
-                    month = m
-            except ValueError:
-                pass  # Keep default month
-        
-        # Extract day (next 2 digits)
-        if len(remaining) >= 4:
-            try:
-                d = int(remaining[2:4])
-                if 1 <= d <= 31:
-                    day = d
-            except ValueError:
-                pass  # Keep default day
-        
-        # Extract hour (next 2 digits)
-        if len(remaining) >= 6:
-            try:
-                h = int(remaining[4:6])
-                if 0 <= h <= 23:
-                    hour = h
-            except ValueError:
-                pass  # Keep default hour
-        
-        # Extract minute (next 2 digits)
-        if len(remaining) >= 8:
-            try:
-                m = int(remaining[6:8])
-                if 0 <= m <= 59:
-                    minute = m
-            except ValueError:
-                pass  # Keep default minute
-        
-        # Extract second (next 2 digits)
-        if len(remaining) >= 10:
-            try:
-                s = int(remaining[8:10])
-                if 0 <= s <= 59:
-                    second = s
-            except ValueError:
-                pass  # Keep default second
-    
-    return datetime(year, month, day, hour, minute, second)
+        date_part = '-'.join(datetime_parts[:3])  # "2024-06-14"
+        time_part = ':'.join(datetime_parts[3:6])  # "14:30:59"
+        sub_seconds = datetime_parts[6] if len(datetime_parts) > 6 else None
+
+        datetime_string = f"{date_part}T{time_part}"
+        if sub_seconds:
+            datetime_string += f".{sub_seconds}"
+
+    datetime_observation = dateutil.parser.isoparse(datetime_string)
+    return datetime_observation
+
+# def extract_datetime_token(s: str) -> Optional[datetime]:
+#     """
+#     Extract the complete datetime token from a string.
+#
+#     Normalizes the string by replacing underscores with hyphens and extracts
+#     the date token starting with a year (YY or YYYY) from anywhere in the string.
+#     The function returns the token as a datetime object.
+#
+#     The extraction of datetime information stops when an invalid part
+#     is encountered (e.g., a letter or a value that doesn't make sense for dates).
+#
+#     Parameters
+#     ----------
+#     s : str
+#         String to extract date token from (e.g., filename).
+#
+#     Returns
+#     -------
+#     Optional[datetime]
+#         The extracted date token, or None if no valid token is found.
+#
+#     Examples
+#     --------
+#     >>> extract_datetime_token("2023-09-01-1504")
+#     '2023-09-01-1504'
+#     >>> extract_datetime_token("HS_2023_09_01_1504_xyz.tif")
+#     '2023-09-01-1504'
+#     >>> extract_datetime_token("image_20230317_1504.tif")
+#     '202303171504'
+#     >>> extract_datetime_token("no_date.tif")
+#     None
+#     """
+#     # Shortcut: if s looks like a complete date token already, return it
+#     # This handles the case where parse_date is called on already-extracted tokens
+#     # Completeness check: should have year, optionally month/day
+#     # For separated format: YYYY-MM or YYYY-MM-DD or YYYY-MM-DD-HH-MM
+#     # For compact format: YYYY, YYYYMMDD, YYYYMMDDHHMM, etc.
+#     s_norm = s.replace('_', '-')
+#     full_match = re.match(r'^(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?$', s_norm)
+#     if full_match is not None:
+#         print(s_norm, s)
+#         print(full_match.group(0))
+#         raise ValueError
+#
+#     if full_match:
+#         # Check if it's more than just year
+#         matched_str = full_match.group(0)
+#         year_only = full_match.group(1)
+#         if len(matched_str) > len(year_only):
+#             # Already looks like a valid complete token
+#                 return s_norm
+#
+#     # Store original to check for separators before normalization
+#     original = s
+#
+#     # Normalize: replace underscores with hyphens for consistent parsing
+#     normalized = s.replace('_', '-')
+#
+#
+#
+#     # Extract date token starting with year (YY or YYYY) anywhere in the string
+#     # The token may include separators and continues while the pattern makes sense for dates
+#     match = re.search(r'(\d{2,4})', normalized)
+#     if not match:
+#         return None
+#
+#     year_part = match.group(1)
+#     token = year_part
+#     # FIX: Use the actual match position, not just the year length
+#     year_pos = match.start()
+#     remaining = normalized[year_pos + len(year_part):]
+#
+#     # Check if original has separator (hyphen or underscore) immediately after the year
+#     # This determines whether we use separated format (2023-03-16)
+#     # or compact format (20230316)
+#     year_idx = original.find(year_part)
+#     has_separator = False
+#     if year_idx >= 0 and year_idx + len(year_part) < len(original):
+#         next_char = original[year_idx + len(year_part)]
+#         has_separator = next_char in ('-', '_')
+#
+#     # Progressive extraction: build token incrementally and validate completeness
+#     # Stop when adding more parts makes the date incomplete or invalid
+#
+#     # Match all characters that could be part of the date
+#     all_match = re.match(r'^([0-9\\-]*)(?=[^0-9\\-]|$)', remaining)
+#     if all_match:
+#         all_additional = all_match.group(1)
+#         all_additional = all_additional.lstrip('-').rstrip('-')
+#
+#         print(year_part + "-" + all_additional)
+#         datetime_patterns = ["%Y-%m-%d", "%Y%m%d", "%Y-%m%d%H%M%S", "%Y-%m-%d-%H-%M-%S", "%Y-%m-%dT%H%M%S%f",
+#                              "%Y-%m-%d-%H-%M-%S-%f","%Y-%m%d%H%M%S%f", "%Y-%m%d%H%M%S%f"]
+#         for dt_format in datetime_patterns:
+#             try:
+#                 token = datetime.strptime(year_part + "-" + all_additional, dt_format)
+#                 print(token)
+#                 break
+#             except:
+#                 print("Passing")
+#                 pass
+#
+#         if all_additional:
+#             # FIX: Base format decision on the actual extracted content, not the original string
+#             # If all_additional contains hyphens, treat as separated format
+#             # If all_additional is all digits, treat as compact format
+#             extracted_has_hyphen = '-' in all_additional
+#
+#             if extracted_has_hyphen:
+#                 # Separated mode: split by hyphens and add each segment as a whole
+#                 segments = all_additional.split('-')
+#                 validated_token = token
+#
+#                 for seg in segments:
+#                     # FIX: Check for identifier pattern before proceeding
+#                     if seg.startswith('id'):
+#                         # This is an identifier segment, stop extraction
+#                         break
+#
+#                     if not seg:
+#                         continue
+#
+#                     # Only accept numeric segments at least 2 digits long
+#                     if not seg.isdigit() or len(seg) < 2:
+#                         break
+#
+#                     # FIX: Handle compact time segments (4 digits = HHMM)
+#                     # If segment is 4 digits and we already have month/day, split it into hour/minute
+#                     current_token_parts = len(validated_token.split('-'))
+#
+#                     if len(seg) == 4 and current_token_parts >= 3:
+#                         # This is likely a compact time segment, try splitting it
+#                         hour_part = seg[0:2]
+#                         minute_part = seg[2:4]
+#
+#                         # First add just the hour
+#                         hour_token = validated_token + '-' + hour_part
+#                         if _validate_date_token(hour_token, year_part):
+#                             validated_token = hour_token
+#                             # Then add the minute
+#                             minute_token = validated_token + '-' + minute_part
+#                             if _validate_date_token(minute_token, year_part):
+#                                 validated_token = minute_token
+#                             # If validation fails, stop
+#                             break
+#                         # If hour validation fails, stop
+#                         break
+#
+#                     # Try adding this segment with a hyphen separator
+#                     test_token = validated_token + '-' + seg
+#
+#                     # FIX: Don't validate partial tokens - only validate when we have a chance of being complete
+#                     # For a date token to be valid after adding a segment, the segment should be:
+#                     # - 2 digits (month or day or hour/minute)
+#                     # - And make the token more complete
+#                     valid = _validate_date_token(test_token, year_part)
+#
+#                     if valid:
+#                         validated_token = test_token
+#                     else:
+#                         # If adding this segment makes it invalid, we're done
+#                         # But also check if adding more might help (e.g., we added partial day)
+#                         # For simplicity, stop here - the token is no longer valid
+#                         break
+#
+#                 token = validated_token
+#             else:
+#                 # Compact mode: all_additional should be all digits
+#                 if not all_additional.isdigit():
+#                     # Not pure digits - not a valid compact format
+#                     token = token
+#                 else:
+#                     # Compact mode: add characters in 2-character pairs (month, day, etc.)
+#                     validated_token = token
+#                     pos = 0
+#
+#                     while pos + 2 <= len(all_additional):
+#                         seg = all_additional[pos:pos+2]
+#
+#                         # Try adding this 2-character segment directly
+#                         test_token = validated_token + seg
+#
+#                         # Check if the test token's remaining length is valid
+#                         remaining_after_add = len(test_token) - len(year_part)
+#
+#                         # Compact format should have even-length remainder after year
+#                         # (2 for month, 4 for month+day, 6 for month+day+hour, etc.)
+#                         if remaining_after_add % 2 != 0:
+#                             # Odd length = incomplete, stop
+#                             break
+#
+#                         if _validate_date_token(test_token, year_part):
+#                             validated_token = test_token
+#                             pos += 2
+#                         else:
+#                             # Invalid, stop
+#                             break
+#
+#                     token = validated_token
+#     print(token)
+#     raise ValueError
+#     return token
+
+#
+# def parse_date(s: str) -> datetime:
+#     """
+#     Parse ISO-standard date strings with flexible separators.
+#
+#     Only accepts dates starting with year (YY or YYYY).
+#     Supports separators: '-', '_', or none.
+#     Missing or invalid parts default to first standard (month=01, day=01, etc.).
+#     No rounding - exact values are used.
+#
+#     Parameters
+#     ----------
+#     s : str
+#         Date string to parse.
+#
+#     Returns
+#     -------
+#     datetime
+#         Parsed datetime object.
+#
+#     Raises
+#     ------
+#     ValueError
+#         If the date format is not recognized or invalid.
+#
+#     Supported Formats
+#     ------------------
+#     Year only:           2024, 24
+#     Year-Month:          2024-09, 2024_09, 202409, 24-09, 24_09, 2409
+#     Year-Month-Day:      2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901
+#     With time:           2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045
+#
+#     Separators: '-', '_', or none
+#     Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00
+#     No rounding - exact values are used
+#
+#     Note
+#     ----
+#     If a part is present but invalid (e.g., month=13, day=47, hour=99), it is
+#     ignored and the default value is used. This allows filenames like
+#     "2008_9109" to be parsed as year-only (2008-01-01), or "2024_09_47" to
+#     be parsed as year-month (2024-09-01).
+#     """
+#     console = get_console()
+#
+#     # Pre-extract and normalize the date token using our helper
+#     token = extract_datetime_token(s)
+#     if token is None:
+#         console.error(f"Invalid date format: {s!r}")
+#         console.error("")
+#         console.error("Supported formats (ISO standard, year-first):")
+#         console.error("  Year only:           2024, 24")
+#         console.error("  Year-Month:          2024-09, 2024_09, 202409, 24-09, 24_09, 2409")
+#         console.error("  Year-Month-Day:      2024-09-01, 2024_09_01, 20240901, 24-09-01, 24_09_01, 240901")
+#         console.error("  With time:           2024-09-01-14-30-45, 2024_09_01_14_30_45, 20240901143045")
+#         console.error("")
+#         console.error("Separators: '-', '_', or none")
+#         console.error("Missing or invalid parts default to: month=01, day=01, hour=00, minute=00, second=00")
+#         console.error("No rounding - exact values are used")
+#         raise ValueError(f"Invalid date format: {s!r}")
+#
+#     # Extract year from the token (first 2-4 digits)
+#     year_match = re.match(r'^(\d{2,4})', token)
+#     year_part = year_match.group(1)
+#
+#     # Determine year (2-digit -> 2000s, 4-digit -> as-is)
+#     if len(year_part) == 2:
+#         year = 2000 + int(year_part)
+#     elif len(year_part) == 4:
+#         year = int(year_part)
+#     else:
+#         console.error(f"Invalid year format: {year_part!r}")
+#         raise ValueError(f"Invalid year format: {year_part!r}")
+#
+#     # Default values
+#     month = 1
+#     day = 1
+#     hour = 0
+#     minute = 0
+#     second = 0
+#     microsecond = 0
+#
+#     # Get the remaining part after the year
+#     remaining = token[len(year_part):]
+#
+#     # Check if there are separators
+#     if '-' in remaining:
+#         # Strip leading hyphens that might be present from the year separator
+#         remaining = remaining.lstrip('-')
+#         # Parse with separators (e.g., 2016-03-19 or 2016-03-19-14-30-45)
+#         parts = remaining.split('-')
+#
+#         # Extract and validate values - ignore invalid parts
+#         if len(parts) >= 1 and parts[0]:
+#             try:
+#                 m = int(parts[0])
+#                 if 1 <= m <= 12:
+#                     month = m
+#             except ValueError:
+#                 pass  # Keep default month
+#
+#         if len(parts) >= 2 and parts[1]:
+#             try:
+#                 d = int(parts[1])
+#                 if 1 <= d <= 31:
+#                     day = d
+#             except ValueError:
+#                 pass  # Keep default day
+#
+#         if len(parts) >= 3 and parts[2]:
+#             try:
+#                 h = int(parts[2])
+#                 if 0 <= h <= 23:
+#                     hour = h
+#             except ValueError:
+#                 pass  # Keep default hour
+#
+#         if len(parts) >= 4 and parts[3]:
+#             try:
+#                 m = int(parts[3])
+#                 if 0 <= m <= 59:
+#                     minute = m
+#             except ValueError:
+#                 pass  # Keep default minute
+#
+#         if len(parts) >= 5 and parts[4]:
+#             try:
+#                 s = int(parts[4])
+#                 if 0 <= s <= 59:
+#                     second = s
+#             except ValueError:
+#                 pass  # Keep default second
+#         if len(parts) >= 6 and parts[5]:
+#             try:
+#                 f = int(parts[5])
+#                 if 0 <= f <= 999999:
+#                     microsecond = f
+#             except ValueError:
+#                 pass # Keep default microsecond
+#     else:
+#         # Parse without separators (e.g., 20160319 or 20160319143045)
+#         # Extract month (2 digits after year)
+#         if len(remaining) >= 2:
+#             try:
+#                 m = int(remaining[0:2])
+#                 if 1 <= m <= 12:
+#                     month = m
+#             except ValueError:
+#                 pass  # Keep default month
+#
+#         # Extract day (next 2 digits)
+#         if len(remaining) >= 4:
+#             try:
+#                 d = int(remaining[2:4])
+#                 if 1 <= d <= 31:
+#                     day = d
+#             except ValueError:
+#                 pass  # Keep default day
+#
+#         # Extract hour (next 2 digits)
+#         if len(remaining) >= 6:
+#             try:
+#                 h = int(remaining[4:6])
+#                 if 0 <= h <= 23:
+#                     hour = h
+#             except ValueError:
+#                 pass  # Keep default hour
+#
+#         # Extract minute (next 2 digits)
+#         if len(remaining) >= 8:
+#             try:
+#                 m = int(remaining[6:8])
+#                 if 0 <= m <= 59:
+#                     minute = m
+#             except ValueError:
+#                 pass  # Keep default minute
+#
+#         # Extract second (next 2 digits)
+#         if len(remaining) >= 10:
+#             try:
+#                 s = int(remaining[8:10])
+#                 if 0 <= s <= 59:
+#                     second = s
+#             except ValueError:
+#                 pass  # Keep default second
+#         if len(remaining) >= 16:
+#             try:
+#                 f = int(remaining[10:16])
+#                 if 0 <= f <= 999999:
+#                     microsecond = f
+#             except ValueError:
+#                 pass # Keep default microsecond
+#
+#
+#     return datetime(year, month, day, hour, minute, second, microsecond)
 
 
 def extract_identifier(filename: str) -> Optional[str]:
@@ -673,9 +736,9 @@ def collect_pairs(input_folder: str,
                   identifier: Optional[str] = None):
     """
     Build pairs and return:
-      - year_pairs: list of (id1, id2)
+      - datetime_pairs: list of (id1, id2)
       - id_to_file: id -> tif path
-      - id_to_date: id -> date string ("YYYY-MM-DD" or "YYYY-MM-DD HH:MM:SS")
+      - id_to_date: id -> datetime
       - id_hastime_from_filename: id -> bool (True if time came from filename)
       - id_to_identifier: id -> identifier (only if identifier parameter is provided)
     
@@ -708,7 +771,7 @@ def collect_pairs(input_folder: str,
     Returns
     -------
     tuple
-        (year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier)
+        (datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier)
         where id_to_identifier is only included if identifier parameter is not None.
     """
     console = get_console()
@@ -726,6 +789,10 @@ def collect_pairs(input_folder: str,
                 id_col = "year"
             elif "file/year" in date_df.columns:
                 id_col = "file/year"
+            elif "datetime" in date_df.columns:
+                id_col = "datetime"
+            elif "file/datetime" in date_df.columns:
+                id_col = "file/datetime"
             else:
                 raise ValueError("image_dates.csv must contain a 'file', 'year', or 'file/year' column.")
             if "date" not in date_df.columns:
@@ -751,61 +818,56 @@ def collect_pairs(input_folder: str,
     id_hastime_from_filename = {}
 
     for f in img_files:
-        # Extract date token from filename without extension to avoid trailing digits from suffixes (e.g. _HS_10)
-        filename_without_ext = os.path.splitext(f)[0]
-        lead = extract_date_token(filename_without_ext)
-        if lead is None:
-            continue
-        
-        # Use the full path from recursive search
-        path = filename_to_path[f]
-        
         # Parse the date token
         try:
-            dt = parse_date(lead)
+            observation_datetime = extract_datetime_from_token(f)
         except ValueError:
             # Skip files with invalid date tokens
             continue
-        
+        if observation_datetime is None:
+            continue
+
+        # Use the full path from recursive search
+        path = filename_to_path[f]
+
+
         # Extract identifier from filename to make ID unique
         file_identifier = extract_identifier(f)
         
-        # Use the original token as ID, but make it unique by appending identifier if present
+        # Use exact datetime as ID, but make it unique by appending identifier if present
         if file_identifier:
-            id_ = f"{lead}_{file_identifier}"
+            id_ = f"{observation_datetime.strftime("%Y%m%dT%H%M%S%f")}_{file_identifier}"
         else:
-            id_ = lead
-        
+            id_ = observation_datetime.strftime("%Y%m%dT%H%M%S%f")
+
+
         id_to_file[id_] = path
         
         # Check if this file has a date override in the CSV file
         # First try to match by full filename (without extension), then by token
         csv_date_str = None
-        if filename_without_ext in csv_year_to_date:
-            csv_date_str = csv_year_to_date[filename_without_ext]
+        if f in csv_year_to_date:
+            csv_date_str = csv_year_to_date[f]
         elif id_ in csv_year_to_date:
             csv_date_str = csv_year_to_date[id_]
         
         if csv_date_str is not None:
             # Use the date from CSV, parsing it with the same logic as filename dates
             try:
-                csv_dt = parse_date(csv_date_str)
-                dt = csv_dt  # Override with CSV date
+                csv_dt = extract_datetime_from_token(csv_date_str)
+                observation_datetime = csv_dt  # Override with CSV date
                 id_hastime_from_filename[id_] = False  # Date came from CSV, not filename
             except ValueError:
                 # If CSV date is invalid, fall back to filename date
                 id_hastime_from_filename[id_] = True
         else:
             id_hastime_from_filename[id_] = True
-        
-        # Format date string (with time if present, without if not)
-        if dt.hour != 0 or dt.minute != 0 or dt.second != 0:
-            id_to_date[id_] = dt.strftime("%Y-%m-%d %H:%M:%S")
-        else:
-            id_to_date[id_] = dt.strftime("%Y-%m-%d")
+
+        id_to_date[id_] = observation_datetime
+
 
     # 3) Order by actual time
-    items = [(k, parse_date(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
+    items = [(k, id_to_date[k]) for k in id_to_file.keys() if k in id_to_date]
     items.sort(key=lambda t: t[1])
     ordered_ids = [k for k, _ in items]
 
@@ -830,7 +892,7 @@ def collect_pairs(input_folder: str,
                 id_to_date.pop(id_, None)
                 id_hastime_from_filename.pop(id_, None)
         # Re-sort after filtering
-        items = [(k, parse_date(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
+        items = [(k, extract_datetime_from_token(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
         items.sort(key=lambda t: t[1])
         ordered_ids = [k for k, _ in items]
         console.info_verbose(f"Files remaining after identifier filtering: {len(ordered_ids)}")
@@ -838,21 +900,21 @@ def collect_pairs(input_folder: str,
     # 4) Build pairs
     if pairing_mode == "all":
         # every id with every later id
-        year_pairs = list(itertools.combinations(ordered_ids, 2))
+        datetime_pairs = list(itertools.combinations(ordered_ids, 2))
 
     elif pairing_mode == "successive":
         # only neighbours: (t1,t2), (t2,t3), ...
         def _successive_pairs(ids):
             return [(ids[i], ids[i + 1]) for i in range(len(ids) - 1)]
-        year_pairs = _successive_pairs(ordered_ids)
+        datetime_pairs = _successive_pairs(ordered_ids)
 
     elif pairing_mode == "first_to_all":
         # always use the first id as anchor: (first, second), (first, third), ...
         if len(ordered_ids) < 2:
-            year_pairs = []
+            datetime_pairs = []
         else:
             anchor = ordered_ids[0]
-            year_pairs = [(anchor, other) for other in ordered_ids[1:]]
+            datetime_pairs = [(anchor, other) for other in ordered_ids[1:]]
 
     elif pairing_mode == "custom":
         # --- read CSV with auto delimiter (',' or ';') ---
@@ -890,83 +952,14 @@ def collect_pairs(input_folder: str,
 
         # Map CSV token -> ID used in id_to_file
         def _resolve_csv_token_to_id(raw: str) -> str:
-            # Always parse first, then normalize to canonical date token
-            # so CSV values like "2024-07" and IDs like "2024-07_HS_10" compare consistently.
-            try:
-                raw_dt = parse_date(str(raw).strip())
-            except Exception:
-                lead = extract_date_token(raw)
-                if lead is None:
-                    raise ValueError(f"Unrecognized pair token: {raw!r}")
-                try:
-                    raw_dt = parse_date(lead)
-                except Exception:
-                    raise ValueError(f"Unrecognized pair token: {raw!r}")
-
-            # Canonical token precision based on provided CSV value
-            raw_s = str(raw).strip()
-            raw_token = extract_date_token(raw_s)
-            if raw_token is None:
-                raw_token = raw_s
-
-            # Determine requested precision from CSV token
-            if re.match(r"^\d{4}$", raw_token):
-                lead = raw_dt.strftime("%Y")
-            elif re.match(r"^\d{4}-\d{2}$", raw_token):
-                lead = raw_dt.strftime("%Y-%m")
-            elif re.match(r"^\d{4}-\d{2}-\d{2}$", raw_token):
-                lead = raw_dt.strftime("%Y-%m-%d")
-            elif re.match(r"^\d{8}$", raw_token):
-                lead = raw_dt.strftime("%Y%m%d")
-            elif re.match(r"^\d{12}$", raw_token):
-                lead = raw_dt.strftime("%Y%m%d%H%M")
-            else:
-                # fallback for full timestamp or mixed separator forms
-                lead = raw_dt.strftime("%Y-%m-%d-%H-%M") if (raw_dt.hour or raw_dt.minute or raw_dt.second) else raw_dt.strftime("%Y-%m-%d")
-
+            lead = extract_datetime_from_token(raw)
+            if lead is None:
+                raise ValueError(f"Unrecognized pair token: {raw!r}")
+            
             # Try exact match first
             if lead in id_to_file:
                 return lead
 
-            # Match by parsed date with flexible precision
-            candidates = []
-            for k in id_to_file.keys():
-                k_base = k.rsplit("_", 1)[0] if "_" in k else k
-                try:
-                    k_dt = parse_date(k_base)
-                except Exception:
-                    k_token = extract_date_token(k)
-                    if k_token is None:
-                        continue
-                    try:
-                        k_dt = parse_date(k_token)
-                    except Exception:
-                        continue
-
-                if re.match(r"^\d{4}$", raw_token):
-                    ok = (k_dt.year == raw_dt.year)
-                elif re.match(r"^\d{4}-\d{2}$", raw_token):
-                    ok = (k_dt.year == raw_dt.year and k_dt.month == raw_dt.month)
-                elif re.match(r"^\d{4}-\d{2}-\d{2}$", raw_token) or re.match(r"^\d{8}$", raw_token):
-                    ok = (k_dt.year == raw_dt.year and k_dt.month == raw_dt.month and k_dt.day == raw_dt.day)
-                elif re.match(r"^\d{12}$", raw_token):
-                    ok = (
-                        k_dt.year == raw_dt.year and k_dt.month == raw_dt.month and k_dt.day == raw_dt.day
-                        and k_dt.hour == raw_dt.hour and k_dt.minute == raw_dt.minute
-                    )
-                else:
-                    ok = (k_dt == raw_dt)
-
-                if ok:
-                    candidates.append(k)
-
-            if len(candidates) == 1:
-                return candidates[0]
-            if len(candidates) > 1:
-                raise KeyError(
-                    f"Ambiguous token '{raw}': multiple file IDs match {sorted(candidates)}. "
-                    "Please disambiguate in image_pairs.csv (e.g., include identifier suffix)."
-                )
 
             raise KeyError(
                 f"No file ID matching token '{raw}' found in input folder. "
@@ -988,13 +981,13 @@ def collect_pairs(input_folder: str,
             except Exception as e:
                 console.error(f"Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
 
-        year_pairs = pairs
+        datetime_pairs = pairs
 
     # Return with or without id_to_identifier based on whether identifier was provided
     if identifier is not None:
-        return year_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier
+        return datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier
     else:
-        return year_pairs, id_to_file, id_to_date, id_hastime_from_filename
+        return datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename
 
 
 def ensure_dir(path: str):
@@ -1135,9 +1128,7 @@ def abbr_tracking(tp):
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
         _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
         _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
-        _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),
-    ]
-
+        _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),    ]
 
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "T_" + "_".join(parts)
@@ -1190,12 +1181,7 @@ def abbr_output_units(mode: str) -> str:
     str
         Short code string starting with "U_".
     """
-    if mode == "per_year":
-        return "U_per_year"
-    elif mode == "total":
-        return "U_total"
-    else:
-        return f"U_{mode}"
+    return "U_" + mode
 
 
 def abbr_enhancement(ep) -> str:
@@ -1265,3 +1251,6 @@ def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     print("Found level of detection with quantile " + str(quantile) + " as "
           + str(np.round(image_pair.level_of_detection, decimals=5)) + " " + str(unit_name) + "/year")
     return True
+
+
+
