@@ -45,7 +45,8 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
         eff = half + int(round(float(v) * float(years_between)))
         if cap_per_side is not None:
             eff = min(int(cap_per_side), eff)
-        return max(half, eff)
+        return eff #max(half, eff)
+
     px, nx, py, ny = deltas
     return (one(px), one(nx), one(py), one(ny))
 #
