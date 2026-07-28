@@ -1112,7 +1112,7 @@ class ImagePair:
         else:
             unit_name_spatial = "pixel"
         console = get_console()
-        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=5)} {unit_name_spatial}/{self.output_units_mode[4:]}")
+        console.success(f"Found level of detection with quantile {level_of_detection_quantile} as {np.round(self.level_of_detection, decimals=4)} {unit_name_spatial}/{self.output_units_mode[4:]}")
 
     def filter_lod_points(self) -> None:
         """
@@ -1536,7 +1536,7 @@ class ImagePair:
                     if getattr(self, "level_of_detection", None) is not None
                     else "NA"
                 )
-                statistics_file.write(f"Level of Detection: {lod_str}\n")
+                statistics_file.write(f"Level of Detection (q{self.filter_parameters.level_of_detection_quantile}): {lod_str}\n")
 
                 statistics_file.write(
                     "Total number of points: " + str(total_number_of_points) + "\n"
