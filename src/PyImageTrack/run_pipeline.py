@@ -890,6 +890,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
                 "search_extent_deltas": base_track_deltas,
                 "search_extent_px_effective": adaptive_extents,
+                "use_adaptive_tracking_window": tracking_params.use_adaptive_tracking_window
             }
             
             track_code  = abbr_tracking(pair_tracking_config_for_code)

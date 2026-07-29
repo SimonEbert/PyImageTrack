@@ -69,6 +69,7 @@ class TrackingParameters:
         self.nb_initial_estimate_peaks = parameter_dict.get("nb_initial_estimate_peaks", 1)
         self.correlation_threshold_initial_estimates = parameter_dict.get("correlation_threshold_initial_estimates", None)
         self.min_distance_initial_estimates = parameter_dict.get("min_distance_initial_estimates", 1)
+        self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         
         # Validate parameters
         self._validate()
@@ -110,7 +111,6 @@ class TrackingParameters:
                     raise ValueError(f"image_bands must contain non-negative integers, got {self.image_bands}")
             else:
                 raise ValueError(f"image_bands must be an integer or list/tuple of integers, got {type(self.image_bands)}")
-
     def __str__(self) -> str:
         """
         Return string representation of tracking parameters.

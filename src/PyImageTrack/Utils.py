@@ -1129,6 +1129,10 @@ def abbr_tracking(tp):
         _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
         _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
         _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),    ]
+    if _get(tp, "use_adaptive_tracking_window", True):
+        parts += [
+            f"adaptive"
+        ]
 
     parts = [p for p in parts if p not in (None, "", "NA")]
     return "T_" + "_".join(parts)
