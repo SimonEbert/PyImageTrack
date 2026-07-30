@@ -682,7 +682,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         raise ValueError("save_files list cannot be empty. At least one output file type must be specified.")
 
     # Allow JPG/JPEG only if explicitly opted into fake georeferencing
-    extensions = (".tif", ".tiff") if not use_no_georeferencing else (".tif", ".tiff", ".jpg", ".jpeg")
+    extensions = (".tif", ".tiff") if not use_no_georeferencing else (".tif", ".tiff", ".jpg", ".jpeg", ".png")
 
     # Collect pairs, optionally filtering by identifier
     if identifier is not None:
