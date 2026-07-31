@@ -175,7 +175,7 @@ def extract_datetime_from_token(s: str) -> datetime:
     s_norm = s_norm.replace('T', '-')
 
     # Extract possible datetime matches
-    full_match = re.search(r'(?:\d{4}\d{2})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
+    full_match = re.search(r'(?:\d{4}|\d{2})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
     datetime_part = full_match.group(0)
 
     # Normalize string with separating date and time options
