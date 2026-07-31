@@ -4,8 +4,10 @@ import warnings
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+import pyproj
 import rasterio
 import rasterio.plot
+import shapely
 from shapely.geometry import box
 import scipy
 import sklearn
@@ -27,6 +29,7 @@ from ..CreateGeometries.HandleGeometries import (
     georeference_tracked_points,
     grid_points_on_polygon_by_distance,
     random_points_on_polygon_by_number, make_safe_bounds_from_buffer,
+    crop_images_to_polygon
 )
 from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_depth_images
 
@@ -551,6 +554,12 @@ class ImagePair:
             self.image1_observation_date = extract_datetime_from_token(observation_date_1)
         if type(observation_date_2) is not dt.datetime:
             self.image2_observation_date = extract_datetime_from_token(observation_date_2)
+
+    def crop_images_to_polygon(self, cropping_polygon: shapely.Polygon, polygon_crs: pyproj.crs.CRS):
+        self.image1_matrix, self.image1_transform = crop_images_to_polygon(self.image1_matrix, self.image1_transform,
+                                                                          self.crs,cropping_polygon, polygon_crs)
+        self.image2_matrix, self.image2_transform = crop_images_to_polygon(self.image2_matrix, self.image2_transform,
+                                                                          self.crs,cropping_polygon, polygon_crs)
 
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """

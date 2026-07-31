@@ -404,6 +404,10 @@ The `[polygons]` section supports an optional fallback mode for defining the sta
 
 **Note**: This fallback mode may result in slightly lower alignment quality compared to using a properly defined stable area polygon. To compensate, consider increasing the `number_of_control_points` parameter in the `[alignment]` section.
 
+### Optional cropping of image
+The pipeline supports cropping the image to an extent that is sufficient for the specified stable and moving areas. Therefore, the `image_cropping_buffer` flag must be set under `polygons`. In that case the image will be cropped to the bounding box of the combined stable and moving areas + the specified buffer length, given in CRS units for georeferenced images and pixels for non-georeferenced images.
+This can vastly improve computation times, if the image is not cropped to the stable and moving areas beforehand, and thus allows the usage of a single large image file for the analysis of many small moving areas, while maintaining good computation times.
+
 ### [no_georef] options and depth-image settings
 If you enable fake/no-georeferencing via `[no_georef]`, additional options control how non-georeferenced images are
 handled and how optional 3D displacement calculation from depth images is performed.

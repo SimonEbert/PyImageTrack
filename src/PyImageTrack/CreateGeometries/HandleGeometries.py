@@ -4,6 +4,8 @@ import pandas as pd
 import rasterio
 import rasterio.mask
 import rasterio.transform
+from rasterio.windows import from_bounds, transform as window_transform
+from rasterio.warp import transform_bounds
 import shapely
 from pyproj import CRS as PyprojCRS
 import datetime as dt
@@ -203,6 +205,22 @@ def crop_images_to_intersection(file1, file2):
     array_file2, array_file2_transform = rasterio.mask.mask(file2, shapes=minbbox_polygon, crop=True)
 
     return [array_file1, array_file1_transform], [array_file2, array_file2_transform]
+
+def crop_images_to_polygon(image_matrix: np.ndarray, image_transform, image_crs, polygon:shapely.Polygon,
+                           polygon_crs: PyprojCRS):
+    minx, miny, maxx, maxy = polygon.bounds
+    if polygon_crs is not None and polygon_crs != image_crs:
+        minx, miny, maxx, maxy = transform_bounds(
+            polygon_crs, image_crs, minx, miny, maxx, maxy
+        )
+    window = from_bounds(minx, miny, maxx, maxy, transform=image_transform)
+
+    window = window.round_lengths(op="ceil").round_offsets(op="floor")
+    window = window.crop(image_matrix.shape[-2],image_matrix.shape[-1])
+    row_slice, col_slice = window.toslices()
+    cropped_image_matrix = image_matrix[..., row_slice, col_slice]
+    cropped_image_transform = window_transform(window, image_transform)
+    return cropped_image_matrix, cropped_image_transform
 
 
 def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, crs,

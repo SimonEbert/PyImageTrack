@@ -77,6 +77,13 @@ moving_area_filename = "moving_area.shp"
 # warning is issued. Stats/valid fractions are reported per ID.
 moving_id_column = "moving_id"
 
+# Buffer length, which can optionally be used for cropping the underlying images to a smaller size. This option allows to
+# use the same base image for the analysis of multiple areas in its extent. If the area of interest is significantly
+# smaller than the available images, this can significantly improve computation times. The images are cropped to the
+# bounding box of the given stable and moving areas plus the specified buffer length. For georeferenced images, the
+# buffer should be given in CRS units, and for non-georeferenced images it should be given in pixels.
+image_cropping_buffer = "none"# 100
+
 [pairing]
 # Strategy for pairing images for tracking:
 # - "all": Pair each image with every other image (combinatorial)

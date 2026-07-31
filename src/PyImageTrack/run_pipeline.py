@@ -516,6 +516,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     poly_outside_filename = _get(cfg, "polygons", "stable_area_filename", "none")
     poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
     moving_id_column = _get(cfg, "polygons", "moving_id_column", "moving_id")
+    image_cropping_buffer = _get(cfg, "polygons", "image_cropping_buffer", "none")
     
     # Replace wildcard in polygon filenames with identifier if provided
     if identifier is not None:
@@ -766,16 +767,16 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         polygon_inside_crs = polygon_inside.crs
         if (poly_outside_crs is None) != (polygon_inside_crs is None):
             raise ValueError(
-                "Polygon CRS mismatch: outside has "
+                "Polygon CRS mismatch: stable area has "
                 + _crs_label(poly_outside_crs)
-                + ", inside has "
+                + ", moving area has "
                 + _crs_label(polygon_inside_crs)
             )
         if poly_outside_crs is not None and _normalize_crs(poly_outside_crs) != _normalize_crs(polygon_inside_crs):
             raise ValueError(
-                "Polygon CRS mismatch: outside has "
+                "Polygon CRS mismatch: stable area has "
                 + _crs_label(poly_outside_crs)
-                + ", inside has "
+                + ", moving area has "
                 + _crs_label(polygon_inside_crs)
             )
         polygons_crs = poly_outside_crs
@@ -971,6 +972,16 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 observation_date_2=dt2,
                 selected_channels=alignment_params.image_bands
             )
+
+            if image_cropping_buffer is not None:
+                # Spatial intersection
+                if (polygon_inside.crs != image_pair.crs) | (poly_outside.crs != image_pair.crs):
+                    raise ValueError("CRS mismatch between one of the defined polygons and the image")
+                polygon_crs = polygon_inside.crs
+                required_image_bounding_box = polygon_inside.union_all().union(poly_outside.union_all()).buffer(image_cropping_buffer)
+                image_pair.crop_images_to_polygon(required_image_bounding_box, polygon_crs)
+
+
 
             # optional image enhancement (CLAHE) before alignment/tracking
             if do_image_enhancement and hasattr(image_pair, "equalize_adapthist_images"):
