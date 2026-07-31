@@ -180,6 +180,7 @@ def extract_datetime_from_token(s: str) -> datetime:
 
     # Normalize string with separating date and time options
     datetime_parts = datetime_part.split('-')
+    print(datetime_parts)
     # Fallback if a year with only two digits is provided:
     # dateutils would read this as day-month-year, but we always consider year first
     if len(datetime_parts[0]) == 2:
