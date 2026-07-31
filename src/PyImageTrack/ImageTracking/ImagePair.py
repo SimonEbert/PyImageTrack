@@ -570,8 +570,6 @@ class ImagePair:
                                                                           self.crs,cropping_polygon, polygon_crs)
         self.image2_matrix_original, _ = crop_images_to_polygon(self.image2_matrix_original, transform2_before_cropping,
                                                                           self.crs,cropping_polygon, polygon_crs)
-        rasterio.plot.show(self.image1_matrix)
-        rasterio.plot.show(self.image1_matrix_original)
 
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
