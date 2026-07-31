@@ -687,7 +687,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # Collect pairs, optionally filtering by identifier
     if identifier is not None:
-        datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier = collect_pairs(
+        datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename, id_to_identifier = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
             pairs_csv_path=pairs_csv_path,
@@ -696,7 +696,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             identifier=identifier
         )
     else:
-        datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
+        datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
             pairs_csv_path=pairs_csv_path,
@@ -821,13 +821,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
             # folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
             
-            if (dt1.hour == 0 & dt1.minute == 0 & dt1.second == 0 & dt1.microsecond == 0
-                & dt2.hour == 0 and dt2.minute == 0 & dt2.second == 0 & dt2.microsecond == 0):
-                dt1_string = dt1.date().isoformat()
-                dt2_string = dt2.date().isoformat()
-            else:
-                dt1_string = dt1.isoformat(sep=" ")
-                dt2_string = dt2.isoformat(sep=" ")
+
+            dt1_string = id_to_date_user_string[token1]
+            dt2_string = id_to_date_user_string[token2]
+
 
             # Image pair header
             pair_id_short = f"{dt1_string} -> {dt2_string}"
@@ -972,6 +969,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 observation_date_2=dt2,
                 selected_channels=alignment_params.image_bands
             )
+            if image_pair.image1_observation_date_user_string is None:
+                image_pair.image1_observation_date_user_string = id_to_date_user_string[token1]
+            if image_pair.image2_observation_date_user_string is None:
+                image_pair.image2_observation_date_user_string = id_to_date_user_string[token2]
 
             if image_cropping_buffer is not None:
                 # Spatial intersection

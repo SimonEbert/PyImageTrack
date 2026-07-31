@@ -120,9 +120,11 @@ class ImagePair:
         self.image1_matrix = None
         self.image1_transform = None
         self.image1_observation_date = None
+        self.image1_observation_date_user_string = None
         self.image2_matrix = None
         self.image2_transform = None
         self.image2_observation_date = None
+        self.image2_observation_date_user_string = None
         self.image_bounds = None
 
         # Optional: store original (true-color) matrices for writing aligned products
@@ -495,11 +497,11 @@ class ImagePair:
         self.image_bounds = image_bounds
 
 
-        self.image1_observation_date = extract_datetime_from_token(observation_date_1)\
-            if type(observation_date_1) is not dt.datetime else observation_date_1
+        self.image1_observation_date, self.image1_observation_date_user_string =(
+            extract_datetime_from_token(observation_date_1)) if type(observation_date_1) is not dt.datetime else observation_date_1, None
 
-        self.image2_observation_date = extract_datetime_from_token(observation_date_2)\
-            if type(observation_date_2) is not dt.datetime else observation_date_2
+        self.image2_observation_date, self.image2_observation_date_user_string =(
+            extract_datetime_from_token(observation_date_2)) if type(observation_date_2) is not dt.datetime else observation_date_2, None
         # Calculate delta t between observations
         self.time_between_observations = self.image2_observation_date - self.image1_observation_date
 
@@ -551,15 +553,25 @@ class ImagePair:
             self.image_bands = self.image1_matrix.shape[0]
 
         if type(observation_date_1) is not dt.datetime:
-            self.image1_observation_date = extract_datetime_from_token(observation_date_1)
+            self.image1_observation_date, self.image1_observation_date_user_string = extract_datetime_from_token(observation_date_1)
         if type(observation_date_2) is not dt.datetime:
-            self.image2_observation_date = extract_datetime_from_token(observation_date_2)
+            self.image2_observation_date, self.image2_observation_date_user_string = extract_datetime_from_token(observation_date_2)
 
     def crop_images_to_polygon(self, cropping_polygon: shapely.Polygon, polygon_crs: pyproj.crs.CRS):
-        self.image1_matrix, self.image1_transform = crop_images_to_polygon(self.image1_matrix, self.image1_transform,
+        transform1_before_cropping = self.image1_transform
+        transform2_before_cropping = self.image2_transform
+
+        self.image1_matrix, self.image1_transform = crop_images_to_polygon(self.image1_matrix, transform1_before_cropping,
                                                                           self.crs,cropping_polygon, polygon_crs)
-        self.image2_matrix, self.image2_transform = crop_images_to_polygon(self.image2_matrix, self.image2_transform,
+        self.image2_matrix, self.image2_transform = crop_images_to_polygon(self.image2_matrix, transform2_before_cropping,
                                                                           self.crs,cropping_polygon, polygon_crs)
+
+        self.image1_matrix_original, _ = crop_images_to_polygon(self.image1_matrix_original, transform1_before_cropping,
+                                                                          self.crs,cropping_polygon, polygon_crs)
+        self.image2_matrix_original, _ = crop_images_to_polygon(self.image2_matrix_original, transform2_before_cropping,
+                                                                          self.crs,cropping_polygon, polygon_crs)
+        rasterio.plot.show(self.image1_matrix)
+        rasterio.plot.show(self.image1_matrix_original)
 
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
@@ -1250,10 +1262,15 @@ class ImagePair:
         """
         os.makedirs(folder_path, exist_ok=True)
 
+        save_datetime_user_string1 = self.image1_observation_date_user_string if self.image1_observation_date_user_string is not None else self.image1_observation_date.isoformat().replace(" ","_")
+        save_datetime_user_string2 = self.image2_observation_date_user_string if self.image2_observation_date_user_string is not None else self.image2_observation_date.isoformat().replace(" ","_")
+
+        save_datetime_part_user_string = save_datetime_user_string1 + "_" + save_datetime_user_string2
+
         # --- Save full tracking results if requested ---
         if "tracking_results_fgb" in save_files:
             self.tracking_results.to_file(
-                f"{folder_path}/tracking_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
+                f"{folder_path}/tracking_results_{save_datetime_part_user_string}.fgb",
                 driver="FlatGeobuf"
             )
 
@@ -1261,14 +1278,14 @@ class ImagePair:
             downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
                                                                        point_distance=self.downsample_tracking_results_resolution)
             downsampled_tracking_results.to_file(
-                f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
+                f"{folder_path}/tracking_results_downsampled_{save_datetime_part_user_string}.fgb",
                 driver="FlatGeobuf"
             )
             plot_movement_of_points(
                 self.image1_matrix_original,
                 self.image1_transform,
                 downsampled_tracking_results,
-                save_path=f"{folder_path}/tracking_results_downsampled_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.jpg",
+                save_path=f"{folder_path}/tracking_results_downsampled_{save_datetime_part_user_string}.jpg",
                 unit_name_distance=self.coordinate_system_unit_name,
                 unit_name_time=self.output_units_mode[4:],
                 vmin=self.level_of_detection
@@ -1370,7 +1387,7 @@ class ImagePair:
             image1_matrix_uint = (self.image1_matrix * self.image1_matrix_original.max()/self.image1_matrix.max())
 
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image1_observation_date.isoformat().replace(" ","_")}.jpeg",
+                path=f"{folder_path}/image_{save_datetime_user_string1}.jpeg",
                 raster=image1_matrix_uint.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1380,7 +1397,7 @@ class ImagePair:
         if "second_image_matrix_jpg" in save_files:
             image2_matrix_uint = (self.image2_matrix * self.image2_matrix_original.max()/self.image2_matrix.max())
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image2_observation_date.isoformat().replace(" ","_")}.jpeg",
+                path=f"{folder_path}/image_{save_datetime_user_string2}.jpeg",
                 raster=image2_matrix_uint.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1388,7 +1405,7 @@ class ImagePair:
             )
         if "first_image_depth_matrix" in save_files:
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image1_observation_date.isoformat().replace(" ","_")}_depth.tif",
+                path=f"{folder_path}/image_{save_datetime_user_string1}_depth.tif",
                 raster=self.depth_image1.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1397,7 +1414,7 @@ class ImagePair:
 
         if "second_image_depth_matrix" in save_files:
             _save_raster_as_file(
-                path=f"{folder_path}/image_{self.image2_observation_date.isoformat().replace(" ","_")}_depth.tif",
+                path=f"{folder_path}/image_{save_datetime_user_string2}_depth.tif",
                 raster=self.depth_image2.astype(np.uint8),
                 transform=self.image1_transform,
                 crs=self.crs,
@@ -1419,7 +1436,7 @@ class ImagePair:
         if raster_valid is not None:
             if "L2_movement-bearing_above-LoD_filtered_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L2_movement-bearing_above-LoD_filtered_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/L2_movement-bearing_above-LoD_filtered_{save_datetime_part_user_string}.tif",
                     raster=raster_valid["raster"]["movement_bearing_pixels"],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
@@ -1427,7 +1444,7 @@ class ImagePair:
 
             if "L2_movement-rate_above-LoD_filtered_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L2_movement-rate_above-LoD_filtered_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/L2_movement-rate_above-LoD_filtered_{save_datetime_part_user_string}.tif",
                     raster=raster_valid["raster"][self.displacement_column_name],
                     transform=raster_valid["transform"],
                     crs=raster_valid["crs"]
@@ -1437,14 +1454,14 @@ class ImagePair:
         if raster_lod_filtered is not None:
             if "L1_movement-bearing_above-LoD_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L1_movement-bearing_above-LoD_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/L1_movement-bearing_above-LoD_{save_datetime_part_user_string}.tif",
                     raster=raster_lod_filtered["raster"]["movement_bearing_pixels"],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
                 )
             if "L1_movement-rate_above-LoD_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L1_movement-rate_above-LoD_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/L1_movement-rate_above-LoD_{save_datetime_part_user_string}.tif",
                     raster=raster_lod_filtered["raster"][self.displacement_column_name],
                     transform=raster_lod_filtered["transform"],
                     crs=raster_lod_filtered["crs"]
@@ -1454,7 +1471,7 @@ class ImagePair:
         if raster_all is not None:
             if "L0_movement-bearing_raw_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L0_movement-bearing_raw_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/L0_movement-bearing_raw_{save_datetime_part_user_string}.tif",
                     raster=raster_all["raster"]["movement_bearing_pixels"],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -1462,7 +1479,7 @@ class ImagePair:
 
             if "L0_movement-rate_raw_tif" in save_files:
                 _save_raster_as_file(
-                    path=f"{folder_path}/L0_movement-rate_raw_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/L0_movement-rate_raw_{save_datetime_part_user_string}.tif",
                     raster=raster_all["raster"][self.displacement_column_name],
                     transform=raster_all["transform"],
                     crs=raster_all["crs"]
@@ -1477,7 +1494,7 @@ class ImagePair:
             invalid_raster = _make_raster(invalid_mask, ["invalid_int"])
             if invalid_raster is not None:
                 _save_raster_as_file(
-                    path=f"{folder_path}/mask_invalid_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                    path=f"{folder_path}/mask_invalid_{save_datetime_part_user_string}.tif",
                     raster=invalid_raster["raster"]["invalid_int"],
                     transform=invalid_raster["transform"],
                     crs=invalid_raster["crs"]
@@ -1492,7 +1509,7 @@ class ImagePair:
                     mask_grid = _make_raster(mask_df, ["mask_int"])
                     if mask_grid is not None:
                         _save_raster_as_file(
-                            path=f"{folder_path}/{filename_root}_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                            path=f"{folder_path}/{filename_root}_{save_datetime_part_user_string}.tif",
                             raster=mask_grid["raster"]["mask_int"],
                             transform=mask_grid["transform"],
                             crs=mask_grid["crs"]
@@ -1506,13 +1523,13 @@ class ImagePair:
         # LoD points
         if "LoD_points_fgb" in save_files and self.level_of_detection_points is not None:
             self.level_of_detection_points.to_file(
-                f"{folder_path}/LoD_points_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
+                f"{folder_path}/LoD_points_{save_datetime_part_user_string}.fgb",
                 driver="FlatGeobuf"
             )
 
         if "alignment_points_fgb" in save_files and self.tracked_control_points is not None:
             self.tracked_control_points.to_file(
-                f"{folder_path}/alignment_points_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.fgb",
+                f"{folder_path}/alignment_points_{save_datetime_part_user_string}.fgb",
                 driver="FlatGeobuf"
             )
 
@@ -1537,7 +1554,7 @@ class ImagePair:
             unit_label = "per " + self.output_units_mode[4:] if self.output_units_mode[0:4] == "per_" else "total"
             
             with (open(
-                    f"{folder_path}/statistical_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
+                    f"{folder_path}/statistical_results_{save_datetime_part_user_string}.txt",
                     "w",
             ) as statistics_file):
                 lod_str = (
@@ -1727,21 +1744,21 @@ class ImagePair:
         # --- Save parameters if requested ---
         if "parameters_txt" in save_files:
             with open(
-                    f"{folder_path}/parameters_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
+                    f"{folder_path}/parameters_{save_datetime_part_user_string}.txt",
                     "w",
             ) as text_file:
                 text_file.write(self.alignment_parameters.__str__())
 
             if self.tracking_parameters is not None:
                 with open(
-                        f"{folder_path}/parameters_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
+                        f"{folder_path}/parameters_{save_datetime_part_user_string}.txt",
                         "a",
                 ) as text_file:
                     text_file.write(self.tracking_parameters.__str__())
 
             if self.filter_parameters is not None:
                 with open(
-                        f"{folder_path}/parameters_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.txt",
+                        f"{folder_path}/parameters_{save_datetime_part_user_string}.txt",
                         "a",
                 ) as text_file:
                     text_file.write(self.filter_parameters.__str__())
@@ -1757,7 +1774,7 @@ class ImagePair:
                     lod_raster = _make_raster(lod_mask, ["is_below_LoD_int"])
                     if lod_raster is not None:
                         _save_raster_as_file(
-                            path=f"{folder_path}/mask_below_LoD_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.tif",
+                            path=f"{folder_path}/mask_below_LoD_{save_datetime_part_user_string}.tif",
                             raster=lod_raster["raster"]["is_below_LoD_int"],
                             transform=lod_raster["transform"],
                             crs=lod_raster["crs"]
@@ -1767,7 +1784,7 @@ class ImagePair:
                 self.image1_matrix_original,
                 self.image1_transform,
                 self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.jpg",
+                save_path=f"{folder_path}/tracking_results_{save_datetime_part_user_string}.jpg",
                 unit_name_distance=self.coordinate_system_unit_name,
                 unit_name_time=self.output_units_mode[4:],
                 vmin=min_cmap_value,vmax=max_cmap_value
@@ -1777,7 +1794,7 @@ class ImagePair:
                 self.image1_matrix_original,
                 self.image1_transform,
                 self.tracking_results,
-                save_path=f"{folder_path}/tracking_results_{self.image1_observation_date.isoformat().replace(" ","_")}_{self.image2_observation_date.isoformat().replace(" ","_")}.jpg",
+                save_path=f"{folder_path}/tracking_results_{save_datetime_part_user_string}.jpg",
                 unit_name=self.coordinate_system_unit_name,
                 vmin=min_cmap_value,vmax=max_cmap_value
             )
