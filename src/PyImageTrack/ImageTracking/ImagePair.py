@@ -1263,7 +1263,7 @@ class ImagePair:
         save_datetime_user_string1 = self.image1_observation_date_user_string if self.image1_observation_date_user_string is not None else self.image1_observation_date.isoformat().replace(" ","_")
         save_datetime_user_string2 = self.image2_observation_date_user_string if self.image2_observation_date_user_string is not None else self.image2_observation_date.isoformat().replace(" ","_")
 
-        save_datetime_part_user_string = save_datetime_user_string1 + "_" + save_datetime_user_string2
+        save_datetime_part_user_string = (save_datetime_user_string1 + "_" + save_datetime_user_string2).replace(" ", "_").replace(":","-")
 
         # --- Save full tracking results if requested ---
         if "tracking_results_fgb" in save_files:
