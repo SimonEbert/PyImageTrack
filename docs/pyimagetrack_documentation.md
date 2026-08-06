@@ -284,6 +284,18 @@ of non-georeferenced images. If the intrinsic matrix is not available, it may be
      [0, 0, 1]]
 where `w` is the width of the image and `h`is its height.
 
+## Multi-peak-initialization
+
+Since the least-squares algorithm is an algorithm that converges only locally,it relies on an initial guess of the displacement.
+This initial guess is obtained using a classical cross-correlation approach that in this package is implemented using the match_template function from skimage.feature that uses FFT for efficient computation.
+However, the single initial guess with the highest correlation may not be the correct one.
+Therefore, this package offers the possibility of initializing the least-squares optimization with several values obtained as multiple peaks of the cross-correlation matching.
+One option is here to initialize with the $n$ highest cross-correlation values. For $n=1$ this would be the classical least-squares algorithm. Computation times will roughly scale linearly with $n$. $n$ can be set in the config file under `[tracking]` as `nb_initial_estimate_peaks`.
+The other option is to initialize with all values for which the cross-correlation exceeds a specific threshold given by `correlation_threshold_initial_estimates` in the `[tracking]` section (being a number between 0.0 and 1.0).
+Note that the usage of the second option involves the risk of providing LSM with a disproportionate number of initial estimates (especially for large search windows) and should therefore only be used in very specific situations.
+To prevent very close initial estimates, one can provide `min_distance_initial_estimates`, which defines the minimum distance (in pixel) that two different LSM-initialization values should have, since very close initializations will converge to the same LSM solution with a high probability.
+
+
 ## Module: BatchProcessor.py
 Utilities for class-based batch execution over multiple config files.
 

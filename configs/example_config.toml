@@ -207,6 +207,21 @@ cross_correlation_threshold_movement = 0.1
 # Example: [5, 5, 5, 5] searches 5 pixels in each direction
 search_extent_px = [5, 5, 5, 5]
 
+#----------Multi-peak-initialization--------------
+# Optional value to specify if a specific number of initial estimates should be considered or all estimates that exceed
+# a certain cross-correlation threshold
+initial_estimate_mode = "count"
+
+# How many initial estimates should be considered
+nb_initial_estimate_peaks = 2
+
+# Threshold above which all initial estimates should be considered. This can be very computation heavy so is advised to
+# only use in very distinct cases and in combination with the parameter "min_distance_initial_estimates" below
+# correlation_threshold_initial_estimates = 0.5
+
+# How far different initial estimates must be at least in order to trigger separate LSM calls
+min_distance_initial_estimates = 10
+
 # ==============================================================================
 # SECTION 5: ADAPTIVE TRACKING WINDOW
 # ==============================================================================
