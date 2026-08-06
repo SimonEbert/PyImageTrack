@@ -516,6 +516,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     poly_outside_filename = _get(cfg, "polygons", "stable_area_filename", "none")
     poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
     moving_id_column = _get(cfg, "polygons", "moving_id_column", "moving_id")
+    image_cropping_buffer = _get(cfg, "polygons", "image_cropping_buffer", "none")
     
     # Replace wildcard in polygon filenames with identifier if provided
     if identifier is not None:
@@ -686,7 +687,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # Collect pairs, optionally filtering by identifier
     if identifier is not None:
-        datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier = collect_pairs(
+        datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename, id_to_identifier = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
             pairs_csv_path=pairs_csv_path,
@@ -695,7 +696,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             identifier=identifier
         )
     else:
-        datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename = collect_pairs(
+        datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename = collect_pairs(
             input_folder=input_folder,
             date_csv_path=date_csv_path,
             pairs_csv_path=pairs_csv_path,
@@ -766,16 +767,16 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         polygon_inside_crs = polygon_inside.crs
         if (poly_outside_crs is None) != (polygon_inside_crs is None):
             raise ValueError(
-                "Polygon CRS mismatch: outside has "
+                "Polygon CRS mismatch: stable area has "
                 + _crs_label(poly_outside_crs)
-                + ", inside has "
+                + ", moving area has "
                 + _crs_label(polygon_inside_crs)
             )
         if poly_outside_crs is not None and _normalize_crs(poly_outside_crs) != _normalize_crs(polygon_inside_crs):
             raise ValueError(
-                "Polygon CRS mismatch: outside has "
+                "Polygon CRS mismatch: stable area has "
                 + _crs_label(poly_outside_crs)
-                + ", inside has "
+                + ", moving area has "
                 + _crs_label(polygon_inside_crs)
             )
         polygons_crs = poly_outside_crs
@@ -820,13 +821,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
             # folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
             
-            if (dt1.hour == 0 & dt1.minute == 0 & dt1.second == 0 & dt1.microsecond == 0
-                & dt2.hour == 0 and dt2.minute == 0 & dt2.second == 0 & dt2.microsecond == 0):
-                dt1_string = dt1.date().isoformat()
-                dt2_string = dt2.date().isoformat()
-            else:
-                dt1_string = dt1.isoformat(sep=" ")
-                dt2_string = dt2.isoformat(sep=" ")
+
+            dt1_string = id_to_date_user_string[token1]
+            dt2_string = id_to_date_user_string[token2]
+
 
             # Image pair header
             pair_id_short = f"{dt1_string} -> {dt2_string}"
@@ -971,6 +969,20 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 observation_date_2=dt2,
                 selected_channels=alignment_params.image_bands
             )
+            if image_pair.image1_observation_date_user_string is None:
+                image_pair.image1_observation_date_user_string = id_to_date_user_string[token1]
+            if image_pair.image2_observation_date_user_string is None:
+                image_pair.image2_observation_date_user_string = id_to_date_user_string[token2]
+
+            if image_cropping_buffer is not None:
+                # Spatial intersection
+                if (polygon_inside.crs != image_pair.crs) | (poly_outside.crs != image_pair.crs):
+                    raise ValueError("CRS mismatch between one of the defined polygons and the image")
+                polygon_crs = polygon_inside.crs
+                required_image_bounding_box = polygon_inside.union_all().union(poly_outside.union_all()).buffer(image_cropping_buffer)
+                image_pair.crop_images_to_polygon(required_image_bounding_box, polygon_crs)
+
+
 
             # optional image enhancement (CLAHE) before alignment/tracking
             if do_image_enhancement and hasattr(image_pair, "equalize_adapthist_images"):

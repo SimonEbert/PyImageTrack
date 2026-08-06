@@ -167,16 +167,17 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
 #         return False
 
 import dateutil.parser
-def extract_datetime_from_token(s: str) -> datetime:
-    """Gets a filename part and extracts the found datetime token as a datetime object."""
+def extract_datetime_from_token(s: str) -> tuple[datetime, str]:
+    """Gets a filename part and extracts the found datetime token as a datetime object and the respective string given by the user."""
     s_norm = s.replace('_', '-')
     s_norm = s_norm.replace(' ', '-')
     s_norm = s_norm.replace(':', '-')
     s_norm = s_norm.replace('T', '-')
 
     # Extract possible datetime matches
-    full_match = re.search(r'(\d{2,4})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
+    full_match = re.search(r'(?:\d{4}|\d{2})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
     datetime_part = full_match.group(0)
+    datetime_string_user = datetime_part
 
     # Normalize string with separating date and time options
     datetime_parts = datetime_part.split('-')
@@ -196,7 +197,7 @@ def extract_datetime_from_token(s: str) -> datetime:
             datetime_string += f".{sub_seconds}"
 
     datetime_observation = dateutil.parser.isoparse(datetime_string)
-    return datetime_observation
+    return datetime_observation, datetime_string_user
 
 # def extract_datetime_token(s: str) -> Optional[datetime]:
 #     """
@@ -815,12 +816,13 @@ def collect_pairs(input_folder: str,
 
     id_to_file = {}
     id_to_date = {}
+    id_to_date_user_string = {}
     id_hastime_from_filename = {}
 
     for f in img_files:
         # Parse the date token
         try:
-            observation_datetime = extract_datetime_from_token(f)
+            observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
         except ValueError:
             # Skip files with invalid date tokens
             continue
@@ -854,8 +856,7 @@ def collect_pairs(input_folder: str,
         if csv_date_str is not None:
             # Use the date from CSV, parsing it with the same logic as filename dates
             try:
-                csv_dt = extract_datetime_from_token(csv_date_str)
-                observation_datetime = csv_dt  # Override with CSV date
+                observation_datetime, observation_datetime_user_string = extract_datetime_from_token(csv_date_str)
                 id_hastime_from_filename[id_] = False  # Date came from CSV, not filename
             except ValueError:
                 # If CSV date is invalid, fall back to filename date
@@ -864,7 +865,7 @@ def collect_pairs(input_folder: str,
             id_hastime_from_filename[id_] = True
 
         id_to_date[id_] = observation_datetime
-
+        id_to_date_user_string[id_] = observation_datetime_user_string
 
     # 3) Order by actual time
     items = [(k, id_to_date[k]) for k in id_to_file.keys() if k in id_to_date]
@@ -985,9 +986,9 @@ def collect_pairs(input_folder: str,
 
     # Return with or without id_to_identifier based on whether identifier was provided
     if identifier is not None:
-        return datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename, id_to_identifier
+        return datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename, id_to_identifier
     else:
-        return datetime_pairs, id_to_file, id_to_date, id_hastime_from_filename
+        return datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename
 
 
 def ensure_dir(path: str):
@@ -1129,7 +1130,7 @@ def abbr_tracking(tp):
         _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
         _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
         _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),    ]
-    if _get(tp, "use_adaptive_tracking_window", True):
+    if _get(tp, "use_adaptive_tracking_window", False):
         parts += [
             f"adaptive"
         ]

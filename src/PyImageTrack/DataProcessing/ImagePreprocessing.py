@@ -33,11 +33,15 @@ def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
         The contrast-enhanced image matrix.
     """
     # Skimage expects images in the format (x,y,c), i.e. channels in the last dimension
-    image_matrix_transposed = image_matrix.transpose((2,1,0))
+    if len(image_matrix) == 3:
+        image_matrix_transposed = image_matrix.transpose((2,1,0))
+    else:
+        image_matrix_transposed = image_matrix
     equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix_transposed.astype(np.uint16), kernel_size=kernel_size,
                                                           clip_limit=clip_limit)
     # Retranspose to match the convention in the rest of the script
-    equalized_image = equalized_image.transpose((2,1,0))
+    if len(image_matrix) == 3:
+        equalized_image = equalized_image.transpose((2,1,0))
     return equalized_image
 
 
