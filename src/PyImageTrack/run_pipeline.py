@@ -516,8 +516,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     poly_outside_filename = _get(cfg, "polygons", "stable_area_filename", "none")
     poly_inside_filename = _require(cfg, "polygons", "moving_area_filename")
     moving_id_column = _get(cfg, "polygons", "moving_id_column", "moving_id")
-    image_cropping_buffer = _get(cfg, "polygons", "image_cropping_buffer", "none")
-    
+    image_cropping_buffer = _get(cfg, "polygons", "image_cropping_buffer", None)
+
     # Replace wildcard in polygon filenames with identifier if provided
     if identifier is not None:
         if '*' in poly_outside_filename:
