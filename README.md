@@ -247,4 +247,4 @@ of the Kaiserberg Rock Glacier" by Simon Ebert.
 
 
 ## License
-This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0) License.
+This project is licensed under the Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International (CC BY-NC-SA 4.0) License.
