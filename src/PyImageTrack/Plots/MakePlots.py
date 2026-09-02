@@ -235,6 +235,9 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
             dx /= norm
             dy /= norm
 
+            if (((p.geometry.x + (dx * arrow_length)) > raster_matrix.shape[-1]) or (p.geometry.y + (dy * arrow_length)) < -raster_matrix.shape[-2]) and point_movement.crs is None:
+                continue
+
             ax.arrow(
                 p.geometry.x,
                 p.geometry.y,
