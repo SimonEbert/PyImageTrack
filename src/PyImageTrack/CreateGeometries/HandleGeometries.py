@@ -278,16 +278,20 @@ def georeference_tracked_points(tracked_pixels: pd.DataFrame, raster_transform, 
         displacement_column_name = "movement_distance_total"
     elif output_unit_mode == "per_year":  # per_year
         georeferenced_tracked_pixels["movement_distance_per_year"] = (georeferenced_tracked_pixels["movement_distance"]
-                                                                       / (time_between_observations.days // 365))
+                                                                       / (time_between_observations.total_seconds() / (365*86400)))
         displacement_column_name = "movement_distance_per_year"
+    elif output_unit_mode == "per_day":
+        georeferenced_tracked_pixels["movement_distance_per_day"] = (georeferenced_tracked_pixels["movement_distance"]
+                                                                      / (time_between_observations.total_seconds() / 86400))
+        displacement_column_name = "movement_distance_per_day"
     elif output_unit_mode == "per_second":
         georeferenced_tracked_pixels["movement_distance_per_second"] = (georeferenced_tracked_pixels["movement_distance"]
-                                                                        / time_between_observations.seconds)
+                                                                        / time_between_observations.total_seconds())
         displacement_column_name = "movement_distance_per_second"
 
     elif output_unit_mode == "per_hour":
         georeferenced_tracked_pixels["movement_distance_per_hour"] = (georeferenced_tracked_pixels["movement_distance"] /
-                                                                      time_between_observations.seconds * 3600)
+                                                                      time_between_observations.total_seconds() * 3600)
         displacement_column_name = "movement_distance_per_hour"
 
     else:

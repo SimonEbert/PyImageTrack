@@ -139,8 +139,8 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         and the Z-coordinate is given by the optical axis of the camera. Otherwise the 'x', 'y' and 'z' coordinates
         belong to the coordinate system corresponding to the specified 'camera_to_3d_coordinates_transform'.
     """
-    if (any(tracked_points["row"].values+tracked_points["movement_row_direction"].values > depth_image_time2.shape[0]) or
-        any(tracked_points["column"].values+tracked_points["movement_column_direction"].values > depth_image_time2.shape[1])):
+    if (any(tracked_points["row"].values+np.abs(tracked_points["movement_row_direction"].values) > depth_image_time2.shape[0]) or
+        any(tracked_points["column"].values+np.abs(tracked_points["movement_column_direction"].values) > depth_image_time2.shape[1])):
         console = get_console()
         console.warning("Removed points with movement vectors leaving the safe image bounds. This may be due to "
                         "erroneous tracking at the boundaries and is fine in most cases. However, check if relevant "
@@ -149,6 +149,9 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         tracked_points = tracked_points[
             (tracked_points["row"].values+tracked_points["movement_row_direction"].values < depth_image_time2.shape[0]) &
             (tracked_points["column"].values+tracked_points["movement_column_direction"].values < depth_image_time2.shape[1])].copy()
+
+    print(depth_image_time1.shape)
+    print(np.max(tracked_points["row"]), np.max(tracked_points["column"]))
 
 
     points1 = np.array([tracked_points["row"].values,
@@ -191,6 +194,9 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         georeferenced_tracked_pixels["3d_displacement_distance_per_second"] = (georeferenced_tracked_pixels["3d_displacement_distance"]
                                                                         / time_between_observations.total_seconds())
 
+    elif output_unit_mode == "per_day":
+        georeferenced_tracked_pixels["3d_displacement_distance_per_day"] = (georeferenced_tracked_pixels["3d_displacement_distance"]
+                                                                        / (time_between_observations.total_seconds() / 86400))
     else:
         raise ValueError("Did not recognize output unit mode " + output_unit_mode + ". Expected 'total', 'per_year',"
                                                                                     " or 'per_second'.")

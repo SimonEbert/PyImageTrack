@@ -322,6 +322,7 @@ unit_name_distance = "meter"
 # How movement rates are calculated:
 # - "per_second": Movement rates normalized to per-second values
 # - "per_hour": Movement rates normalized to per-hour values
+# - "per_day": Movement rates normalized to per-day values
 # - "per_year": Movement rates normalized to per-year values (default for time-series)
 # - "total": Raw displacement values without dividing by years between images
 #   (useful for one-time events like landslides or single event monitoring)

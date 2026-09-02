@@ -597,10 +597,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
     # output units mode (required)
     output_units_mode = _require(cfg, "output_units", "mode")
-    if output_units_mode not in ("per_year", "per_second", "per_hour", "total"):
+    if output_units_mode not in ("per_year", "per_second", "per_hour", "per_day", "total"):
         raise ValueError(
             f"Invalid output_units.mode: '{output_units_mode}'. "
-            "Must be one of 'per_second', 'per_hour', 'per_year' or 'total'."
+            "Must be one of 'per_second', 'per_hour', 'per_day', 'per_year' or 'total'."
         )
     # Bounds for the colormap of the velocity plot
     min_cmap_value = _as_optional_value(_get(cfg, "output_units", "min_cmap_value", None))

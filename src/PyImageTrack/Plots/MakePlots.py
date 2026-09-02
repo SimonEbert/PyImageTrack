@@ -165,9 +165,11 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
     # Determine displacement column name (supports both per_year and total modes)
     displacement_column_name = None
     for col in ["3d_displacement_distance_total", "3d_displacement_distance_per_second",
-                "3d_displacement_distance_per_hour", "3d_displacement_distance_per_year",
+                "3d_displacement_distance_per_hour", "3d_displacement_distance_per_day",
+                "3d_displacement_distance_per_year",
                 "movement_distance_total", "movement_distance_per_second",
-                "movement_distance_per_hour", "movement_distance_per_year"]:
+                "movement_distance_per_hour", "movement_distance_per_day",
+                "movement_distance_per_year"]:
         if col in list(point_movement.columns):
             displacement_column_name = col
             break
