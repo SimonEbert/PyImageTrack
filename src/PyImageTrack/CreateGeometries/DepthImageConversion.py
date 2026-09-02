@@ -150,8 +150,6 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
             (tracked_points["row"].values+tracked_points["movement_row_direction"].values < depth_image_time2.shape[0]) &
             (tracked_points["column"].values+tracked_points["movement_column_direction"].values < depth_image_time2.shape[1])].copy()
 
-    print(depth_image_time1.shape)
-    print(np.max(tracked_points["row"]), np.max(tracked_points["column"]))
 
 
     points1 = np.array([tracked_points["row"].values,
