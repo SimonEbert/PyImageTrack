@@ -1,4 +1,4 @@
-# PyImageTrack
+# PyImageTrack / MultiTrack
 
 PyImageTrack is a Python library implementing feature tracking approaches based on the normalized cross-correlation and
 least-squares matching for usage on rock glaciers.
