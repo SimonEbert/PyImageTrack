@@ -693,6 +693,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
                     desc=task_label,
                     unit="points",
                     smoothing=0.1,
+                    disable=get_console().quiet,
                     bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
                 )
             )

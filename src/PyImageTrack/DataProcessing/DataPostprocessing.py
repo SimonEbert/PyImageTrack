@@ -2,6 +2,7 @@ import geopandas as gpd
 import numpy as np
 from shapely import box
 import logging
+import tqdm
 
 from ..ConsoleOutput import get_console
 from ..CreateGeometries.HandleGeometries import circular_std_deg
@@ -9,6 +10,23 @@ from ..CreateGeometries.HandleGeometries import georeference_tracked_points
 from ..ImageTracking import TrackMovement
 from ..Parameters.FilterParameters import FilterParameters
 from ..Parameters.TrackingParameters import TrackingParameters
+
+
+_PROGRESS_BAR_FORMAT = "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
+
+
+def _iter_filter_points(index_values, label: str):
+    console = get_console()
+    values = list(index_values)
+    return tqdm.tqdm(
+        values,
+        total=len(values),
+        desc=f"[~] {label}",
+        unit="points",
+        smoothing=0.1,
+        disable=console.quiet,
+        bar_format=_PROGRESS_BAR_FORMAT,
+    )
 
 
 def circular_median_deg(angles: np.ndarray) -> float:
@@ -176,9 +194,14 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
         The changed GeoDataFrame
     """
 
+    console = get_console()
+    console.info("Applying LoD filter.")
+
     tracking_results["is_below_LoD"] = False
     tracking_results.loc[tracking_results[displacement_column_name] < level_of_detection, "is_below_LoD"] = True
     tracking_results.loc[tracking_results["is_below_LoD"], "valid"] = False
+    below_lod_count = int(tracking_results["is_below_LoD"].sum())
+    console.info(f"LoD filter marked {below_lod_count} of {len(tracking_results)} points as invalid.")
     return tracking_results
 
 def prepare_tracking_results_for_filtering(tracking_results) -> gpd.GeoDataFrame:
@@ -241,7 +264,7 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
     
     tracking_results_prepared = prepare_tracking_results_for_filtering(tracking_results)
 
-    for i in list(tracking_results.index.values):
+    for i in _iter_filter_points(tracking_results.index.values, "Bearing difference filter"):
         list_is_within_current_point = tracking_results.dwithin(tracking_results.geometry[i],
                                                                      inclusion_distance)
         if not any(list_is_within_current_point):
@@ -295,7 +318,7 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
 
     if "is_bearing_standard_deviation_outlier" not in tracking_results.columns:
         tracking_results["is_bearing_standard_deviation_outlier"] = False
-    for i in list(tracking_results.index.values):
+    for i in _iter_filter_points(tracking_results.index.values, "Bearing std-dev filter"):
         list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
                                                                              inclusion_distance)
         if not any(list_is_within_current_point):
@@ -351,7 +374,7 @@ def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
 
     if "is_movement_rate_difference_outlier" not in tracking_results.columns:
         tracking_results["is_movement_rate_difference_outlier"] = False
-    for i in list(tracking_results.index.values):
+    for i in _iter_filter_points(tracking_results.index.values, "Rate difference filter"):
         list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
                                                                              inclusion_distance)
         if not any(list_is_within_current_point):
@@ -412,7 +435,7 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
     if "is_movement_rate_standard_deviation_outlier" not in tracking_results.columns:
         tracking_results["is_movement_rate_standard_deviation_outlier"] = False
     outlier_count = 0
-    for i in list(tracking_results.index.values):
+    for i in _iter_filter_points(tracking_results.index.values, "Rate std-dev filter"):
         list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
                                                                              inclusion_distance)
         if not any(list_is_within_current_point):
@@ -517,7 +540,7 @@ def filter_outliers_movement_rate_mad(tracking_results: gpd.GeoDataFrame,
     if "is_movement_rate_standard_deviation_outlier" not in tracking_results.columns:
         tracking_results["is_movement_rate_standard_deviation_outlier"] = False
     outlier_count = 0
-    for i in list(tracking_results.index.values):
+    for i in _iter_filter_points(tracking_results.index.values, "Rate MAD filter"):
         list_is_within_current_point = tracking_results_non_outliers.dwithin(tracking_results.geometry[i],
                                                                              inclusion_distance)
         if not any(list_is_within_current_point):
@@ -719,4 +742,3 @@ def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distanc
                                                                    crs=tracking_results.crs))
 
     return grid_points_gdf
-
