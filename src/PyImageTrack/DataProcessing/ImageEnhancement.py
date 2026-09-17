@@ -1,12 +1,33 @@
 """Configuration and execution helpers for image enhancement steps."""
 
 from collections import defaultdict
+from dataclasses import dataclass
+
+import numpy as np
 
 
 # The category is an implementation detail. Users select method names only.
 MASK_METHODS = set()
 FILTER_METHODS = {"clahe"}
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
+
+
+@dataclass
+class ImageProcessingState:
+    """Image data and the cumulative spatial validity mask."""
+
+    image: np.ndarray
+    valid_mask: np.ndarray
+
+
+def _initial_processing_state(image_matrix):
+    image = np.asarray(image_matrix)
+    if image.ndim not in (2, 3):
+        raise ValueError("Image enhancement supports only 2D or 3D image arrays.")
+    return ImageProcessingState(
+        image=image,
+        valid_mask=np.ones(image.shape[-2:], dtype=bool),
+    )
 
 
 def normalize_image_enhancement(config=None, enabled=True):
@@ -81,15 +102,17 @@ def _invalid_enhancement_config(method_name):
 
 
 def apply_image_enhancement(image_matrix, image_enhancement):
-    """Apply normalized enhancement steps in their configured order."""
-    enhanced_image = image_matrix
+    """Apply normalized enhancement steps and return the processed image."""
+    state = _initial_processing_state(image_matrix)
     for step in image_enhancement or []:
-        enhanced_image = apply_image_enhancement_step(enhanced_image, step)
-    return enhanced_image
+        state = apply_image_enhancement_step(state, step)
+    return state.image
 
 
-def apply_image_enhancement_step(image_matrix, enhancement_step):
-    """Dispatch one normalized enhancement step."""
+def apply_image_enhancement_step(state, enhancement_step):
+    """Dispatch one normalized enhancement step on a processing state."""
+    if not isinstance(state, ImageProcessingState):
+        raise TypeError("Image enhancement steps require an ImageProcessingState.")
     if not isinstance(enhancement_step, dict):
         _invalid_enhancement_config("unknown")
     category = enhancement_step.get("category")
@@ -100,21 +123,35 @@ def apply_image_enhancement_step(image_matrix, enhancement_step):
         _invalid_enhancement_config(method_name or "unknown")
     if method_name == "clahe":
         parameters = enhancement_step.get("parameters", {})
-        return _apply_clahe(
-            image_matrix,
+        state.image = _apply_clahe(
+            state.image,
+            valid_mask=state.valid_mask,
             kernel_size=parameters["kernel_size"],
             clip_limit=parameters["clip_limit"],
         )
+        return state
     _invalid_enhancement_config(method_name)
 
 
-def _apply_clahe(image_matrix, kernel_size, clip_limit):
+def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit):
     """Apply Contrast Limited Adaptive Histogram Equalization."""
-    import numpy as np
     import skimage
 
-    return skimage.exposure.equalize_adapthist(
-        image=np.asarray(image_matrix).astype(np.uint16),
-        kernel_size=kernel_size,
-        clip_limit=clip_limit,
-    )
+    if image_matrix.ndim == 2:
+        result = skimage.exposure.equalize_adapthist(
+            image=np.asarray(image_matrix).astype(np.uint16),
+            kernel_size=kernel_size,
+            clip_limit=clip_limit,
+        )
+        result[~valid_mask] = image_matrix[~valid_mask]
+        return result
+
+    result = np.array(image_matrix, dtype=float, copy=True)
+    for band_index in range(image_matrix.shape[0]):
+        band = skimage.exposure.equalize_adapthist(
+            image=np.asarray(image_matrix[band_index]).astype(np.uint16),
+            kernel_size=kernel_size,
+            clip_limit=clip_limit,
+        )
+        result[band_index] = np.where(valid_mask, band, image_matrix[band_index])
+    return result
