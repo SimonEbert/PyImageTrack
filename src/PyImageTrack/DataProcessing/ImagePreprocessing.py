@@ -113,6 +113,11 @@ def convert_float_to_uint(image_matrix: np.ndarray) -> np.ndarray:
     return convert_to_uint16(image_matrix)
 
 
+def convert_to_float32(image_matrix: np.ndarray) -> np.ndarray:
+    """Convert an image to the internal float32 representation."""
+    return np.asarray(image_matrix, dtype=np.float32)
+
+
 def convert_to_uint16(image_matrix: np.ndarray) -> np.ndarray:
     """
     Converts an image matrix to uint16 for optimal alignment results.

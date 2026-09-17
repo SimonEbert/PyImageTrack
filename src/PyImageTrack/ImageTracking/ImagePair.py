@@ -40,7 +40,7 @@ from ..DataProcessing.DataPostprocessing import (
 from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state
 from ..DataProcessing.ImagePreprocessing import (
     undistort_camera_image,
-    convert_float_to_uint,
+    convert_to_float32,
     harmonize_dtypes,
     harmonize_resolution,
     check_channels_compatible,
@@ -379,6 +379,8 @@ class ImagePair:
 
             # Harmonize datatypes
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
+            self.image1_matrix = convert_to_float32(self.image1_matrix)
+            self.image2_matrix = convert_to_float32(self.image2_matrix)
 
             # Harmonize resolution if necessary
             self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
@@ -410,14 +412,9 @@ class ImagePair:
                 arr1 = undistort_camera_image(arr1, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
                 arr2 = undistort_camera_image(arr2, self.camera_intrinsics_matrix, self.camera_distortion_coefficients)
 
-            # Automatically convert float images to uint16 for better alignment
-
             # Store original matrices for true-color alignment output (before harmonization and dtype change)
             self.image1_matrix_original = arr1.copy()
             self.image2_matrix_original = arr2.copy()
-
-            arr1 = convert_float_to_uint(arr1)
-            arr2 = convert_float_to_uint(arr2)
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2
@@ -471,6 +468,8 @@ class ImagePair:
             
             # Harmonize dtypes (may already be uint16, but verifies)
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
+            self.image1_matrix = convert_to_float32(self.image1_matrix)
+            self.image2_matrix = convert_to_float32(self.image2_matrix)
             
             # Harmonize resolution if necessary (before applying downsample_factor)
             self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
@@ -514,6 +513,10 @@ class ImagePair:
         if NA_value is not None:
             self.image1_matrix[self.image1_matrix == NA_value] = 0
             self.image2_matrix[self.image2_matrix == NA_value] = 0
+
+        # Use one numeric representation for enhancement, alignment, and tracking.
+        self.image1_matrix = convert_to_float32(self.image1_matrix)
+        self.image2_matrix = convert_to_float32(self.image2_matrix)
 
 
         # Compute effective buffer if needed
