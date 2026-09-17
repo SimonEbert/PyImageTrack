@@ -9,6 +9,8 @@ This module provides helper functions for:
 - Directory management
 """
 import itertools
+import hashlib
+import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -1278,19 +1280,21 @@ def abbr_enhancement(ep) -> str:
     str
         Short code string starting with "E_".
     """
-    fc = float_compact
     image_enhancement = _get(ep, "steps", ep)
-    
     if image_enhancement:
-        step_codes = [_abbr_enhancement_step(step, fc) for step in image_enhancement]
-        step_codes = [code for code in step_codes if code not in (None, "", "NA")]
-        if step_codes:
-            return "E_" + "__".join(step_codes)
+        step_codes = [_abbr_enhancement_step(step) for step in image_enhancement]
+        canonical = json.dumps(
+            image_enhancement,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        config_hash = hashlib.sha256(canonical).hexdigest()[:8].upper()
+        return "E_" + "_".join(step_codes) + "_H" + config_hash
 
     return "E_none"
 
 
-def _abbr_enhancement_step(ep, fc) -> str:
+def _abbr_enhancement_step(ep) -> str:
     """
     Generate a short code fragment for one image enhancement step.
 
@@ -1298,33 +1302,18 @@ def _abbr_enhancement_step(ep, fc) -> str:
     ----------
     ep : dict or object
         Enhancement step parameters.
-    fc : callable
-        Float formatting helper.
-
-    Returns
-    -------
-    str
-        Short code fragment without the leading "E_".
+    Returns a short method code without parameters.
     """
     enhancement_type = _get(ep, "type", "none")
-    parameters = _get(ep, "parameters", ep)
-    parts = []
-    
-    if enhancement_type == "clahe":
-        kernel_size = _get(parameters, "kernel_size", "NA")
-        clip_limit = _get(parameters, "clip_limit", "NA")
-        parts.append(f"clahe")
-        parts.append(f"K{kernel_size}")
-        parts.append(f"C{fc(clip_limit)}")
-        bands = _get(parameters, "bands", None)
-        if bands is not None:
-            parts.append("B" + "-".join(str(band) for band in bands))
-    else:
+    method_codes = {
+        "clahe": "CL",
+        "snowmask": "SM",
+        "nodatamask": "ND",
+        "gaussian": "G",
+    }
+    if enhancement_type not in method_codes:
         raise ValueError(f"Unsupported image enhancement type: {enhancement_type}")
-    
-    # Drop empty/None/NA fragments
-    parts = [p for p in parts if p not in (None, "", "NA")]
-    return "_".join(parts)
+    return method_codes[enhancement_type]
 
 def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     points = getattr(image_pair, "level_of_detection_points", None)
