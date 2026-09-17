@@ -125,14 +125,18 @@ do_tracking = true       # Detect movement between images
 do_filtering = true      # Remove outliers from tracking results
 
 # Optional image enhancement before alignment and tracking.
-# If enabled, methods are applied in the order listed in steps.
+# If enabled, methods are applied in the order listed in image_enhancement_steps.
 do_image_enhancement = false
 
 [image_enhancement]
-steps = ["clahe"]
+image_enhancement_steps = ["clahe"]
 
-# CLAHE improves local contrast; kernel_size controls region size, clip_limit limits contrast and noise.
-clahe = [50, 0.9] # arguments: kernel_size, clip_limit
+# CLAHE improves local contrast; parameters apply to one configured step.
+[[image_enhancement_clahe]]
+kernel_size = 50
+clip_limit = 0.9
+# Optional zero-based band selection. Omit to process all bands.
+# bands = [0, 1, 2]
 
 # ==============================================================================
 # SECTION 3: ALIGNMENT

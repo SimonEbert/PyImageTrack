@@ -37,7 +37,7 @@ from ..DataProcessing.DataPostprocessing import (
 )
 
 # DataPreProcessing
-from ..DataProcessing.ImageEnhancement import apply_image_enhancement
+from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state
 from ..DataProcessing.ImagePreprocessing import (
     undistort_camera_image,
     convert_float_to_uint,
@@ -115,9 +115,11 @@ class ImagePair:
 
         # Data
         self.image1_matrix = None
+        self.image1_valid_mask = None
         self.image1_transform = None
         self.image1_observation_date = None
         self.image2_matrix = None
+        self.image2_valid_mask = None
         self.image2_transform = None
         self.image2_observation_date = None
         self.image_bounds = None
@@ -1252,8 +1254,12 @@ class ImagePair:
         -------
         None
         """
-        self.image1_matrix = apply_image_enhancement(self.image1_matrix, self.image_enhancement)
-        self.image2_matrix = apply_image_enhancement(self.image2_matrix, self.image_enhancement)
+        state1 = apply_image_enhancement_state(self.image1_matrix, self.image_enhancement)
+        state2 = apply_image_enhancement_state(self.image2_matrix, self.image_enhancement)
+        self.image1_matrix = state1.image
+        self.image2_matrix = state2.image
+        self.image1_valid_mask = state1.valid_mask
+        self.image2_valid_mask = state2.valid_mask
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """

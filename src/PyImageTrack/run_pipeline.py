@@ -658,13 +658,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # IMAGE ENHANCEMENT PARAMETERS
     # ==============================
-    image_enhancement_params = dict(cfg.get("image_enhancement", {}))
     image_enhancement = normalize_image_enhancement(
-        image_enhancement_params,
+        cfg,
         enabled=do_image_enhancement,
     )
-    image_enhancement_params["steps"] = image_enhancement
-    enhancement_code = abbr_enhancement(image_enhancement_params)
+    enhancement_code = abbr_enhancement(image_enhancement)
     
     # Output units code (combined with enhancement for cache key)
     output_units_code = abbr_output_units(output_units_mode)

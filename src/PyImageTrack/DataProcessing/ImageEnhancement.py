@@ -18,7 +18,6 @@ class ImageProcessingState:
 
     image: np.ndarray
     valid_mask: np.ndarray
-    band_axis: int | None = 0
 
 
 def _initial_processing_state(image_matrix):
@@ -28,15 +27,13 @@ def _initial_processing_state(image_matrix):
     return ImageProcessingState(
         image=image,
         valid_mask=np.ones(image.shape if image.ndim == 2 else image.shape[1:], dtype=bool),
-        band_axis=0 if image.ndim == 3 else None,
     )
 
 
 def normalize_image_enhancement(config=None, enabled=True):
     """Normalize the ordered image-enhancement configuration.
 
-    ``config`` may be the complete TOML configuration or the
-    ``image_enhancement`` section. The new format uses
+    ``config`` is the complete TOML configuration. The new format uses
     ``image_enhancement_steps`` plus one array-of-tables configuration for
     each method, for example ``[[image_enhancement_clahe]]``.
     """
@@ -47,7 +44,7 @@ def normalize_image_enhancement(config=None, enabled=True):
     if not isinstance(config, dict):
         _invalid_enhancement_config("unknown")
 
-    section = config.get("image_enhancement", config)
+    section = config.get("image_enhancement")
     if not isinstance(section, dict):
         _invalid_enhancement_config("unknown")
     steps = section.get("image_enhancement_steps", [])
@@ -62,7 +59,7 @@ def normalize_image_enhancement(config=None, enabled=True):
         method_name = method_name.lower()
         if method_name not in SUPPORTED_METHODS:
             _invalid_enhancement_config(method_name)
-        parameters = _method_parameters(config, section, method_name, occurrences[method_name])
+        parameters = _method_parameters(config, method_name, occurrences[method_name])
         occurrences[method_name] += 1
         category = "mask" if method_name in MASK_METHODS else "filter"
         normalized.append({
@@ -73,14 +70,11 @@ def normalize_image_enhancement(config=None, enabled=True):
     return normalized
 
 
-def _method_parameters(config, section, method_name, occurrence):
+def _method_parameters(config, method_name, occurrence):
     """Read one method's parameter table."""
-    keys = (f"image_enhancement_{method_name}", method_name)
-    table = next((config[key] for key in keys if key in config), None)
+    table = config.get(f"image_enhancement_{method_name}")
     if table is None:
-        table = next((section[key] for key in keys if key in section), None)
-    if table is None:
-        return {}
+        _invalid_enhancement_config(method_name)
     if not isinstance(table, list):
         _invalid_enhancement_config(method_name)
     if occurrence >= len(table):
@@ -103,12 +97,12 @@ def _invalid_enhancement_config(method_name):
     raise ValueError(message)
 
 
-def apply_image_enhancement(image_matrix, image_enhancement):
-    """Apply normalized enhancement steps and return the processed image."""
+def apply_image_enhancement_state(image_matrix, image_enhancement):
+    """Apply normalized steps and return the complete processing state."""
     state = _initial_processing_state(image_matrix)
     for step in image_enhancement or []:
         state = apply_image_enhancement_step(state, step)
-    return state.image
+    return state
 
 
 def apply_image_enhancement_step(state, enhancement_step):
@@ -151,10 +145,7 @@ def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
         result[~valid_mask] = image_matrix[~valid_mask]
         return result
 
-    try:
-        band_indices = list(range(image_matrix.shape[0])) if bands is None else [int(band) for band in bands]
-    except (TypeError, ValueError):
-        _invalid_enhancement_config("clahe")
+    band_indices = _selected_band_indices(image_matrix, bands)
     if any(band < 0 or band >= image_matrix.shape[0] for band in band_indices):
         _invalid_enhancement_config("clahe")
 
@@ -167,3 +158,14 @@ def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
         )
         result[band_index] = np.where(valid_mask, band, image_matrix[band_index])
     return result
+
+
+def _selected_band_indices(image_matrix, bands):
+    """Return validated zero-based band indices for a bands-first image."""
+    try:
+        indices = list(range(image_matrix.shape[0])) if bands is None else [int(band) for band in bands]
+    except (TypeError, ValueError):
+        _invalid_enhancement_config("clahe")
+    if any(index < 0 or index >= image_matrix.shape[0] for index in indices):
+        _invalid_enhancement_config("clahe")
+    return indices

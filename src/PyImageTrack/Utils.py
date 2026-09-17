@@ -1279,7 +1279,7 @@ def abbr_enhancement(ep) -> str:
         Short code string starting with "E_".
     """
     fc = float_compact
-    image_enhancement = _get(ep, "steps", None)
+    image_enhancement = _get(ep, "steps", ep)
     
     if image_enhancement:
         step_codes = [_abbr_enhancement_step(step, fc) for step in image_enhancement]
@@ -1307,14 +1307,18 @@ def _abbr_enhancement_step(ep, fc) -> str:
         Short code fragment without the leading "E_".
     """
     enhancement_type = _get(ep, "type", "none")
+    parameters = _get(ep, "parameters", ep)
     parts = []
     
     if enhancement_type == "clahe":
-        kernel_size = _get(ep, "kernel_size", 50)
-        clip_limit = _get(ep, "clip_limit", 0.9)
+        kernel_size = _get(parameters, "kernel_size", "NA")
+        clip_limit = _get(parameters, "clip_limit", "NA")
         parts.append(f"clahe")
         parts.append(f"K{kernel_size}")
         parts.append(f"C{fc(clip_limit)}")
+        bands = _get(parameters, "bands", None)
+        if bands is not None:
+            parts.append("B" + "-".join(str(band) for band in bands))
     else:
         raise ValueError(f"Unsupported image enhancement type: {enhancement_type}")
     
