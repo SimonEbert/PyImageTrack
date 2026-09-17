@@ -715,7 +715,9 @@ Builds a short filter code for output folders.
     Folder code.
 
 ### abbr_enhancement(ep)
-Builds a short enhancement code for output folders.
+Builds a compact, ordered enhancement code for output folders. Method
+parameters are represented by a short hash rather than being written into the
+folder name.
 
 #### Parameters
 ``ep`` : object or dict
@@ -723,7 +725,7 @@ Builds a short enhancement code for output folders.
 
 #### Returns
 ``code`` : str
-    Folder code (e.g., "E_none", "E_clahe_K50_C0.9").
+    Folder code (e.g., `E_none` or `E_CL_H9A8B0061`).
 
 ### _part(prefix: str, value: str | None) -> str | None
 Internal helper for compact code component creation.
@@ -736,7 +738,7 @@ Recomputes LoD from available points (cache/consistency helper).
 
 ## Image Enhancement Configuration
 
-The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations. One or more enhancement steps can be applied in the configured order.
+The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations. Steps are executed in the order listed in `image_enhancement_steps`.
 
 ### Configuration Section
 
@@ -747,22 +749,38 @@ The pipeline supports optional image enhancement before alignment and tracking. 
 do_image_enhancement = true
 
 [image_enhancement]
-steps = ["clahe"]
+image_enhancement_steps = ["clahe"]
 
-# CLAHE improves local contrast; kernel_size controls region size, clip_limit limits contrast and noise.
-clahe = [50, 0.9] # arguments: kernel_size, clip_limit
+# CLAHE improves local contrast.
+[[image_enhancement_clahe]]
+kernel_size = 50
+clip_limit = 0.9
+# Optional zero-based band selection. Omit to process all bands.
+# bands = [0, 1, 2]
 ```
 
 ### Enhancement Types
 
 #### CLAHE (Contrast Limited Adaptive Histogram Equalization)
-- Add `"clahe"` to `steps`
-- `clahe = [kernel_size, clip_limit]`
+- Add `"clahe"` to `image_enhancement_steps`
+- Configure one `[[image_enhancement_clahe]]` table for each occurrence of `clahe`
 - `kernel_size`: Size of the grid for histogram equalization
 - `clip_limit`: Contrast limiting threshold
+- `bands`: Optional zero-based list of bands; omitted means all bands
+
+Mask methods and additional filters are planned but are not yet available in
+the current implementation.
 
 #### None (no enhancement)
-- Set `do_image_enhancement = false` or use `steps = []`.
+- Set `do_image_enhancement = false` or use `image_enhancement_steps = []`.
+
+### Internal image representation
+
+During enhancement, alignment, and tracking, images use `float32`. Rasterio
+multi-band input is treated as bands-first `(bands, height, width)`, while
+single-band input uses `(height, width)`. The persistent `valid_mask` is a
+two-dimensional `(height, width)` boolean array. `True` denotes a valid pixel.
+NoData values are represented internally as `NaN` and marked invalid.
 
 ### Output Path Structure
 
@@ -776,7 +794,7 @@ output_folder / year1_year2 / enhancement_code / align_code / track_code / filte
 
 Each processing step generates a code that appears in the output path:
 
-- **Enhancement**: `E_none` (disabled) or `E_clahe_K50_C0.9` (with parameters)
+- **Enhancement**: `E_none` (disabled) or a compact code such as `E_CL_H9A8B0061`
 - **Alignment**: `A_none` (disabled) or `A_CP2000_CC5_CCa0.8` (with parameters)
 - **Tracking**: Always uses tracking parameters (e.g., `T_IB3_DP3_MC20_CC0.5`)
 - **Filtering**: `F_none` (disabled) or `F_LoDq0.5_N1000_...` (with parameters)
@@ -786,6 +804,11 @@ Each processing step generates a code that appears in the output path:
 When certain processing steps are disabled and not loaded from cache, the output path uses special "none" codes:
 
 - **Enhancement**: If `do_image_enhancement = false`, the path uses `E_none`
+
+The enhancement code contains short method codes in processing order and a
+short hash of the complete normalized configuration. Therefore, parameter
+changes and order changes produce different paths without making folder names
+long.
 - **Alignment**: If `do_alignment = false`, the path uses `A_none`
 - **Filtering**: If `do_filtering = false`, the path uses `F_none`
 - **Tracking**: No "none" code is used for tracking, as tracking is required for meaningful output
@@ -1732,11 +1755,13 @@ Undistorts a camera image using OpenCV and returns the undistorted image cropped
 #### Returns
 ``image_matrix_undistorted`` : np.ndarray
     The undistorted image matrix, cropped to a rectangular shape where all pixels are valid.
-### apply_image_enhancement(image_matrix, image_enhancement)
-Applies configured image enhancement steps using the ordered `image_enhancement` list.
+### apply_image_enhancement_state(image_matrix, image_enhancement)
+Applies configured image enhancement steps and returns an
+`ImageProcessingState` containing the processed image and cumulative
+two-dimensional `valid_mask`.
 
-### convert_float_to_uint(image_matrix)
-Converts float arrays to unsigned integer representation for downstream processing.
+### convert_to_float32(image_matrix)
+Converts an image to the internal `float32` representation.
 
 ### convert_to_uint16(image_matrix)
 Converts images to uint16 where required.
