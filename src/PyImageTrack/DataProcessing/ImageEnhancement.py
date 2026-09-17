@@ -18,6 +18,7 @@ class ImageProcessingState:
 
     image: np.ndarray
     valid_mask: np.ndarray
+    band_axis: int | None = 0
 
 
 def _initial_processing_state(image_matrix):
@@ -26,7 +27,8 @@ def _initial_processing_state(image_matrix):
         raise ValueError("Image enhancement supports only 2D or 3D image arrays.")
     return ImageProcessingState(
         image=image,
-        valid_mask=np.ones(image.shape[-2:], dtype=bool),
+        valid_mask=np.ones(image.shape if image.ndim == 2 else image.shape[1:], dtype=bool),
+        band_axis=0 if image.ndim == 3 else None,
     )
 
 
@@ -128,16 +130,19 @@ def apply_image_enhancement_step(state, enhancement_step):
             valid_mask=state.valid_mask,
             kernel_size=parameters["kernel_size"],
             clip_limit=parameters["clip_limit"],
+            bands=parameters.get("bands"),
         )
         return state
     _invalid_enhancement_config(method_name)
 
 
-def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit):
+def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
     """Apply Contrast Limited Adaptive Histogram Equalization."""
     import skimage
 
     if image_matrix.ndim == 2:
+        if bands not in (None, [], [0]):
+            _invalid_enhancement_config("clahe")
         result = skimage.exposure.equalize_adapthist(
             image=np.asarray(image_matrix).astype(np.uint16),
             kernel_size=kernel_size,
@@ -146,8 +151,15 @@ def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit):
         result[~valid_mask] = image_matrix[~valid_mask]
         return result
 
+    try:
+        band_indices = list(range(image_matrix.shape[0])) if bands is None else [int(band) for band in bands]
+    except (TypeError, ValueError):
+        _invalid_enhancement_config("clahe")
+    if any(band < 0 or band >= image_matrix.shape[0] for band in band_indices):
+        _invalid_enhancement_config("clahe")
+
     result = np.array(image_matrix, dtype=float, copy=True)
-    for band_index in range(image_matrix.shape[0]):
+    for band_index in band_indices:
         band = skimage.exposure.equalize_adapthist(
             image=np.asarray(image_matrix[band_index]).astype(np.uint16),
             kernel_size=kernel_size,
