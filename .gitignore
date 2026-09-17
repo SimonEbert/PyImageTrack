@@ -19,10 +19,6 @@ dist/
 .DS_Store
 *.egg
 
-# Local tests
-/tests/
-/tests/*.txt
-
 # data
 input/
 output/
