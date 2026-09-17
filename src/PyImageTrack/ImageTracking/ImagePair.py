@@ -510,13 +510,13 @@ class ImagePair:
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         self.years_between_observations = delta_hours / (24.0 * 365.25)
 
-        if NA_value is not None:
-            self.image1_matrix[self.image1_matrix == NA_value] = 0
-            self.image2_matrix[self.image2_matrix == NA_value] = 0
-
         # Use one numeric representation for enhancement, alignment, and tracking.
         self.image1_matrix = convert_to_float32(self.image1_matrix)
         self.image2_matrix = convert_to_float32(self.image2_matrix)
+
+        if NA_value is not None:
+            self.image1_matrix[self.image1_matrix == NA_value] = np.nan
+            self.image2_matrix[self.image2_matrix == NA_value] = np.nan
 
 
         # Compute effective buffer if needed

@@ -24,9 +24,11 @@ def _initial_processing_state(image_matrix):
     image = np.asarray(image_matrix)
     if image.ndim not in (2, 3):
         raise ValueError("Image enhancement supports only 2D or 3D image arrays.")
+    finite = np.isfinite(image)
+    valid_mask = finite if image.ndim == 2 else np.all(finite, axis=0)
     return ImageProcessingState(
         image=image,
-        valid_mask=np.ones(image.shape if image.ndim == 2 else image.shape[1:], dtype=bool),
+        valid_mask=valid_mask,
     )
 
 
@@ -137,8 +139,11 @@ def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
     if image_matrix.ndim == 2:
         if bands not in (None, [], [0]):
             _invalid_enhancement_config("clahe")
+        valid_values = image_matrix[valid_mask]
+        fill_value = np.nanmedian(valid_values) if valid_values.size else 0.0
+        calculation_image = np.where(valid_mask, image_matrix, fill_value)
         result = skimage.exposure.equalize_adapthist(
-            image=np.asarray(image_matrix).astype(np.uint16),
+            image=np.asarray(calculation_image).astype(np.uint16),
             kernel_size=kernel_size,
             clip_limit=clip_limit,
         )
@@ -151,8 +156,13 @@ def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
 
     result = np.array(image_matrix, dtype=float, copy=True)
     for band_index in band_indices:
+        band_image = image_matrix[band_index]
+        band_valid = np.isfinite(band_image) & valid_mask
+        valid_values = band_image[band_valid]
+        fill_value = np.nanmedian(valid_values) if valid_values.size else 0.0
+        calculation_band = np.where(band_valid, band_image, fill_value)
         band = skimage.exposure.equalize_adapthist(
-            image=np.asarray(image_matrix[band_index]).astype(np.uint16),
+            image=np.asarray(calculation_band).astype(np.uint16),
             kernel_size=kernel_size,
             clip_limit=clip_limit,
         )
