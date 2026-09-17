@@ -139,34 +139,19 @@ def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
     if image_matrix.ndim == 2:
         if bands not in (None, [], [0]):
             _invalid_enhancement_config("clahe")
-        valid_values = image_matrix[valid_mask]
-        fill_value = np.nanmedian(valid_values) if valid_values.size else 0.0
-        calculation_image = np.where(valid_mask, image_matrix, fill_value)
-        result = skimage.exposure.equalize_adapthist(
-            image=np.asarray(calculation_image).astype(np.uint16),
-            kernel_size=kernel_size,
-            clip_limit=clip_limit,
-        )
-        result[~valid_mask] = image_matrix[~valid_mask]
-        return result
+        return _apply_clahe_band(image_matrix, valid_mask, kernel_size, clip_limit)
 
     band_indices = _selected_band_indices(image_matrix, bands)
     if any(band < 0 or band >= image_matrix.shape[0] for band in band_indices):
         _invalid_enhancement_config("clahe")
 
-    result = np.array(image_matrix, dtype=float, copy=True)
+    result = np.array(image_matrix, dtype=np.float32, copy=True)
     for band_index in band_indices:
         band_image = image_matrix[band_index]
         band_valid = np.isfinite(band_image) & valid_mask
-        valid_values = band_image[band_valid]
-        fill_value = np.nanmedian(valid_values) if valid_values.size else 0.0
-        calculation_band = np.where(band_valid, band_image, fill_value)
-        band = skimage.exposure.equalize_adapthist(
-            image=np.asarray(calculation_band).astype(np.uint16),
-            kernel_size=kernel_size,
-            clip_limit=clip_limit,
+        result[band_index] = _apply_clahe_band(
+            band_image, band_valid, kernel_size, clip_limit
         )
-        result[band_index] = np.where(valid_mask, band, image_matrix[band_index])
     return result
 
 
@@ -179,3 +164,31 @@ def _selected_band_indices(image_matrix, bands):
     if any(index < 0 or index >= image_matrix.shape[0] for index in indices):
         _invalid_enhancement_config("clahe")
     return indices
+
+
+def _apply_clahe_band(image, valid_mask, kernel_size, clip_limit):
+    """Apply CLAHE to one float image while preserving its valid value range."""
+    import skimage
+
+    result = np.asarray(image, dtype=np.float32).copy()
+    valid_values = result[valid_mask]
+    if valid_values.size == 0:
+        return result
+
+    minimum = np.min(valid_values)
+    maximum = np.max(valid_values)
+    if maximum <= minimum:
+        return result
+
+    fill_value = np.median(valid_values)
+    calculation_image = np.where(valid_mask, result, fill_value)
+    normalized = (calculation_image - minimum) / (maximum - minimum)
+    enhanced = skimage.exposure.equalize_adapthist(
+        image=normalized.astype(np.float32),
+        kernel_size=kernel_size,
+        clip_limit=clip_limit,
+    )
+    result[valid_mask] = (
+        enhanced[valid_mask] * (maximum - minimum) + minimum
+    ).astype(np.float32)
+    return result
