@@ -825,6 +825,7 @@ def collect_pairs(input_folder: str,
             observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
         except ValueError:
             # Skip files with invalid date tokens
+            console.warning(f"Could not extract datetime from token: {f}")
             continue
         if observation_datetime is None:
             continue
