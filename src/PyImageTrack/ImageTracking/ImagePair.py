@@ -995,8 +995,14 @@ class ImagePair:
         console = get_console()
         console.processing("Filtering outliers. This may take a moment.")
         self.filter_parameters = filter_parameters
-        self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
-                                                     self.displacement_column_name)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="All-NaN slice encountered",
+                category=RuntimeWarning,
+            )
+            self.tracking_results = filter_outliers_full(self.tracking_results, filter_parameters,
+                                                         self.displacement_column_name)
 
 
     def track_lod_points(self, points_for_lod_calculation: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
@@ -1133,7 +1139,16 @@ class ImagePair:
         filter_parameters_lod_points.difference_movement_bearing_threshold = 360
         filter_parameters_lod_points.standard_deviation_movement_bearing_threshold = 360
 
-        filtered_level_of_detection_points = filter_outliers_full(unfiltered_level_of_detection_points, filter_parameters_lod_points, self.displacement_column_name)
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message="All-NaN slice encountered",
+                category=RuntimeWarning,
+            )
+            filtered_level_of_detection_points = filter_outliers_full(
+                unfiltered_level_of_detection_points,
+                filter_parameters_lod_points,
+                self.displacement_column_name)
         self.level_of_detection_points = filtered_level_of_detection_points
 
         self.level_of_detection = np.nanquantile(filtered_level_of_detection_points.loc[filtered_level_of_detection_points["valid"],self.displacement_column_name],
