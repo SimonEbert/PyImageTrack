@@ -58,8 +58,6 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
     # Assume depth image coordinate system corresponds exactly to camera coordinate system
     point_rows = points[:, 0].astype(int)
     point_columns = points[:, 1].astype(int)
-    print(np.max(point_rows),np.max(point_columns))
-    print(depth_image.shape)
     # Verify depth_image has shape (height, rows) not (width, cols)
     assert depth_image.shape[0] >= np.max(point_rows), \
         f"Depth image height {depth_image.shape[0]} is smaller than max row index {np.max(point_rows)}"

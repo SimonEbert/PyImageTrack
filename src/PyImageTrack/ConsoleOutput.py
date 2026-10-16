@@ -110,6 +110,7 @@ class ConsoleOutput:
         """Setup logging for log file output with rotation support."""
         self.logger = logging.getLogger('PyImageTrack')
         self.logger.setLevel(logging.DEBUG)
+        self.logger.propagate = False  # <-- the actual fix
         
         # Remove existing handlers
         self.logger.handlers.clear()
