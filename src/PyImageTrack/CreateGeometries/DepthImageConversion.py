@@ -58,7 +58,8 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
     # Assume depth image coordinate system corresponds exactly to camera coordinate system
     point_rows = points[:, 0].astype(int)
     point_columns = points[:, 1].astype(int)
-
+    print(np.max(point_rows),np.max(point_columns))
+    print(depth_image.shape)
     # Verify depth_image has shape (height, rows) not (width, cols)
     assert depth_image.shape[0] >= np.max(point_rows), \
         f"Depth image height {depth_image.shape[0]} is smaller than max row index {np.max(point_rows)}"
@@ -139,6 +140,16 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         and the Z-coordinate is given by the optical axis of the camera. Otherwise the 'x', 'y' and 'z' coordinates
         belong to the coordinate system corresponding to the specified 'camera_to_3d_coordinates_transform'.
     """
+    if (any(tracked_points["row"].values > depth_image_time1.shape[0]) or
+            any(tracked_points["column"].values > depth_image_time1.shape[1])):
+        console = get_console()
+        console.warning("Removed points with movement vectors starting outside safe image bounds. This may be due to "
+                        "wrong geometric conversion and is fine in most cases. However, check if relevant "
+                        "movement vectors were removed and increase the image extent or decrease the respective "
+                        "tracking/alignment area if needed.")
+        tracked_points = tracked_points[
+            (tracked_points["row"].values < depth_image_time1.shape[0]) &
+            (tracked_points["column"].values < depth_image_time2.shape[1])].copy()
     if (any(tracked_points["row"].values+np.abs(tracked_points["movement_row_direction"].values) > depth_image_time2.shape[0]) or
         any(tracked_points["column"].values+np.abs(tracked_points["movement_column_direction"].values) > depth_image_time2.shape[1])):
         console = get_console()
@@ -149,7 +160,6 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
         tracked_points = tracked_points[
             (tracked_points["row"].values+tracked_points["movement_row_direction"].values < depth_image_time2.shape[0]) &
             (tracked_points["column"].values+tracked_points["movement_column_direction"].values < depth_image_time2.shape[1])].copy()
-
 
 
     points1 = np.array([tracked_points["row"].values,
