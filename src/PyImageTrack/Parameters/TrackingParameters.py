@@ -57,7 +57,6 @@ class TrackingParameters:
         parameter_dict : dict
             Dictionary containing tracking parameters.
         """
-        self.image_bands = parameter_dict.get("image_bands")
         self.distance_of_tracked_points_px = parameter_dict.get("distance_of_tracked_points_px")
         self.search_extent_px = parameter_dict.get("search_extent_px")  # e.g., (60, 20, 40, 10)
         self.search_extent_deltas = parameter_dict.get("search_extent_deltas", self.search_extent_px)
@@ -99,18 +98,7 @@ class TrackingParameters:
             if any(v < 0 for v in self.search_extent_px):
                 raise ValueError(f"search_extent_px values must be non-negative, got {self.search_extent_px}")
         
-        if self.image_bands is not None:
-            # Accept both single integer and list/tuple of integers
-            if isinstance(self.image_bands, int):
-                if self.image_bands < 0:
-                    raise ValueError(f"image_bands must be a non-negative integer, got {self.image_bands}")
-            elif isinstance(self.image_bands, (list, tuple)):
-                if len(self.image_bands) == 0:
-                    raise ValueError(f"image_bands cannot be empty")
-                if any(not isinstance(b, int) or b < 0 for b in self.image_bands):
-                    raise ValueError(f"image_bands must contain non-negative integers, got {self.image_bands}")
-            else:
-                raise ValueError(f"image_bands must be an integer or list/tuple of integers, got {type(self.image_bands)}")
+
     def __str__(self) -> str:
         """
         Return string representation of tracking parameters.
@@ -122,7 +110,6 @@ class TrackingParameters:
         """
         return (
             "TrackingParameters:\n"
-            f"\timage bands: {self.image_bands}\n"
             f"\tmovement cell size: {self.movement_cell_size}\n"
             f"\tCC threshold (movement): {self.cross_correlation_threshold_movement}\n"
             f"\tsearch (user deltas, posx,negx,posy,negy): {self.search_extent_deltas}\n"
@@ -146,8 +133,6 @@ class TrackingParameters:
             Dictionary with tracking parameters.
         """
         return {
-            "image_bands": self.image_bands,
-            "used_image_bands": self.image_bands,  # legacy key name
             "movement_cell_size": self.movement_cell_size,
             "cross_correlation_threshold_movement": self.cross_correlation_threshold_movement,
             "distance_of_tracked_points_px": self.distance_of_tracked_points_px,

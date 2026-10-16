@@ -152,7 +152,7 @@ class ImagePair:
 
         # Meta-Data and results
         self.crs = parameter_dict.get("crs", None)
-        self.image_bands = parameter_dict.get("image_bands", None)
+        self.image_bands = parameter_dict.get("image_bands", [0,1,2])
         self.coordinate_system_unit_name = parameter_dict.get("unit_name_distance", None)
         self.time_between_observations = None
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
@@ -183,6 +183,23 @@ class ImagePair:
 
         self.safe_image_bounds_tracking = None
         self.safe_image_bounds_alignment = None
+        self._validate()
+
+    def _validate(self):
+        # Validate image bands
+        if self.image_bands is not None:
+            # Accept both single integer and list/tuple of integers
+            if isinstance(self.image_bands, int):
+                if self.image_bands < 0:
+                    raise ValueError(f"image_bands must be a non-negative integer, got {self.image_bands}")
+            elif isinstance(self.image_bands, (list, tuple)):
+                if len(self.image_bands) == 0:
+                    raise ValueError(f"image_bands cannot be empty")
+                if any(not isinstance(b, int) or b < 0 for b in self.image_bands):
+                    raise ValueError(f"image_bands must contain non-negative integers, got {self.image_bands}")
+            else:
+                raise ValueError(
+                    f"image_bands must be an integer or list/tuple of integers, got {type(self.image_bands)}")
 
     def _effective_pixel_size(self) -> float:
         """
@@ -274,10 +291,11 @@ class ImagePair:
 
 
     def load_images_from_file(self, filename_1: str, observation_date_1: str | dt.datetime,
-                              filename_2: str, observation_date_2: str,selected_channels:int | list[int] | tuple[int] | None,
+                              filename_2: str, observation_date_2: str,
                               NA_value: float = None):
         """
-        Load two image files, crop/align extents, harmonize dtypes/resolution, and store metadata.
+        Load two image files, crop/align extents, harmonize dtypes/resolution, and store metadata. Selects image channels
+        based on the image pairs image_bands property
 
         Behavior depends on georeferencing:
         - Georeferenced: validates CRS match; crops to intersection; checks channel compatibility;
@@ -300,8 +318,6 @@ class ImagePair:
             Path to the second image.
         observation_date_2 : str
             Observation date of the second image.
-        selected_channels : int | list[int] | tuple[int] | None, optional
-            Channels to select from 3D inputs. Defaults to ``[0, 1, 2]`` when None.
         NA_value : float, optional
             If provided, pixels equal to this value are set to 0 in both images.
 
@@ -365,7 +381,7 @@ class ImagePair:
             # Check channel compatibility
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
 
-            self.select_image_channels(selected_channels)
+            self.select_image_channels(self.image_bands)
 
             # Harmonize datatypes
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
@@ -457,7 +473,7 @@ class ImagePair:
 
             # Check channel compatibility for non-georeferenced images
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
-            self.select_image_channels(selected_channels)
+            self.select_image_channels(self.image_bands)
 
 
             # Harmonize dtypes (may already be uint16, but verifies)

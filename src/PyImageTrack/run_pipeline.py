@@ -623,8 +623,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "control_search_extent_px": tuple(_require(cfg, "alignment", "control_search_extent_px")),
         "control_cell_size": _require(cfg, "alignment", "control_cell_size"),
         "cross_correlation_threshold_alignment": _require(cfg, "alignment", "cross_correlation_threshold_alignment"),
-        "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement")),
-        "image_bands": image_bands
+        "maximal_alignment_movement": _as_optional_value(_get(cfg, "alignment", "maximal_alignment_movement"))
     })
 
     tracking_params = TrackingParameters({
@@ -874,7 +873,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             )
 
             pair_tracking_config_for_code = {
-                "image_bands": alignment_params.image_bands,
+                "image_bands": image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
@@ -882,7 +881,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             }
 
             pair_tracking_config = {
-                "image_bands": alignment_params.image_bands,
+                "image_bands": image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
@@ -954,8 +953,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # Adaptive tracking window
             param_dict["use_adaptive_tracking_window"]      = use_adaptive_tracking_window
             # Image bands (ensure both key names are available for compatibility)
-            param_dict["image_bands"]                      = alignment_params.image_bands
-
+            param_dict["image_bands"]                      = image_bands
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column
             param_dict["downsample_tracking_results_resolution"] = downsample_tracking_results_resolution
@@ -966,9 +964,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 filename_1=filename_1,
                 observation_date_1=dt1,
                 filename_2=filename_2,
-                observation_date_2=dt2,
-                selected_channels=alignment_params.image_bands
-            )
+                observation_date_2=dt2)
             if image_pair.image1_observation_date_user_string is None:
                 image_pair.image1_observation_date_user_string = id_to_date_user_string[token1]
             if image_pair.image2_observation_date_user_string is None:
@@ -1061,7 +1057,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 if not used_cache_tracking:
                     adaptive_info = f" (scaled by {years_between_observations_float:.3f} years)" if use_adaptive_tracking_window else " (disabled)"
                     console.parameter_summary({
-                        "Image bands": alignment_params.image_bands,
+                        "Image bands": image_pair.image_bands,
                         "Distance of tracked points": f"{tracking_params.distance_of_tracked_points_px} px",
                         "Movement cell size": f"{tracking_params.movement_cell_size} px",
                         "Search extent": f"{tracking_params.search_extent_px} px",
