@@ -66,8 +66,22 @@ stable_area.prj
 
 This example is intended to explain processing of a time series and the use of `image_dates.csv`. The exact CSV format must match the format documented in the main user documentation.
 
+## Example 02: Non-georeferenced images
+
+This advanced example is prepared for image sequences captured without georeferencing, such as camera-based time-lapse images.
+
+```text
+configs/02_example_non_georeferenced.toml
+input/02_example_non_georeferenced/
+output/02_example_non_georeferenced/
+```
+
+Expected input files include JPEG images, `image_pairs.csv`, and the moving-area and stable-area shapefile components. The configuration will use the non-georeferenced workflow and will require camera parameters.
+
+Depth images and 3D displacement conversion are intentionally not included yet.
+
 ## Current status
 
-The files in these example folders are placeholders. They are not a runnable example dataset until valid raster images, shapefiles, CSV content, and TOML configuration values have been added.
+The files in these example folders are placeholders. They are not runnable example datasets until valid images, shapefiles, CSV content, and TOML configuration values have been added.
 
 Advanced workflows, such as custom image pairs, image enhancement, non-georeferenced time-lapse images, depth images, and batch processing, can be added later.

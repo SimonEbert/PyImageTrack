@@ -36,6 +36,7 @@ Start with the example workflows described in [`docs/example_workflows.md`](exam
 
 - `00_example_two_images`: the smallest workflow with two images
 - `01_example_image_series`: several images with an `image_dates.csv` file
+- `02_example_non_georeferenced`: an advanced workflow for camera-based images
 
 The example files are placeholders and are not runnable until valid images, shapefiles, CSV content, and TOML settings have been added.
 
@@ -84,6 +85,7 @@ Start with the example workflows described in [`docs/example_workflows.md`](exam
 
 - `00_example_two_images`: the smallest workflow with two images
 - `01_example_image_series`: several images with an `image_dates.csv` file
+- `02_example_non_georeferenced`: an advanced workflow for camera-based images
 
 The example files are placeholders and are not runnable until valid images, shapefiles, CSV content, and TOML settings have been added.
 
