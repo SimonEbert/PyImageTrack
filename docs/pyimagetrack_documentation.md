@@ -298,6 +298,31 @@ Configs are TOML files and share the same structure. Use `configs/example_config
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
 
+### Tracking point-ratio validation
+The `[tracking]` parameter `minimum_valid_tracking_point_ratio` defines the
+minimum fraction of points generated for a moving area that must pass the
+configured `cross_correlation_threshold_movement`:
+
+```toml
+[tracking]
+cross_correlation_threshold_movement = 0.1
+minimum_valid_tracking_point_ratio = 0.3
+```
+
+The value must be between `0.0` and `1.0`. A value of `0.3`, for example,
+requires at least 30% of the originally generated points to pass the
+correlation threshold. A value of `0.0` disables this check.
+
+The check is performed separately for each moving area, before LoD and outlier
+filtering. If one moving area does not reach the ratio, that area is skipped while
+other areas continue. If no moving area passes, the current image pair is skipped.
+In batch mode, processing continues with the remaining identifiers.
+
+For each moving area, the console reports the number and fraction of points that
+passed the correlation threshold. The configured ratio and the resulting point
+counts are also written to tracking cache metadata, parameter output, and
+statistical results.
+
 ### Stable Area Fallback Mode
 The `[polygons]` section supports an optional fallback mode for defining the stable area. If `stable_area_filename` is set to `"none"` or the specified file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable. The resulting stable area is treated like the merged reference area described above.
 
@@ -1044,6 +1069,7 @@ Container for tracking parameters.
 - ``search_extent_deltas``
 - ``movement_cell_size``
 - ``cross_correlation_threshold_movement``
+- ``minimum_valid_tracking_point_ratio``
 
 #### Methods
 
