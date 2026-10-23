@@ -43,6 +43,7 @@ import rasterio
 from pyproj import CRS as PyprojCRS
 
 from .ImageTracking.ImagePair import ImagePair
+from .ImageTracking.TrackMovement import TrackingPointRatioError
 from .Parameters.FilterParameters import FilterParameters
 from .Parameters.AlignmentParameters import AlignmentParameters
 from .Parameters.TrackingParameters import TrackingParameters
@@ -629,6 +630,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
+        "minimum_valid_tracking_point_ratio": _get(cfg, "tracking", "minimum_valid_tracking_point_ratio", 0.0),
         # search extent tuple: (right, left, down, up) in pixels around the movement cell
         # usually this refers to the offset in px between the images,
         # but if the adaptive mode is used, this means the expected offset in px per year
@@ -856,6 +858,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
+                "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
                 "search_extent_px": base_track_deltas,  # user-entered deltas for folder code
             }
 
@@ -864,6 +867,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
+                "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
                 "search_extent_deltas": base_track_deltas,
                 "search_extent_px_effective": adaptive_extents,
             }
@@ -1027,6 +1031,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         "Movement cell size": f"{tracking_params.movement_cell_size} px",
                         "Search extent": f"{tracking_params.search_extent_px} px",
                         "Cross-correlation threshold": tracking_params.cross_correlation_threshold_movement,
+                        "Minimum valid point ratio": f"{tracking_params.minimum_valid_tracking_point_ratio:.1%}",
                         "Adaptive tracking window": f"enabled{adaptive_info}"
                     })
 
@@ -1034,13 +1039,33 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     # If images are not aligned, track_points() will issue a warning
                     with console.timer("Tracking", verbose=True):
                         tracked_points_list = []
+                        tracking_quality = []
                         for moving_id_value, moving_gdf in moving_groups:
-                            tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
+                            try:
+                                tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
+                            except TrackingPointRatioError as exc:
+                                console.error(
+                                    f"Tracking failed for pair {date_token_1} -> {date_token_2}, "
+                                    f"shape '{moving_id_value}': {exc}. Skipping this shape."
+                                )
+                                continue
+                            quality = dict(getattr(image_pair, "tracking_quality", {}))
+                            quality["moving_id"] = moving_id_value
+                            tracking_quality.append(quality)
                             tracked_sub[moving_id_column] = moving_id_value
                             tracked_points_list.append(tracked_sub)
                         if not tracked_points_list:
-                            raise ValueError("No tracking points found. track_points() returned empty results for all moving areas.")
+                            message = (
+                                "No tracking areas passed the minimum valid tracking point ratio. "
+                                "Skipping this pair."
+                            )
+                            console.error(
+                                f"Tracking failed for pair {date_token_1} -> {date_token_2}: {message}"
+                            )
+                            skipped.append((date_token_1, date_token_2, message))
+                            continue
                         tracked_points = pd.concat(tracked_points_list, ignore_index=True)
+                        image_pair.tracking_quality = tracking_quality
                     image_pair.tracking_results = tracked_points
                 
                 # Save tracking results only if not loaded from cache

@@ -354,6 +354,7 @@ def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
         "files": {"file1": filenames[year1], "file2": filenames[year2]},
         "files_hash": {k: _sha256(v) for k, v in filenames.items()},
         "tracking_params": track_params,
+        "tracking_quality": getattr(image_pair, "tracking_quality", None),
         "crs": str(image_pair.crs),
         "script_version": version,
     }
@@ -380,12 +381,16 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
     bool
         True if cache was loaded successfully, False if cache files don't exist or error occurred.
     """
-    raw_geojson, _ = tracking_cache_paths(track_dir, year1, year2)
+    raw_geojson, meta_json = tracking_cache_paths(track_dir, year1, year2)
     if not os.path.exists(raw_geojson):
         return False
     try:
         image_pair.tracking_results = gpd.read_file(raw_geojson)
         image_pair.crs = image_pair.tracking_results.crs
+        if os.path.exists(meta_json):
+            with open(meta_json, "r", encoding="utf-8") as f:
+                meta = json.load(f)
+            image_pair.tracking_quality = meta.get("tracking_quality", [])
         return True
     except Exception:
         return False

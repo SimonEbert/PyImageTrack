@@ -192,6 +192,11 @@ movement_cell_size = 100
 # Range: 0.0 to 1.0, lower = more permissive
 cross_correlation_threshold_movement = 0.1
 
+# Minimum fraction of originally generated points that must pass the
+# cross-correlation threshold for a tracking area to be accepted.
+# Range: 0.0 to 1.0; 0.0 disables this check.
+minimum_valid_tracking_point_ratio = 0.3
+
 # Search extent around each tracked point for finding the best match
 # Format: [right, left, down, up] in pixels
 # This defines the maximum expected displacement between images

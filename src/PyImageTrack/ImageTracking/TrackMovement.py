@@ -18,6 +18,21 @@ from .ImageInterpolator import ImageInterpolator
 from ..ConsoleOutput import get_console
 
 
+class TrackingPointRatioError(ValueError):
+    """Raised when too few points pass the tracking correlation threshold."""
+
+    def __init__(self, original_count, accepted_count, minimum_ratio):
+        self.original_count = original_count
+        self.accepted_count = accepted_count
+        self.minimum_ratio = minimum_ratio
+        self.accepted_ratio = accepted_count / original_count if original_count else 0.0
+        super().__init__(
+            f"only {accepted_count} of {original_count} tracking points passed the "
+            f"cross-correlation threshold ({self.accepted_ratio:.1%}); the required "
+            f"minimum is {minimum_ratio:.1%}"
+        )
+
+
 
 # def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):
 #     """
@@ -664,6 +679,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
+    original_point_count = len(points_to_be_tracked)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
     # build partial function
@@ -796,6 +812,13 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
     if "correlation_coefficient" not in save_columns and "correlation_coefficient" in tracked_pixels_above_cc_threshold.columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
+
+    minimum_ratio = getattr(tracking_parameters, "minimum_valid_tracking_point_ratio", 0.0) if not alignment_tracking else 0.0
+    accepted_count = len(tracked_pixels_above_cc_threshold)
+    if minimum_ratio > 0.0 and (
+        original_point_count == 0 or accepted_count / original_point_count < minimum_ratio
+    ):
+        raise TrackingPointRatioError(original_point_count, accepted_count, minimum_ratio)
     
     # Return the results
     return tracked_pixels_above_cc_threshold

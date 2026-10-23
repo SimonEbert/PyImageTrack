@@ -1198,6 +1198,7 @@ def abbr_tracking(tp):
         f"DP{_get(tp, 'distance_of_tracked_points_px')}",
         f"MC{_get(tp, 'movement_cell_size')}",
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
+        f"MPR{float_compact(_get(tp, 'minimum_valid_tracking_point_ratio', 0.0))}",
         _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
         _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
         _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),

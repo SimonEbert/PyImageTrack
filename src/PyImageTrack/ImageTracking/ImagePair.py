@@ -917,6 +917,7 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
+        original_point_count = len(points_to_be_tracked)
 
         if len(points_to_be_tracked) == 0:
             console.warning("No tracking points fall within image bounds!")
@@ -926,6 +927,13 @@ class ImagePair:
                                             tracking_parameters=self.tracking_parameters,
                                             alignment_tracking=False,
                                             task_label="[~] Tracking points for movement tracking")
+        accepted_point_count = len(tracked_points)
+        self.tracking_quality = {
+            "original_point_count": original_point_count,
+            "accepted_point_count": accepted_point_count,
+            "accepted_ratio": accepted_point_count / original_point_count if original_point_count else 0.0,
+            "minimum_ratio": self.tracking_parameters.minimum_valid_tracking_point_ratio,
+        }
         # calculate the years between observations from the two given observation dates
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
         years_between_observations = delta_hours / (24.0 * 365.25)
@@ -1617,6 +1625,21 @@ class ImagePair:
                     else "NA"
                 )
                 statistics_file.write(f"Level of Detection: {lod_str}\n")
+
+                quality = getattr(self, "tracking_quality", [])
+                if isinstance(quality, dict):
+                    quality = [quality]
+                statistics_file.write(
+                    "Minimum valid tracking point ratio: "
+                    f"{self.tracking_parameters.minimum_valid_tracking_point_ratio:.2%}\n"
+                )
+                for item in quality:
+                    statistics_file.write(
+                        f"Tracking area {item.get('moving_id', 'all')}: "
+                        f"{item.get('accepted_point_count', 0)} of "
+                        f"{item.get('original_point_count', 0)} points accepted "
+                        f"({item.get('accepted_ratio', 0.0):.2%})\n"
+                    )
 
                 statistics_file.write(
                     "Total number of points: " + str(total_number_of_points) + "\n"
