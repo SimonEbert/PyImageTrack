@@ -20,8 +20,16 @@ dist/
 *.egg
 
 # data
-input/
-output/
+input/*
+output/*
+!input/00_example_two_images/
+!input/00_example_two_images/**
+!input/01_example_image_series/
+!input/01_example_image_series/**
+!output/00_example_two_images/
+!output/00_example_two_images/**
+!output/01_example_image_series/
+!output/01_example_image_series/**
 
 # plans (documentation/draft files)
 plans/
@@ -35,3 +43,5 @@ wsl
 # local configs (keep example template)
 configs/*.toml
 !configs/example_config.toml
+!configs/00_example_two_images.toml
+!configs/01_example_image_series.toml

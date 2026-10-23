@@ -32,6 +32,13 @@ Install the package in editable mode (installs all dependencies):
 pip install -e .
 ```
 
+Start with the example workflows described in [`docs/example_workflows.md`](example_workflows.md). The two examples are:
+
+- `00_example_two_images`: the smallest workflow with two images
+- `01_example_image_series`: several images with an `image_dates.csv` file
+
+The example files are placeholders and are not runnable until valid images, shapefiles, CSV content, and TOML settings have been added.
+
 Run the pipeline with a config:
 ```bash
 pyimagetrack-run --config configs/your_config.toml
@@ -73,6 +80,13 @@ Install the package in editable mode (installs all dependencies):
 pip install -e .
 ```
 
+Start with the example workflows described in [`docs/example_workflows.md`](example_workflows.md). The two examples are:
+
+- `00_example_two_images`: the smallest workflow with two images
+- `01_example_image_series`: several images with an `image_dates.csv` file
+
+The example files are placeholders and are not runnable until valid images, shapefiles, CSV content, and TOML settings have been added.
+
 Run the pipeline with a config:
 ```powershell
 pyimagetrack-run --config configs\your_config.toml
@@ -84,19 +98,29 @@ pyimagetrack-run --config configs\your_config.toml
 
 After installation, these are the steps you repeat each time you want to run PyImageTrack.
 
+For a first run, use a completed example configuration. The configuration, input folder, and output folder use matching names:
+
+```text
+configs/00_example_two_images.toml
+input/00_example_two_images/
+output/00_example_two_images/
+```
+
 Linux:
 ```bash
 cd ~/PyImageTrack
 source .venv/bin/activate
-pyimagetrack-run --config configs/your_config.toml
+pyimagetrack-run --config configs/00_example_two_images.toml
 ```
 
 Windows (PowerShell):
 ```powershell
 cd $env:USERPROFILE\Documents\PyImageTrack
 .\.venv\Scripts\activate
-pyimagetrack-run --config configs\your_config.toml
+pyimagetrack-run --config configs\00_example_two_images.toml
 ```
+
+For your own data, copy an example TOML file, change its input and output paths, and adjust the processing parameters as needed.
 
 ---
 
