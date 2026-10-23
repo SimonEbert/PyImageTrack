@@ -1044,14 +1044,22 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             try:
                                 tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
                             except TrackingPointRatioError as exc:
-                                console.error(
-                                    f"Tracking failed for pair {date_token_1} -> {date_token_2}, "
-                                    f"shape '{moving_id_value}': {exc}. Skipping this shape."
+                                console.warning(
+                                    f"Tracking shape '{moving_id_value}' skipped: only "
+                                    f"{exc.accepted_count} of {exc.original_count} points passed "
+                                    f"threshold ({exc.accepted_ratio:.1%}; minimum required: "
+                                    f"{exc.minimum_ratio:.1%})."
                                 )
                                 continue
                             quality = dict(getattr(image_pair, "tracking_quality", {}))
                             quality["moving_id"] = moving_id_value
                             tracking_quality.append(quality)
+                            console.success(
+                                f"Used {quality['accepted_point_count']} points for tracking "
+                                f"({quality['accepted_ratio']:.1%} of "
+                                f"{quality['original_point_count']} points passed threshold; "
+                                f"minimum required: {quality['minimum_ratio']:.1%})."
+                            )
                             tracked_sub[moving_id_column] = moving_id_value
                             tracked_points_list.append(tracked_sub)
                         if not tracked_points_list:
@@ -1059,9 +1067,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                                 "No tracking areas passed the minimum valid tracking point ratio. "
                                 "Skipping this pair."
                             )
-                            console.error(
-                                f"Tracking failed for pair {date_token_1} -> {date_token_2}: {message}"
-                            )
+                            console.error(f"Tracking failed for pair {date_token_1} -> {date_token_2}: {message}")
+                            console.error("Skipping this pair. Please check the tracking parameters or input data.")
                             skipped.append((date_token_1, date_token_2, message))
                             continue
                         tracked_points = pd.concat(tracked_points_list, ignore_index=True)
