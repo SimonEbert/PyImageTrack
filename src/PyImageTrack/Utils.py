@@ -168,35 +168,45 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
 
 import dateutil.parser
 def extract_datetime_from_token(s: str) -> tuple[datetime, str]:
-    """Gets a filename part and extracts the found datetime token as a datetime object and the respective string given by the user."""
-    s_norm = s.replace('_', '-')
-    s_norm = s_norm.replace(' ', '-')
-    s_norm = s_norm.replace(':', '-')
-    s_norm = s_norm.replace('T', '-')
-
-    # Extract possible datetime matches
-    full_match = re.search(r'(?:\d{4}|\d{2})(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d{2}(?:-\d+)?)?)?)?)?)?', s_norm)
-    datetime_part = full_match.group(0)
-    datetime_string_user = datetime_part
-
-    # Normalize string with separating date and time options
-    datetime_parts = datetime_part.split('-')
-    # Fallback if a year with only two digits is provided:
-    # dateutils would read this as day-month-year, but we always consider year first
-    if len(datetime_parts[0]) == 2:
-        datetime_parts[0], datetime_parts[2] = datetime_parts[2], datetime_parts[0]
-    if len(datetime_parts) <= 3:
-        datetime_string = datetime_part  # date only, hyphens are fine
-    else:
-        date_part = '-'.join(datetime_parts[:3])  # "2024-06-14"
-        time_part = ':'.join(datetime_parts[3:6])  # "14:30:59"
-        sub_seconds = datetime_parts[6] if len(datetime_parts) > 6 else None
-
-        datetime_string = f"{date_part}T{time_part}"
-        if sub_seconds:
-            datetime_string += f".{sub_seconds}"
-
-    datetime_observation = dateutil.parser.isoparse(datetime_string)
+    """Gets a filename (part) and extracts the found datetime token as a datetime object and the respective string given by the user."""
+    token_without_id = re.sub(r'id\d+','',s)
+    token_without_id = token_without_id.replace(':', '')
+    token_without_id = token_without_id.replace('T', '')
+    token_without_id = token_without_id.replace('_', '')
+    token_without_id = token_without_id.replace('-', '')
+    datetime_observation, unused_string_parts = dateutil.parser.parse(token_without_id,yearfirst=True,fuzzy_with_tokens=True,dayfirst=False)
+    # Obtain string that was used for parsing in the original cleaned format
+    datetime_string_user_clean = re.sub(f"^{re.escape(unused_string_parts[0])}|{re.escape(unused_string_parts[-1])}$", "", token_without_id)
+    datetime_string_user = re.search(r"(?:id\d+|[:T_-])*".join(map(re.escape, datetime_string_user_clean)), s).group()
+    # s_norm = s.replace('_', '-')
+    # s_norm = s_norm.replace(' ', '-')
+    # s_norm = s_norm.replace(':', '-')
+    # s_norm = s_norm.replace('T', '-')
+    #
+    # # Extract possible datetime matches
+    # full_match = re.search(r'(?:\d{4}|\d{2})(?:(-|)\d{2}(?:(-|)\d{2}(?:(-|)\d{2}(?:(-|)\d{2}(?:(-|)\d{2}(?:(-|)\d+)?)?)?)?)?)?', s_norm)
+    # datetime_part = full_match.group(0)
+    # datetime_string_user = datetime_part
+    #
+    # # Normalize string with separating date and time options
+    # datetime_parts = datetime_part.split('-')
+    # datetime_parts = [datetime_part[0:4] if len(datetime_part) > 6 else datetime_part[0:2],datetime_parts[-4:-3],datetime_parts[-2:-1]]
+    # # Fallback if a year with only two digits is provided:
+    # # dateutils would read this as day-month-year, but we always consider year first
+    # if len(datetime_parts[0]) == 2:
+    #     datetime_parts[0], datetime_parts[2] = datetime_parts[2], datetime_parts[0]
+    # if len(datetime_parts) <= 3:
+    #     datetime_string = datetime_part  # date only, hyphens are fine
+    # else:
+    #     date_part = '-'.join(datetime_parts[:3])  # "2024-06-14"
+    #     time_part = ':'.join(datetime_parts[3:6])  # "14:30:59"
+    #     sub_seconds = datetime_parts[6] if len(datetime_parts) > 6 else None
+    #
+    #     datetime_string = f"{date_part}T{time_part}"
+    #     if sub_seconds:
+    #         datetime_string += f".{sub_seconds}"
+    #
+    # datetime_observation = dateutil.parser.isoparse(datetime_string)
     return datetime_observation, datetime_string_user
 
 # def extract_datetime_token(s: str) -> Optional[datetime]:
@@ -821,9 +831,9 @@ def collect_pairs(input_folder: str,
 
     for f in img_files:
         # Parse the date token
-        try:
+        if True:#try:
             observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
-        except ValueError:
+        else:#except ValueError:
             # Skip files with invalid date tokens
             console.warning(f"Could not extract datetime from token: {f}")
             continue
