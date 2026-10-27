@@ -595,6 +595,36 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
 
+    if not use_alignment_cache and (use_tracking_cache or use_lod_cache):
+        console.warning("Cache configuration may be inconsistent:")
+        console.warning(
+            "Alignment cache is disabled, but tracking and/or LoD cache is enabled.",
+            indent=4,
+        )
+        console.warning(
+            "Cached tracking and LoD results may have been calculated using a different alignment.",
+            indent=4,
+        )
+        console.warning(
+            "Consider enabling alignment cache or disabling the dependent caches.",
+            indent=4,
+        )
+
+    if not use_tracking_cache and use_lod_cache:
+        console.warning("Cache configuration may be inconsistent:")
+        console.warning(
+            "Tracking cache is disabled, but LoD cache is enabled.",
+            indent=4,
+        )
+        console.warning(
+            "Cached LoD results may have been calculated using different tracking results.",
+            indent=4,
+        )
+        console.warning(
+            "Consider enabling tracking cache or disabling the LoD cache.",
+            indent=4,
+        )
+
     # Suppress known Matplotlib clipping message emitted via logging (not warnings module).
     # Matplotlib emits this through logger 'matplotlib.image' at WARNING level.
     class _SuppressImshowClippingFilter(logging.Filter):
