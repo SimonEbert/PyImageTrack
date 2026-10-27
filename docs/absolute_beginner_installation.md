@@ -156,9 +156,9 @@ Check and update these entries:
 - `paths.input_folder`: folder that contains the input images
 - `paths.date_csv_path`: CSV file with image dates (or `"none"` if not used)
 - `paths.pairs_csv_path`: CSV file with image pairs (or `"none"` if not used)
-- `polygons.moving_area_filename` and `polygons.stable_area_filename`: shapefiles with moving / stable area
-- Stable-area shapefiles can contain one or multiple singlepart polygons; they are merged into one reference area for alignment.
-- Moving-area shapefiles can contain one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index. Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
+- `polygons.moving_area_filename` and `polygons.stable_area_filename`: vector files with moving / stable area (`.shp`, `.geojson`, `.json`, or `.gpkg`)
+- Stable-area vector files can contain one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area vector files can contain one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index. Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
 - **Optional fallback**: If `stable_area_filename` is set to `"none"` or the file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable. Alignment quality may be slightly lower but can be improved by increasing `number_of_control_points`.
 
 Example (from `configs/example_config.toml`):
@@ -306,9 +306,9 @@ identifier,class
 
 The identifier can appear anywhere in the filename, but must be preceded by `id`. The date token is still extracted as usual (see "Supported Date Token Formats" above).
 
-### Shapefile Wildcards in Batch Mode
+### Vector File Wildcards in Batch Mode
 
-Configuration files support wildcard patterns for shapefile names. The `*` wildcard is replaced with the actual identifier during batch processing.
+Configuration files support wildcard patterns for vector file names. The `*` wildcard is replaced with the actual identifier during batch processing.
 
 **Example configuration:**
 ```toml
@@ -329,9 +329,9 @@ For identifier `9109`, this will load `stable_area_9109.shp` and `moving_area_91
    - Filters Table B to find all identifiers with that class
    - Filters identifiers to only those present in the input folder (by checking for filenames containing `id<identifier>`)
    - Processes each identifier separately using the configuration
-   - Replaces wildcards (`*`) in shapefile names with the identifier
+   - Replaces wildcards (`*`) in vector file names with the identifier
 
 **Stable / Moving Areas:**
-- Stable-area shapefiles can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
-- Moving-area shapefiles can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
+- Stable-area vector files can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area vector files can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
 - Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).

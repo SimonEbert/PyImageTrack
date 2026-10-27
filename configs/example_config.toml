@@ -20,7 +20,7 @@
 
 [paths]
 # Directory containing input hillshade images
-# IMPORTANT: The input_folder and ALL its subdirectories are searched for images, CSVs, and shapefiles.
+# IMPORTANT: The input_folder and ALL its subdirectories are searched for images, CSVs, and vector files.
 # Files can be organized in any subfolder structure within this directory.
 # Duplicate filenames across different subfolders will cause an error.
 input_folder = "/path/to/input/hillshades"
@@ -49,7 +49,8 @@ pairs_csv_path = "image_pairs.csv"
 image_mask_path = "none"
 
 [polygons]
-# Shapefile defining the stable area (no expected movement)
+# Vector file defining the stable area (no expected movement).
+# Supported formats: Shapefile (.shp), GeoJSON (.geojson/.json), GeoPackage (.gpkg).
 # Searched recursively in input_folder and subdirectories. If not found there,
 # an absolute path can be used. Cannot be in multiple locations.
 # Used for image alignment - stable areas provide reliable control points
@@ -61,11 +62,12 @@ image_mask_path = "none"
 # The * will be replaced with the identifier when processing in batch mode.
 # Example: "stable_area_*.shp" will load "stable_area_9109.shp" for identifier "9109"
 # Wildcard patterns are only valid when an identifier is provided (batch mode).
-# Stable area shapefiles can contain one or multiple singlepart polygons; they are
+# Stable area vector files can contain one or multiple singlepart polygons; they are
 # combined into one reference area for alignment.
 stable_area_filename = "stable_area.shp"
 
-# Shapefile defining the moving area (where movement is expected)
+# Vector file defining the moving area (where movement is expected).
+# Supported formats: Shapefile (.shp), GeoJSON (.geojson/.json), GeoPackage (.gpkg).
 # Searched recursively in input_folder and subdirectories. If not found there,
 # an absolute path can be used. Cannot be in multiple locations.
 # Used to define the region of interest for tracking
@@ -74,11 +76,11 @@ stable_area_filename = "stable_area.shp"
 # The * will be replaced with the identifier when processing in batch mode.
 # Example: "moving_area_*.shp" will load "moving_area_9109.shp" for identifier "9109"
 # Wildcard patterns are only valid when an identifier is provided (batch mode).
-# Moving area shapefiles can contain one or multiple singlepart polygons. Provide an
+# Moving area vector files can contain one or multiple singlepart polygons. Provide an
 # ID column to split stats by polygon; missing IDs will be auto-filled with row indices.
 moving_area_filename = "moving_area.shp"
 
-# Name of the ID column in the moving-area shapefile. Default is "moving_id". If missing
+# Name of the ID column in the moving-area vector file. Default is "moving_id". If missing
 # or empty for some polygons, IDs are filled with the polygon row index (as string) and a
 # warning is issued. Stats/valid fractions are reported per ID.
 moving_id_column = "moving_id"

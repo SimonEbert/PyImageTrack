@@ -322,6 +322,21 @@ def _resolve_input_path(value: str | None, input_folder: str, config_dir: Path) 
     return None
 
 
+def _read_polygon_vector(path: str | Path) -> gpd.GeoDataFrame:
+    """Read a stable or moving area from a supported vector file."""
+    vector_path = Path(path)
+    supported_extensions = {".shp", ".geojson", ".json", ".gpkg"}
+    if vector_path.suffix.lower() not in supported_extensions:
+        supported = ", ".join(sorted(supported_extensions))
+        raise ValueError(
+            f"Unsupported polygon vector format '{vector_path.suffix}'. "
+            f"Supported formats are: {supported}."
+        )
+    # GeoPackage layer selection is intentionally not exposed; geopandas uses
+    # the default layer when reading the file.
+    return gpd.read_file(vector_path)
+
+
 def _crs_label(crs) -> str:
     """
     Get a string label for a coordinate reference system.
@@ -729,7 +744,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         # Resolve polygon path: check input_folder first, then support absolute paths
         poly_outside_path = _resolve_input_path(poly_outside_filename_resolved, input_folder, config_dir)
         try:
-            poly_outside = gpd.read_file(poly_outside_path)
+            poly_outside = _read_polygon_vector(poly_outside_path)
             if use_no_georeferencing:
                 poly_outside = poly_outside.set_crs(None, allow_override=True)
             # Allow multiple features: combine to one reference polygon
@@ -747,7 +762,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     polygon_inside_path = _resolve_input_path(poly_inside_filename, input_folder, config_dir)
     if not os.path.exists(polygon_inside_path):
         raise FileNotFoundError(f"Moving area polygon file does not exist: {polygon_inside_path}")
-    polygon_inside = gpd.read_file(polygon_inside_path)
+    polygon_inside = _read_polygon_vector(polygon_inside_path)
     if len(polygon_inside) == 0:
         raise ValueError(f"Moving area polygon file is empty: {polygon_inside_path}")
     if use_no_georeferencing:

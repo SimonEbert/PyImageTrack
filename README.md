@@ -128,11 +128,11 @@ The identifier can appear anywhere in the filename, but must be preceded by `id`
    - Filters Table B to find all identifiers with that class
    - Filters identifiers to only those present in the input folder
    - Processes each identifier separately using the configuration
-   - Replaces wildcards (`*`) in shapefile names with the identifier
+   - Replaces wildcards (`*`) in vector file names with the identifier
 
-### Wildcard Support in Shapefiles
+### Wildcard Support in Vector Files
 
-Configuration files support wildcard patterns for shapefile names. The `*` wildcard is replaced with the actual identifier during batch processing.
+Configuration files support wildcard patterns for vector file names. Supported formats are Shapefile, GeoJSON, and GeoPackage. The `*` wildcard is replaced with the actual identifier during batch processing.
 
 **Example configuration:**
 ```toml
@@ -146,8 +146,8 @@ For identifier `9109`, this will load `stable_area_9109.shp` and `moving_area_91
 **Note:** Wildcard patterns are only valid when processing in batch mode with an identifier specified.
 
 **Stable / Moving Areas:**
-- Stable-area shapefiles can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
-- Moving-area shapefiles can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
+- Stable-area vector files can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area vector files can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
 - Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
 
 ## CSV File Formats
