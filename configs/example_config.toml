@@ -206,20 +206,12 @@ minimum_valid_tracking_point_ratio = 0.3
 # Example: [5, 5, 5, 5] searches 5 pixels in each direction
 search_extent_px = [5, 5, 5, 5]
 
-# ==============================================================================
-# SECTION 5: ADAPTIVE TRACKING WINDOW
-# ==============================================================================
-# Optional: Adjust search window based on expected movement rate.
-# Useful when processing image pairs with different time intervals.
-
-[adaptive_tracking_window]
-# If true, the "search_extent_px" in tracking parameters relates to expected movement PER YEAR
-# The actual search window is scaled by the number of years between images
-# Example: If search_extent_px = [5, 5, 5, 5] and years_between = 2, the effective search window is [10, 10, 10, 10]
+# Optional: Adjust the search window based on expected movement rate.
+# If true, search_extent_px is interpreted as movement per year.
 use_adaptive_tracking_window = false
 
 # ==============================================================================
-# SECTION 6: FILTERING
+# SECTION 5: FILTERING
 # ==============================================================================
 # Parameters for removing outliers from tracking results.
 # Multiple filters are applied sequentially.
@@ -279,7 +271,7 @@ standard_deviation_movement_rate_threshold = 2
 standard_deviation_movement_rate_moving_window_size = 50
 
 # ==============================================================================
-# SECTION 7: OUTPUT SETTINGS
+# SECTION 6: OUTPUT SETTINGS
 # ==============================================================================
 # Control what outputs are generated and how they are formatted.
 
