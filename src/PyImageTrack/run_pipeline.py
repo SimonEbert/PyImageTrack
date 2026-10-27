@@ -17,6 +17,7 @@ specified in the configuration file.
 
 import argparse
 import csv
+import hashlib
 import os
 import sys
 import time
@@ -614,6 +615,25 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # Older configs may still define this in [image], so keep that as a fallback.
     image_bands = _as_optional_value(_get(cfg, "tracking", "image_bands", _get(cfg, "image", "image_bands", None)))
     unit_name = _as_optional_value(_get(cfg, "image", "unit_name", None))
+    image_mask_filename = _as_optional_value(_get(cfg, "paths", "image_mask_path", "none"))
+    image_mask_path = _resolve_input_path(image_mask_filename, input_folder, config_dir)
+    mask_config = _get(cfg, "image_enhancement", "mask", [["nodata"], [0], "none"])
+    try:
+        mask_types, nodata_values, custom_mode = mask_config
+        image_mask_mode = custom_mode if "custom" in mask_types else "none"
+    except (TypeError, ValueError):
+        raise ValueError("image_enhancement.mask must be [types, nodata_values, custom_mode].")
+    if image_mask_mode == "none":
+        image_mask_mode = "include"
+    image_mask_types = mask_types
+    image_mask_nodata_values = nodata_values
+    if image_mask_mode not in {"include", "exclude"}:
+        raise ValueError("image_mask.mode must be either 'include' or 'exclude'.")
+    if image_mask_path:
+        mask_identity = f"{Path(image_mask_path).resolve()}|{image_mask_mode}"
+        mask_code = "M_" + hashlib.sha256(mask_identity.encode("utf-8")).hexdigest()[:8].upper()
+    else:
+        mask_code = "M_none"
 
     alignment_params = AlignmentParameters({
         "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
@@ -665,6 +685,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         enabled=do_image_enhancement,
     )
     enhancement_code = abbr_enhancement(image_enhancement)
+    enhancement_code = enhancement_code + "_" + mask_code
     
     # Output units code (combined with enhancement for cache key)
     output_units_code = abbr_output_units(output_units_mode)
@@ -926,6 +947,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
             # Image enhancement parameters
             param_dict["image_enhancement"]                = image_enhancement
+            param_dict["image_mask_path"]                 = image_mask_path
+            param_dict["image_mask_mode"]                 = image_mask_mode
+            param_dict["image_mask_types"]                = image_mask_types
+            param_dict["image_mask_nodata_values"]        = image_mask_nodata_values
             # Output units mode
             param_dict["output_units_mode"]                = output_units_mode
             # Unit name (if specified, for plotting)

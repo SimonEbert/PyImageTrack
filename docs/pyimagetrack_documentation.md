@@ -793,8 +793,29 @@ clip_limit = 0.9
 - `clip_limit`: Contrast limiting threshold
 - `bands`: Optional zero-based list of bands; omitted means all bands
 
-Mask methods and additional filters are planned but are not yet available in
-the current implementation.
+The mask step supports NoData values and an optional user-provided custom mask.
+
+### External image mask
+
+An optional external mask can be configured with a Shapefile, GeoPackage,
+GeoJSON, or raster file:
+
+```toml
+[paths]
+image_mask_path = "mask.shp"  # use "none" to disable the custom mask
+
+[image_enhancement]
+steps = ["mask"]
+mask = [["nodata", "custom"], [0], "exclude"]
+```
+
+Vector geometries are rasterized onto each image grid. Raster masks are
+reprojected and resampled with nearest-neighbour interpolation. Non-zero mask
+The compact mask configuration contains ``types``, ``nodata_values``, and the
+custom-mask mode. NoData values are always excluded. With ``custom_mode =
+"include"`` (the third value), only the custom mask area is allowed; with
+``"exclude"``, the custom mask area is excluded. The external mask is combined
+with the technical NoData mask.
 
 #### None (no enhancement)
 - Set `do_image_enhancement = false` or use `image_enhancement_steps = []`.

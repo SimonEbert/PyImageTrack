@@ -37,7 +37,7 @@ from ..DataProcessing.DataPostprocessing import (
 )
 
 # DataPreProcessing
-from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state
+from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state, mask_for_grid
 from ..DataProcessing.ImagePreprocessing import (
     undistort_camera_image,
     convert_to_float32,
@@ -164,6 +164,10 @@ class ImagePair:
         self.camera_to_3d_coordinates_transform = parameter_dict.get("camera_to_3d_coordinates_transform", None)
         # Image enhancement parameters
         self.image_enhancement = parameter_dict.get("image_enhancement", [])
+        self.image_mask_path = parameter_dict.get("image_mask_path")
+        self.image_mask_mode = parameter_dict.get("image_mask_mode", "include")
+        self.image_mask_types = parameter_dict.get("image_mask_types", [])
+        self.image_mask_nodata_values = parameter_dict.get("image_mask_nodata_values", [])
         # Image bands (delegates to tracking_parameters.image_bands)
         self.image_bands = parameter_dict.get("image_bands")
         # Adaptive tracking window
@@ -490,6 +494,25 @@ class ImagePair:
         # Set image_bounds for fallback alignment mode (when reference_area is None)
         # This is used by align_images() when stable_area_filename is "none"
         # Similar logic to load_images_from_matrix_and_transform()
+        # Keep a spatial validity mask even when image enhancement is disabled.
+        self.image1_valid_mask = np.isfinite(self.image1_matrix)
+        self.image2_valid_mask = np.isfinite(self.image2_matrix)
+        if self.image1_matrix.ndim == 3:
+            self.image1_valid_mask = np.all(self.image1_valid_mask, axis=0)
+            self.image2_valid_mask = np.all(self.image2_valid_mask, axis=0)
+        if "nodata" in self.image_mask_types:
+            for value in self.image_mask_nodata_values:
+                self.image1_valid_mask &= ~np.all(self.image1_matrix == value, axis=0) if self.image1_matrix.ndim == 3 else self.image1_matrix != value
+                self.image2_valid_mask &= ~np.all(self.image2_matrix == value, axis=0) if self.image2_matrix.ndim == 3 else self.image2_matrix != value
+        if self.image_mask_path and "custom" in self.image_mask_types:
+            self.image1_valid_mask &= mask_for_grid(
+                self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs,
+                mode=self.image_mask_mode
+            )
+            self.image2_valid_mask &= mask_for_grid(
+                self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs,
+                mode=self.image_mask_mode
+            )
         px_size = safe_px_size_bounds
         ext = getattr(self.tracking_parameters, "search_extent_px", None)
         if not ext:
@@ -733,7 +756,9 @@ class ImagePair:
                 image_transform=self.image1_transform,
                 reference_area=reference_area_safe_bounds,
                 alignment_parameters=self.alignment_parameters,
-                return_alignment_transformation_matrix=True
+                return_alignment_transformation_matrix=True,
+                valid_mask1=self.image1_valid_mask,
+                valid_mask2=self.image2_valid_mask,
             )
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
@@ -745,9 +770,14 @@ class ImagePair:
                 image2_matrix=self.image2_matrix,
                 image_transform=self.image1_transform,
                 reference_area=reference_area_safe_bounds,
-                alignment_parameters=self.alignment_parameters
+                alignment_parameters=self.alignment_parameters,
+                valid_mask1=self.image1_valid_mask,
+                valid_mask2=self.image2_valid_mask,
             )
 
+        # The aligned second image uses image 1's grid. Keep the user mask in
+        # that same grid for subsequent tracking.
+        self.image2_valid_mask = self.image1_valid_mask.copy()
         self.valid_alignment_possible = True
 
         delta_hours = (self.image2_observation_date - self.image1_observation_date).total_seconds() / 3600.0
@@ -926,6 +956,8 @@ class ImagePair:
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
                                             alignment_tracking=False,
+                                            valid_mask1=self.image1_valid_mask,
+                                            valid_mask2=self.image2_valid_mask,
                                             task_label="[~] Tracking points for movement tracking")
         accepted_point_count = len(tracked_points)
         self.tracking_quality = {
@@ -1104,7 +1136,9 @@ class ImagePair:
                           "movement_bearing_pixels",
                           "correlation_coefficient",
                           ],
-            task_label="[~] Tracking points for LoD"
+            task_label="[~] Tracking points for LoD",
+            valid_mask1=self.image1_valid_mask,
+            valid_mask2=self.image2_valid_mask,
         )
         tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
@@ -1271,6 +1305,13 @@ class ImagePair:
         self.image2_matrix = state2.image
         self.image1_valid_mask = state1.valid_mask
         self.image2_valid_mask = state2.valid_mask
+        if "nodata" in self.image_mask_types:
+            for value in self.image_mask_nodata_values:
+                self.image1_valid_mask &= ~np.all(self.image1_matrix == value, axis=0) if self.image1_matrix.ndim == 3 else self.image1_matrix != value
+                self.image2_valid_mask &= ~np.all(self.image2_matrix == value, axis=0) if self.image2_matrix.ndim == 3 else self.image2_matrix != value
+        if self.image_mask_path and "custom" in self.image_mask_types:
+            self.image1_valid_mask &= mask_for_grid(self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs, mode=self.image_mask_mode)
+            self.image2_valid_mask &= mask_for_grid(self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs, mode=self.image_mask_mode)
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """

@@ -2,12 +2,17 @@
 
 from collections import defaultdict
 from dataclasses import dataclass
+from pathlib import Path
 
+import geopandas as gpd
 import numpy as np
+import rasterio
+from rasterio.features import rasterize
+from rasterio.warp import Resampling, reproject
 
 
 # The category is an implementation detail. Users select method names only.
-MASK_METHODS = set()
+MASK_METHODS = {"mask"}
 FILTER_METHODS = {"clahe"}
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
@@ -49,7 +54,7 @@ def normalize_image_enhancement(config=None, enabled=True):
     section = config.get("image_enhancement")
     if not isinstance(section, dict):
         _invalid_enhancement_config("unknown")
-    steps = section.get("image_enhancement_steps", [])
+    steps = section.get("image_enhancement_steps", section.get("steps", []))
     if not isinstance(steps, list):
         _invalid_enhancement_config("unknown")
 
@@ -61,7 +66,10 @@ def normalize_image_enhancement(config=None, enabled=True):
         method_name = method_name.lower()
         if method_name not in SUPPORTED_METHODS:
             _invalid_enhancement_config(method_name)
-        parameters = _method_parameters(config, method_name, occurrences[method_name])
+        if method_name == "mask":
+            parameters = _mask_parameters(section)
+        else:
+            parameters = _method_parameters(config, section, method_name, occurrences[method_name])
         occurrences[method_name] += 1
         category = "mask" if method_name in MASK_METHODS else "filter"
         normalized.append({
@@ -72,9 +80,17 @@ def normalize_image_enhancement(config=None, enabled=True):
     return normalized
 
 
-def _method_parameters(config, method_name, occurrence):
+def _method_parameters(config, section, method_name, occurrence):
     """Read one method's parameter table."""
     table = config.get(f"image_enhancement_{method_name}")
+    if table is None and method_name == "clahe":
+        compact = section.get("clahe")
+        if isinstance(compact, list) and len(compact) >= 2:
+            return {
+                "kernel_size": compact[0],
+                "clip_limit": compact[1],
+                **({"bands": compact[2]} if len(compact) > 2 else {}),
+            }
     if table is None:
         _invalid_enhancement_config(method_name)
     if not isinstance(table, list):
@@ -88,6 +104,66 @@ def _method_parameters(config, method_name, occurrence):
     if method_name == "clahe" and not {"kernel_size", "clip_limit"}.issubset(parameters):
         _invalid_enhancement_config(method_name)
     return parameters
+
+
+def mask_for_grid(mask_path, shape, transform, crs, mode="include"):
+    """Return a boolean mask where True denotes an allowed image pixel."""
+    if mode not in {"include", "exclude"}:
+        raise ValueError("Image mask mode must be either 'include' or 'exclude'.")
+    path = Path(mask_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Image mask file does not exist: {path}")
+
+    if path.suffix.lower() in {".shp", ".gpkg", ".geojson", ".json"}:
+        geometries = gpd.read_file(path)
+        if geometries.empty:
+            raise ValueError(f"Image mask file contains no geometries: {path}")
+        if geometries.crs is not None and crs is not None:
+            geometries = geometries.to_crs(crs)
+        elif geometries.crs != crs:
+            raise ValueError("Vector image masks and images must have compatible CRS values.")
+        result = rasterize(
+            ((geometry, 1) for geometry in geometries.geometry if geometry is not None),
+            out_shape=shape, transform=transform, fill=0, dtype="uint8",
+        ).astype(bool)
+        return result if mode == "include" else ~result
+
+    with rasterio.open(path) as source:
+        if source.crs is None or crs is None:
+            if source.shape != shape or source.transform != transform:
+                raise ValueError(
+                    "A raster image mask without CRS must have the same shape and transform as the image."
+                )
+            result = source.read(1) != 0
+        else:
+            destination = np.zeros(shape, dtype=np.uint8)
+            reproject(
+                source=source.read(1), destination=destination,
+                src_transform=source.transform, src_crs=source.crs,
+                dst_transform=transform, dst_crs=crs,
+                resampling=Resampling.nearest, src_nodata=0, dst_nodata=0,
+            )
+            result = destination.astype(bool)
+    return result if mode == "include" else ~result
+
+
+def _mask_parameters(section):
+    """Normalize the compact mask configuration."""
+    value = section.get("mask")
+    if not isinstance(value, list) or len(value) != 3:
+        _invalid_enhancement_config("mask")
+    mask_types, nodata_values, custom_mode = value
+    if not isinstance(mask_types, list) or not isinstance(nodata_values, list):
+        _invalid_enhancement_config("mask")
+    if not set(mask_types).issubset({"nodata", "custom"}):
+        _invalid_enhancement_config("mask")
+    if custom_mode not in {"include", "exclude", "none"}:
+        _invalid_enhancement_config("mask")
+    return {
+        "types": mask_types,
+        "nodata_values": nodata_values,
+        "custom_mode": custom_mode,
+    }
 
 
 def _invalid_enhancement_config(method_name):
@@ -128,6 +204,8 @@ def apply_image_enhancement_step(state, enhancement_step):
             clip_limit=parameters["clip_limit"],
             bands=parameters.get("bands"),
         )
+        return state
+    if method_name == "mask":
         return state
     _invalid_enhancement_config(method_name)
 

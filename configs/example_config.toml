@@ -44,6 +44,10 @@ date_csv_path = "image_dates.csv"
 # Can be set to "none" if "all" or "successive" pairing mode is selected below
 pairs_csv_path = "image_pairs.csv"
 
+# Optional external mask file (Shapefile, GeoJSON, GeoPackage, or raster).
+# Use "none" to disable the custom mask.
+image_mask_path = "none"
+
 [polygons]
 # Shapefile defining the stable area (no expected movement)
 # Searched recursively in input_folder and subdirectories. If not found there,
@@ -129,14 +133,13 @@ do_filtering = true      # Remove outliers from tracking results
 do_image_enhancement = false
 
 [image_enhancement]
-image_enhancement_steps = ["clahe"]
+steps = ["clahe", "mask"]
+# Note: A buffer around custom masks remains without tracking results because
+# complete movement_cell_size templates must remain valid.
+mask = [["nodata", "custom"], [0], "exclude"]
 
 # CLAHE improves local contrast; parameters apply to one configured step.
-[[image_enhancement_clahe]]
-kernel_size = 50
-clip_limit = 0.9
-# Optional zero-based band selection. Omit to process all bands.
-# bands = [0, 1, 2]
+clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 
 # ==============================================================================
 # SECTION 3: ALIGNMENT
