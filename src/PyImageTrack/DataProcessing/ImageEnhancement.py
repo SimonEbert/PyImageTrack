@@ -13,7 +13,7 @@ from rasterio.warp import Resampling, reproject
 
 # The category is an implementation detail. Users select method names only.
 MASK_METHODS = {"mask"}
-FILTER_METHODS = {"clahe", "percentile_stretch"}
+FILTER_METHODS = {"clahe", "percentile_stretch", "adaptive_gamma"}
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
 
@@ -88,6 +88,11 @@ def normalize_image_enhancement(config=None, enabled=True):
 
 def _method_parameters(config, section, method_name, occurrence):
     """Read one method's parameter table."""
+    if method_name == "adaptive_gamma":
+        value = section.get("adaptive_gamma")
+        if value is None or value is True:
+            return {}
+        _invalid_enhancement_config(method_name)
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -251,6 +256,12 @@ def apply_image_enhancement_step(state, enhancement_step):
             parameters["lower_percentile"], parameters["upper_percentile"],
         )
         return state
+    if method_name == "adaptive_gamma":
+        parameters = enhancement_step.get("parameters", {})
+        if parameters != {}:
+            _invalid_enhancement_config("adaptive_gamma")
+        state.image = _apply_adaptive_gamma(state.image, state.valid_mask)
+        return state
     if method_name == "mask":
         return state
     _invalid_enhancement_config(method_name)
@@ -303,6 +314,37 @@ def _apply_percentile_stretch(image_matrix, valid_mask, lower_percentile, upper_
             result[valid] = stretched[valid]
         else:
             result[index][valid] = stretched[valid]
+    return result
+
+
+def _apply_adaptive_gamma(image_matrix, valid_mask):
+    """Apply Wang et al. adaptive gamma correction independently per band.
+
+    The per-band extension to multichannel data is a PyImageTrack decision;
+    the cited publication describes the method for grayscale images.
+    """
+    image = np.asarray(image_matrix)
+    output_dtype = np.float64 if np.issubdtype(image.dtype, np.integer) else image.dtype
+    result = image.astype(output_dtype, copy=True)
+    bands = [image] if image.ndim == 2 else image
+
+    for index, band in enumerate(bands):
+        valid = np.isfinite(band) & valid_mask
+        values = band[valid]
+        if values.size == 0:
+            continue
+        if np.any(values < 0):
+            raise ValueError("Adaptive gamma correction requires non-negative valid intensities.")
+        maximum = np.max(values)
+        if maximum <= 0:
+            continue
+        mean = np.mean(values, dtype=np.float64)
+        gamma = 1.0 / (2.0 ** (mean / maximum))
+        transformed = maximum * np.power(band[valid] / maximum, gamma)
+        if image.ndim == 2:
+            result[valid] = transformed
+        else:
+            result[index][valid] = transformed
     return result
 
 

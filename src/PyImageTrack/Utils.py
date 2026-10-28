@@ -1309,6 +1309,7 @@ def _abbr_enhancement_step(ep) -> str:
     method_codes = {
         "clahe": "CL",
         "percentile_stretch": "PS",
+        "adaptive_gamma": "AG",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

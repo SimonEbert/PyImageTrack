@@ -104,3 +104,59 @@ def test_percentile_stretch_processes_each_band_and_preserves_nan():
 def test_percentile_stretch_rejects_invalid_percentiles(parameters):
     with pytest.raises(ValueError, match="lower_percentile"):
         normalize_image_enhancement(_config(["percentile_stretch"], percentile_stretch=parameters))
+
+
+def test_adaptive_gamma_matches_wang_equations():
+    from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
+
+    image = np.array([[0.0, 2.0, 4.0]], dtype=np.float32)
+    config = {"image_enhancement": {"steps": ["adaptive_gamma"]}}
+    step = normalize_image_enhancement(config)
+    mean = 2.0
+    maximum = 4.0
+    gamma = 1.0 / (2.0 ** (mean / maximum))
+    expected = maximum * (image / maximum) ** gamma
+    result = apply_image_enhancement_state(image, step).image
+    np.testing.assert_allclose(result, expected)
+
+
+def test_adaptive_gamma_processes_channels_and_images_independently():
+    from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
+
+    image = np.array([
+        [[0, 2], [4, 4]],
+        [[0, 10], [20, 20]],
+    ], dtype=np.uint16)
+    steps = normalize_image_enhancement({"image_enhancement": {
+        "steps": ["adaptive_gamma"], "adaptive_gamma": True,
+    }})
+    result = apply_image_enhancement_state(image, steps).image
+    assert result.shape == image.shape
+    assert np.issubdtype(result.dtype, np.floating)
+    assert result[0, 0, 1] != result[1, 0, 1]
+    np.testing.assert_allclose(result[:, 1, 1], image[:, 1, 1])
+
+
+def test_adaptive_gamma_excludes_masked_and_invalid_pixels():
+    from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
+
+    image = np.array([[1.0, 3.0, np.nan, 100.0]])
+    mask = np.array([[True, True, False, False]])
+    steps = normalize_image_enhancement({"image_enhancement": {
+        "steps": ["adaptive_gamma"], "adaptive_gamma": True,
+    }})
+    result = apply_image_enhancement_state(image, steps, valid_mask=mask).image
+    gamma = 1.0 / (2.0 ** (2.0 / 3.0))
+    np.testing.assert_allclose(result[0, :2], 3.0 * (image[0, :2] / 3.0) ** gamma)
+    assert np.isnan(result[0, 2])
+    assert result[0, 3] == 100.0
+
+
+def test_adaptive_gamma_rejects_negative_valid_intensities():
+    from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
+
+    steps = normalize_image_enhancement({"image_enhancement": {
+        "steps": ["adaptive_gamma"], "adaptive_gamma": True,
+    }})
+    with pytest.raises(ValueError, match="non-negative"):
+        apply_image_enhancement_state(np.array([[-1.0, 2.0]]), steps)

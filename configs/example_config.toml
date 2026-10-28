@@ -136,14 +136,19 @@ do_image_enhancement = false
 
 [image_enhancement]
 steps = ["clahe", "mask"]
-# Note: A buffer around custom masks remains without tracking results because
+
+# Mask: excludes NoData pixels and applies the optional custom mask. A buffer
+# around custom masks remains without tracking results because
 # complete movement_cell_size templates must remain valid.
 mask = [["nodata", "custom"], [0], "exclude"]
 
-# Percentile stretch maps the lower/upper percentiles to 0/1 (defaults: 1 and 99).
+# Adaptive gamma: add "adaptive_gamma" to steps to calculate gamma automatically
+# from each image's valid-pixel mean and maximum intensity.
+
+# Percentile stretch: maps the lower/upper percentiles to 0/1 (defaults: 1 and 99).
 percentile_stretch = [1.0, 99.0]
 
-# CLAHE improves local contrast; parameters apply to one configured step.
+# CLAHE: improves local contrast; parameters apply to one configured step.
 clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 
 # ==============================================================================

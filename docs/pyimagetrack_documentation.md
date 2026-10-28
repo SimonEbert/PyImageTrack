@@ -811,6 +811,39 @@ the mathematical principle described by Lentz, Sevil & Fries (2025),
 https://doi.org/10.1038/s41598-025-94176-x. Percentiles are calculated with
 NumPy and may therefore not be pixel-identical to MATLAB implementations.
 
+#### Adaptive Gamma Correction
+
+Adaptive gamma correction calculates a separate gamma value for each image
+band from its valid-pixel mean and maximum intensity. Enable it without any
+numeric parameters:
+
+```toml
+[image_enhancement]
+steps = ["adaptive_gamma"]
+```
+
+Adding `"adaptive_gamma"` to `steps` is sufficient; the method has no
+additional parameters.
+
+For each image and band, PyImageTrack uses Wang et al. (2022), Section 3.1:
+`gamma = 1 / (2 ** (I_mean / I_max))` and
+`I_out = I_max * (I_in / I_max) ** gamma`.
+Only finite, valid and unmasked pixels contribute to the mean and maximum.
+Zero bands are left unchanged, invalid pixels retain their original values,
+and negative valid intensities are rejected. Grayscale and arbitrary
+multiband arrays are supported without 8-bit conversion; channels are
+processed independently. This is a PyImageTrack extension—the publication
+evaluates the method on grayscale images. For non-negative data with a
+positive maximum, gamma lies between 0.5 and 1, so this is a brightness
+enhancement rather than bidirectional exposure correction.
+
+Reference: Wang, J., Li, Y., Wang, Y., Lv, H. & Lu, X. (2022), *Video Sequence
+Image Matching Algorithm Based on Adaptive Gamma Correction*, Journal of
+Physics: Conference Series 2400, 012042,
+https://doi.org/10.1088/1742-6596/2400/1/012042. The publication also changes
+the matching pipeline, so its reported matching improvements cannot be
+attributed to gamma correction alone.
+
 The mask step supports NoData values and an optional user-provided custom mask.
 
 ### External image mask

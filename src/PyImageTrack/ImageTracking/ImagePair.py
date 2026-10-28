@@ -1300,7 +1300,8 @@ class ImagePair:
         None
         """
         percentile_enabled = any(
-            step.get("type") == "percentile_stretch" for step in self.image_enhancement
+            step.get("type") in {"percentile_stretch", "adaptive_gamma"}
+            for step in self.image_enhancement
         )
         enhancement_masks = (None, None)
         if percentile_enabled:
