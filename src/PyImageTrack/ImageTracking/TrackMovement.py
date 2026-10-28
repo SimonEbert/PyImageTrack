@@ -639,6 +639,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         raise ValueError("No points provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
                          "with  at least one element.")
 
+    original_point_count = len(points_to_be_tracked)
+
     if (valid_mask1 is None) != (valid_mask2 is None):
         raise ValueError("Both valid masks must be provided together.")
     if valid_mask1 is not None:
@@ -741,7 +743,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
-    original_point_count = len(points_to_be_tracked)
+    tracking_input_point_count = len(points_to_be_tracked)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
     # build partial function
@@ -882,5 +884,11 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     ):
         raise TrackingPointRatioError(original_point_count, accepted_count, minimum_ratio)
     
+    # Preserve counts for callers that need to report tracking quality. The returned
+    # dataframe is already filtered by the correlation threshold.
+    tracked_pixels_above_cc_threshold.attrs["original_point_count"] = original_point_count
+    tracked_pixels_above_cc_threshold.attrs["tracking_input_point_count"] = tracking_input_point_count
+    tracked_pixels_above_cc_threshold.attrs["accepted_point_count"] = accepted_count
+
     # Return the results
     return tracked_pixels_above_cc_threshold

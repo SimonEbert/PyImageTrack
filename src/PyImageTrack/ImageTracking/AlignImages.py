@@ -191,7 +191,9 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
                      "correlation_coefficient"])) + "\n(None-values may signify problems during tracking).")
 
     console = get_console()
-    total_points = len(tracked_control_pixels)
+    # track_movement_lsm returns only points above the correlation threshold.
+    # Use the number of points actually submitted to tracking as the denominator.
+    total_points = tracked_control_pixels.attrs.get("tracking_input_point_count", len(tracked_control_pixels))
     valid_points = len(tracked_control_pixels_valid)
     percentage = (valid_points / total_points * 100) if total_points > 0 else 0
     console.success(f"Used {valid_points} pixels for alignment ({percentage:.1f}% of {total_points} points passed threshold).")
