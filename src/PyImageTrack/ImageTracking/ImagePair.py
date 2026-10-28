@@ -500,11 +500,12 @@ class ImagePair:
         if self.image1_matrix.ndim == 3:
             self.image1_valid_mask = np.all(self.image1_valid_mask, axis=0)
             self.image2_valid_mask = np.all(self.image2_valid_mask, axis=0)
-        if "nodata" in self.image_mask_types:
+        mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
+        if mask_enabled and "nodata" in self.image_mask_types:
             for value in self.image_mask_nodata_values:
                 self.image1_valid_mask &= ~np.all(self.image1_matrix == value, axis=0) if self.image1_matrix.ndim == 3 else self.image1_matrix != value
                 self.image2_valid_mask &= ~np.all(self.image2_matrix == value, axis=0) if self.image2_matrix.ndim == 3 else self.image2_matrix != value
-        if self.image_mask_path and "custom" in self.image_mask_types:
+        if mask_enabled and self.image_mask_path and "custom" in self.image_mask_types:
             self.image1_valid_mask &= mask_for_grid(
                 self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs,
                 mode=self.image_mask_mode
@@ -1299,6 +1300,7 @@ class ImagePair:
         -------
         None
         """
+        mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
         percentile_enabled = any(
             step.get("type") in {"percentile_stretch", "adaptive_gamma"}
             for step in self.image_enhancement
@@ -1319,11 +1321,11 @@ class ImagePair:
         self.image2_matrix = state2.image
         self.image1_valid_mask = state1.valid_mask
         self.image2_valid_mask = state2.valid_mask
-        if "nodata" in self.image_mask_types:
+        if mask_enabled and "nodata" in self.image_mask_types:
             for value in self.image_mask_nodata_values:
                 self.image1_valid_mask &= ~np.all(self.image1_matrix == value, axis=0) if self.image1_matrix.ndim == 3 else self.image1_matrix != value
                 self.image2_valid_mask &= ~np.all(self.image2_matrix == value, axis=0) if self.image2_matrix.ndim == 3 else self.image2_matrix != value
-        if self.image_mask_path and "custom" in self.image_mask_types:
+        if mask_enabled and self.image_mask_path and "custom" in self.image_mask_types:
             self.image1_valid_mask &= mask_for_grid(self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs, mode=self.image_mask_mode)
             self.image2_valid_mask &= mask_for_grid(self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs, mode=self.image_mask_mode)
 
@@ -1331,10 +1333,11 @@ class ImagePair:
         """Build the existing image validity mask before percentile calculation."""
         valid = np.isfinite(image)
         valid = valid if image.ndim == 2 else np.all(valid, axis=0)
-        if "nodata" in self.image_mask_types:
+        mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
+        if mask_enabled and "nodata" in self.image_mask_types:
             for value in self.image_mask_nodata_values:
                 valid &= ~(image == value if image.ndim == 2 else np.all(image == value, axis=0))
-        if self.image_mask_path and "custom" in self.image_mask_types:
+        if mask_enabled and self.image_mask_path and "custom" in self.image_mask_types:
             valid &= mask_for_grid(
                 self.image_mask_path, image.shape[-2:], transform, self.crs,
                 mode=self.image_mask_mode,

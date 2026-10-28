@@ -674,7 +674,10 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     image_mask_nodata_values = nodata_values
     if image_mask_mode not in {"include", "exclude"}:
         raise ValueError("image_mask.mode must be either 'include' or 'exclude'.")
-    if image_mask_path:
+    configured_steps = _get(cfg, "image_enhancement", "image_enhancement_steps",
+                             _get(cfg, "image_enhancement", "steps", []))
+    mask_step_enabled = do_image_enhancement and "mask" in configured_steps
+    if mask_step_enabled and image_mask_path:
         mask_identity = f"{Path(image_mask_path).resolve()}|{image_mask_mode}"
         mask_code = "M_" + hashlib.sha256(mask_identity.encode("utf-8")).hexdigest()[:8].upper()
     else:
