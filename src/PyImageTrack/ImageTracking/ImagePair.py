@@ -1329,6 +1329,19 @@ class ImagePair:
             self.image1_valid_mask &= mask_for_grid(self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs, mode=self.image_mask_mode)
             self.image2_valid_mask &= mask_for_grid(self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs, mode=self.image_mask_mode)
 
+        step_labels = {
+            "mask": "Mask",
+            "clahe": "CLAHE",
+            "percentile_stretch": "percentile stretch",
+            "adaptive_gamma": "adaptive gamma",
+        }
+        step_names = [step_labels.get(step.get("type"), step.get("type")) for step in self.image_enhancement]
+        if step_names:
+            console.info(f"Image enhancement applied: {', '.join(step_names)}")
+            console.info_verbose("Image enhancement steps:")
+            for index, step_name in enumerate(step_names, start=1):
+                console.info_verbose(f"{index}. {step_name}", indent=2)
+
     def _enhancement_valid_mask(self, image, transform):
         """Build the existing image validity mask before percentile calculation."""
         valid = np.isfinite(image)
