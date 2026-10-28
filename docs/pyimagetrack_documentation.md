@@ -290,7 +290,7 @@ Configs are TOML files and share the same structure. Use `configs/example_config
 - `[no_georef]`: enable for non-ortho images (e.g., JPGs) and configure fake georeferencing and depth-image options.
 - `[downsampling]`: optional downsampling for fast smoke tests.
 - `[flags]`: alignment/tracking/filtering toggles.
-- `[image_enhancement]`: optional image enhancement (CLAHE) configuration.
+- `[image_enhancement]`: optional image enhancement (CLAHE or percentile stretch) configuration.
 - `[cache]`: caching and recompute flags.
 - `[output]`: optional outputs such as true-color alignment and interactive plot display.
 - `[output_units]`: **required** - specifies whether movement values are normalized per year or reported as total displacement.
@@ -792,6 +792,24 @@ clip_limit = 0.9
 - `kernel_size`: Size of the grid for histogram equalization
 - `clip_limit`: Contrast limiting threshold
 - `bands`: Optional zero-based list of bands; omitted means all bands
+
+#### Percentile Stretch
+
+Percentile stretch independently maps each band linearly to `[0, 1]`, clipping
+values below the lower percentile and above the upper percentile. The default
+percentiles are 1 and 99; invalid and NoData pixels remain invalid. It supports
+grayscale and arbitrary multiband images without 8-bit quantization.
+
+```toml
+[image_enhancement]
+steps = ["percentile_stretch"]
+percentile_stretch = [1.0, 99.0]
+```
+
+The transformation is `clip((I - P_low) / (P_high - P_low), 0, 1)` and follows
+the mathematical principle described by Lentz, Sevil & Fries (2025),
+https://doi.org/10.1038/s41598-025-94176-x. Percentiles are calculated with
+NumPy and may therefore not be pixel-identical to MATLAB implementations.
 
 The mask step supports NoData values and an optional user-provided custom mask.
 

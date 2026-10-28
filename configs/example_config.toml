@@ -140,6 +140,9 @@ steps = ["clahe", "mask"]
 # complete movement_cell_size templates must remain valid.
 mask = [["nodata", "custom"], [0], "exclude"]
 
+# Percentile stretch maps the lower/upper percentiles to 0/1 (defaults: 1 and 99).
+percentile_stretch = [1.0, 99.0]
+
 # CLAHE improves local contrast; parameters apply to one configured step.
 clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 

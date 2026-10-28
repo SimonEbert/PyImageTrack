@@ -1299,8 +1299,21 @@ class ImagePair:
         -------
         None
         """
-        state1 = apply_image_enhancement_state(self.image1_matrix, self.image_enhancement)
-        state2 = apply_image_enhancement_state(self.image2_matrix, self.image_enhancement)
+        percentile_enabled = any(
+            step.get("type") == "percentile_stretch" for step in self.image_enhancement
+        )
+        enhancement_masks = (None, None)
+        if percentile_enabled:
+            enhancement_masks = (
+                self._enhancement_valid_mask(self.image1_matrix, self.image1_transform),
+                self._enhancement_valid_mask(self.image2_matrix, self.image2_transform),
+            )
+        state1 = apply_image_enhancement_state(
+            self.image1_matrix, self.image_enhancement, valid_mask=enhancement_masks[0]
+        )
+        state2 = apply_image_enhancement_state(
+            self.image2_matrix, self.image_enhancement, valid_mask=enhancement_masks[1]
+        )
         self.image1_matrix = state1.image
         self.image2_matrix = state2.image
         self.image1_valid_mask = state1.valid_mask
@@ -1312,6 +1325,20 @@ class ImagePair:
         if self.image_mask_path and "custom" in self.image_mask_types:
             self.image1_valid_mask &= mask_for_grid(self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs, mode=self.image_mask_mode)
             self.image2_valid_mask &= mask_for_grid(self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs, mode=self.image_mask_mode)
+
+    def _enhancement_valid_mask(self, image, transform):
+        """Build the existing image validity mask before percentile calculation."""
+        valid = np.isfinite(image)
+        valid = valid if image.ndim == 2 else np.all(valid, axis=0)
+        if "nodata" in self.image_mask_types:
+            for value in self.image_mask_nodata_values:
+                valid &= ~(image == value if image.ndim == 2 else np.all(image == value, axis=0))
+        if self.image_mask_path and "custom" in self.image_mask_types:
+            valid &= mask_for_grid(
+                self.image_mask_path, image.shape[-2:], transform, self.crs,
+                mode=self.image_mask_mode,
+            )
+        return valid
 
     def save_full_results(self, folder_path: str, save_files: list) -> None:
         """

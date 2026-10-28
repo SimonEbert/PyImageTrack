@@ -1308,6 +1308,7 @@ def _abbr_enhancement_step(ep) -> str:
     enhancement_type = _get(ep, "type", "none")
     method_codes = {
         "clahe": "CL",
+        "percentile_stretch": "PS",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

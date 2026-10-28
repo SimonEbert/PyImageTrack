@@ -64,3 +64,43 @@ def test_mask_contract_uses_spatial_mask_and_preserves_invalid_pixels():
     assert not state.valid_mask[1, 2]
     assert np.isnan(state.image[:, 1, 2]).all()
     assert state.image.dtype == np.float32
+
+
+def test_percentile_stretch_defaults_and_clips_values():
+    image = np.array([[0.0, 1.0, 2.0, 3.0, 100.0]], dtype=np.float64)
+    steps = normalize_image_enhancement(_config(["percentile_stretch"]))
+    assert steps[0]["parameters"] == {"lower_percentile": 1.0, "upper_percentile": 99.0}
+    result = apply_image_enhancement_state(image, steps).image
+    assert result.dtype == np.float32
+    assert result[0, 0] == 0.0
+    assert result[0, -1] == 1.0
+    assert np.all(np.diff(result[0]) >= 0)
+
+
+def test_percentile_stretch_processes_each_band_and_preserves_nan():
+    image = np.array([
+        [[0, 1], [2, 3]],
+        [[10, 20], [30, 40]],
+        [[100, 100], [100, 100]],
+    ], dtype=np.float32)
+    image[0, 0, 0] = np.nan
+    steps = normalize_image_enhancement(
+        _config(["percentile_stretch"], percentile_stretch={"lower_percentile": 25, "upper_percentile": 75})
+    )
+    result = apply_image_enhancement_state(image, steps).image
+    assert result.shape == image.shape
+    assert np.isnan(result[0, 0, 0])
+    np.testing.assert_allclose(result[1], [[10, 0], [0.5, 1]])
+    assert result[2, 0, 0] == 100
+    assert np.all(result[2, 0, 1:] == 0)
+    assert np.all(result[2, 1] == 0)
+
+
+@pytest.mark.parametrize("parameters", [
+    {"lower_percentile": -1, "upper_percentile": 99},
+    {"lower_percentile": 50, "upper_percentile": 50},
+    {"lower_percentile": 1, "upper_percentile": 101},
+])
+def test_percentile_stretch_rejects_invalid_percentiles(parameters):
+    with pytest.raises(ValueError, match="lower_percentile"):
+        normalize_image_enhancement(_config(["percentile_stretch"], percentile_stretch=parameters))
