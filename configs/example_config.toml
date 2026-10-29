@@ -131,8 +131,8 @@ downsample_factor = 1
 # be used to obtain the final results
 do_alignment = true      # Co-register image pairs
 do_tracking = true       # Detect movement between images
-do_filtering = true      # Remove outliers from tracking results
 do_lod_calculation = true# Calculate a level of detection from displacements of randomly distributed points in the stable area
+do_filtering = true      # Remove outliers from tracking results
 
 # Optional image enhancement via CLAHE (Contrast Limited Adaptive Histogram Equalization)
 # Improves contrast in areas with low contrast (e.g., shadows)
