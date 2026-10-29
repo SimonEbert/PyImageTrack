@@ -122,7 +122,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
     ----------
     None
     """
-
     if point_movement.empty:
         get_console().info(
             "Plot layer skipped (empty GeoDataFrame). This usually occurs when a subset is empty after filtering or if filters are disabled."
@@ -131,7 +130,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
             fig, ax = plt.subplots(dpi=200)
         if raster_matrix is not None:
             raster_matrix = _prepare_raster_for_plotting(raster_matrix, context_label="movement plot")
-            rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+            cmap = "Grays" if len(raster_matrix.shape) == 2 else None
+            rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap=cmap)
         plt.title("Movement velocity (no valid points)")
         if save_path is not None and fig is not None:
             fig.savefig(save_path, bbox_inches='tight')
@@ -206,7 +206,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
     ax.ticklabel_format(scilimits=(-3, 4))
     if raster_matrix is not None:
         raster_matrix = _prepare_raster_for_plotting(raster_matrix, context_label="movement plot")
-        rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap="Greys")
+        cmap = "Grays" if len(raster_matrix.shape) == 2 else None
+        rasterio.plot.show(raster_matrix, transform=raster_transform, ax=ax, cmap=cmap)
 
 
 

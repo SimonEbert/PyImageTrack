@@ -277,8 +277,6 @@ class ImagePair:
         if len(self.image1_matrix.shape) == 3:
             self.image1_matrix = np.squeeze(self.image1_matrix[selected_channels, :, :])
             self.image2_matrix = np.squeeze(self.image2_matrix[selected_channels, :, :])
-            self.image1_matrix_original = np.squeeze(self.image1_matrix_original[selected_channels, :, :])
-            self.image2_matrix_original = np.squeeze(self.image2_matrix_original[selected_channels, :, :])
 
 
     def make_safe_bounds(self,buffer_to_image_bounds: int):
@@ -422,7 +420,6 @@ class ImagePair:
             # Store original matrices for true-color alignment output (before harmonization and dtype change)
             self.image1_matrix_original = arr1.copy()
             self.image2_matrix_original = arr2.copy()
-
             # Automatically convert float images to uint16 for better alignment
             arr1 = convert_float_to_uint(arr1)
             arr2 = convert_float_to_uint(arr2)
@@ -474,7 +471,6 @@ class ImagePair:
             # Check channel compatibility for non-georeferenced images
             check_channels_compatible(self.image1_matrix, self.image2_matrix)
             self.select_image_channels(self.image_bands)
-
 
             # Harmonize dtypes (may already be uint16, but verifies)
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
@@ -586,6 +582,7 @@ class ImagePair:
                                                                           self.crs,cropping_polygon, polygon_crs)
         self.image2_matrix_original, _ = crop_images_to_polygon(self.image2_matrix_original, transform2_before_cropping,
                                                                           self.crs,cropping_polygon, polygon_crs)
+
 
     def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
         """
@@ -926,10 +923,16 @@ class ImagePair:
         -------
         None
         """
+        cmap = "Grays" if len(self.image1_matrix.shape) == 2 else None
+
         rasterio.plot.show(self.image1_matrix_original, title="Image 1, Observation date: "
-                                                     + self.image1_observation_date.strftime("%d-%m-%Y"))
+                                                     + (self.image1_observation_date.strftime("%d-%m-%Y"))
+                                                if (type(self.image1_observation_date) in [dt.datetime,dt.date]) else "",
+                           cmap=cmap)
         rasterio.plot.show(self.image2_matrix_original, title="Image 2, Observation date: "
-                                                     + self.image2_observation_date.strftime("%d-%m-%Y"))
+                                                     + (self.image2_observation_date.strftime("%d-%m-%Y"))
+                                                if (type(self.image1_observation_date) in [dt.datetime,dt.date]) else "",
+                           cmap=cmap)
 
     def plot_tracking_results(self) -> None:
         """
