@@ -127,10 +127,12 @@ camera_to_3d_coordinates_transform = "none"
 downsample_factor = 1
 
 [flags]
-# Enable/disable processing steps
+# Enable/disable processing steps, this does not influence the caching, but just determines which processing steps will
+# be used to obtain the final results
 do_alignment = true      # Co-register image pairs
 do_tracking = true       # Detect movement between images
 do_filtering = true      # Remove outliers from tracking results
+do_lod_calculation = true# Calculate a level of detection from displacements of randomly distributed points in the stable area
 
 # Optional image enhancement via CLAHE (Contrast Limited Adaptive Histogram Equalization)
 # Improves contrast in areas with low contrast (e.g., shadows)
@@ -242,12 +244,16 @@ use_adaptive_tracking_window = false
 
 [filter]
 # Level of Detection (LoD) - minimum detectable movement threshold
-# Quantile of movement magnitudes used to define the LoD
-# Lower values = more conservative (fewer points pass)
+# Quantile of movement magnitudes used to define the LoD: Percentage of points in the stable area that need to display a
+# lower displacement in order for a tracked movement to be considered significant
+# Must be between 0.0 and 1.0
+# Higer value = More conservative filtering of tracked points
+# Only used if do_lod_calculation = true
 level_of_detection_quantile = 0.5
 
 # Number of points used to calculate the LoD
-# Higher values = more robust but may miss small movements
+# Higher values = More accurate calculation of LoD, but requires more computation
+# Only used if do_lod_calculation = true
 number_of_points_for_level_of_detection = 50
 
 # --- Movement Bearing Filters ---
@@ -336,9 +342,9 @@ max_cmap_value = "none" # In CRS units / year
 [cache]
 # Enable caching to speed up re-runs with modified parameters
 # Cache files are stored in the output folder
-use_alignment_cache = true   # Cache alignment results
-use_tracking_cache = true    # Cache tracking results
-use_lod_cache = false         # Cache Level of Detection calculations
+use_alignment_cache = true   # Cache alignment results, only used if do_alignment = true
+use_tracking_cache = true    # Cache tracking results, only used if do_tracking = true
+use_lod_cache = false         # Cache Level of Detection calculations, only used if do_lod_calculation = true
 
 [save]
 # List of output files to generate. Available options:

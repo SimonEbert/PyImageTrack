@@ -571,12 +571,13 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
     do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
     do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
+    do_lod_calculation = bool(_get(cfg, "flags", "do_lod_calculation", True))
     do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
     display_plots = bool(_get(cfg, "output", "display_plots", False))
 
-    use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
-    use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True))
-    use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache))
+    use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True) if do_alignment else False)
+    use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True) if do_tracking else False)
+    use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache) if do_lod_calculation else False)
 
     # Suppress known Matplotlib clipping message emitted via logging (not warnings module).
     # Matplotlib emits this through logger 'matplotlib.image' at WARNING level.
@@ -641,6 +642,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "min_distance_initial_estimates": _get(cfg, "tracking", "min_distance_initial_estimates", 1),
     })
 
+
     filter_params = FilterParameters({
         "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
         "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
@@ -654,6 +656,20 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
         "maximal_fraction_depth_change_of_3d_displacement": _get(cfg,"filter", "maximal_fraction_depth_change_of_3d_displacement")
     })
+    if not do_lod_calculation and not use_lod_cache:
+        filter_params.level_of_detection_quantile = None
+        filter_params.number_of_points_for_level_of_detection = None
+    if not do_filtering:
+        filter_params.difference_movement_bearing_threshold = None
+        filter_params.difference_movement_bearing_moving_window_size = None
+        filter_params.standard_deviation_movement_bearing_threshold = None
+        filter_params.standard_deviation_movement_bearing_moving_window_size = None
+        filter_params.difference_movement_rate_threshold = None
+        filter_params.difference_movement_rate_moving_window_size = None
+        filter_params.standard_deviation_movement_rate_threshold = None
+        filter_params.standard_deviation_movement_rate_moving_window_size = None
+        filter_params.maximal_fraction_depth_change_of_3d_displacement = None
+
     downsample_tracking_results_resolution = _as_optional_value(_get(cfg, "filter", "downsample_tracking_results_resolution"),)
 
 
@@ -1098,11 +1114,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             # FILTERING + PLOTS + SAVING (optional)
             # ==============================
             if do_tracking:
-                if do_filtering:
+                if do_lod_calculation:
                     console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
                     console.parameter_summary({
                         "LoD quantile": filter_params.level_of_detection_quantile,
-                        "Points for LoD": filter_params.number_of_points_for_level_of_detection,
+                        "Number of points for LoD": filter_params.number_of_points_for_level_of_detection,
                         "Bearing difference threshold": filter_params.difference_movement_bearing_threshold,
                         "Bearing difference window size": filter_params.difference_movement_bearing_moving_window_size,
                         "Bearing std-dev threshold": filter_params.standard_deviation_movement_bearing_threshold,
@@ -1157,7 +1173,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                             dates={token1: dt1_string, token2: dt2_string},
                         )
                         console.cache_info("saved", track_dir, f"{dt1_string}->{dt2_string}", cache_type="LoD")
-
+                if do_filtering:
                     # Second: Apply LoD filtering (remove points below detection threshold)
                     image_pair.filter_lod_points()
                     
