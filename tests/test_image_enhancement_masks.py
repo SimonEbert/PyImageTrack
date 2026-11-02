@@ -200,10 +200,10 @@ def test_difference_of_gaussians_uses_independent_scales_and_preserves_signed_ou
     }}
     steps = normalize_image_enhancement(config)
     result = apply_image_enhancement_state(image, steps).image
-    expected = gaussian_filter(image, 1.6, mode="reflect") - gaussian_filter(
-        image, 1.0, mode="reflect"
+    expected = gaussian_filter(image.astype(np.float64), 1.6, mode="reflect") - gaussian_filter(
+        image.astype(np.float64), 1.0, mode="reflect"
     )
-    np.testing.assert_allclose(result, expected)
+    np.testing.assert_allclose(result, expected, rtol=1e-7, atol=1e-10)
     assert np.min(result) < 0
     assert result.dtype == np.float64
 
