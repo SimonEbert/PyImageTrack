@@ -186,3 +186,52 @@ def test_multi_scale_retinex_rejects_invalid_sigmas(sigmas):
                                      "multi_scale_retinex": sigmas}}
     with pytest.raises(ValueError, match="gaussian_sigmas"):
         normalize_image_enhancement(config)
+
+
+def test_difference_of_gaussians_uses_independent_scales_and_preserves_signed_output():
+    from scipy.ndimage import gaussian_filter
+    from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
+
+    image = np.zeros((9, 9), dtype=np.float32)
+    image[4, 4] = 10.0
+    config = {"image_enhancement": {
+        "steps": ["difference_of_gaussians"],
+        "difference_of_gaussians": [1.0, 1.6],
+    }}
+    steps = normalize_image_enhancement(config)
+    result = apply_image_enhancement_state(image, steps).image
+    expected = gaussian_filter(image, 1.6, mode="reflect") - gaussian_filter(
+        image, 1.0, mode="reflect"
+    )
+    np.testing.assert_allclose(result, expected)
+    assert np.min(result) < 0
+    assert result.dtype == np.float64
+
+
+def test_difference_of_gaussians_is_bandwise_and_mask_aware():
+    from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
+
+    image = np.ones((2, 7, 7), dtype=np.float32)
+    image[1] *= 4
+    valid_mask = np.ones((7, 7), dtype=bool)
+    valid_mask[3, 3] = False
+    image[:, 3, 3] = 1e9
+    config = {"image_enhancement": {
+        "steps": ["difference_of_gaussians"],
+        "difference_of_gaussians": [1.0, 1.6],
+    }}
+    result = apply_image_enhancement_state(
+        image, normalize_image_enhancement(config), valid_mask=valid_mask
+    ).image
+    np.testing.assert_allclose(result[:, valid_mask], 0.0, atol=1e-12)
+    np.testing.assert_array_equal(result[:, 3, 3], image[:, 3, 3])
+
+
+@pytest.mark.parametrize("sigmas", [[0, 1.6], [-1, 1.6], [1, 1], [1, np.inf]])
+def test_difference_of_gaussians_rejects_invalid_sigmas(sigmas):
+    config = {"image_enhancement": {
+        "steps": ["difference_of_gaussians"],
+        "difference_of_gaussians": sigmas,
+    }}
+    with pytest.raises(ValueError, match="Difference of Gaussians"):
+        normalize_image_enhancement(config)

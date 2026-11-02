@@ -901,6 +901,27 @@ signed floating-point MSR result is preserved without display normalization,
 clipping or color restoration. The implementation follows Jobson, Rahman and
 Woodell (1997), https://doi.org/10.1109/83.597272.
 
+#### Difference of Gaussians (DoG)
+
+DoG subtracts a Gaussian-smoothed image at the smaller scale from an
+independently smoothed image at the larger scale, per image band:
+
+```toml
+[image_enhancement]
+steps = ["difference_of_gaussians"]
+difference_of_gaussians = [1.0, 1.6] # sigma1, sigma2 in pixels
+```
+
+Both values must be positive and `sigma2` must be greater than `sigma1`.
+The boundary mode is SciPy's reflected mode and the Gaussian kernel uses
+SciPy's default four-standard-deviation truncation. Invalid and masked pixels
+are excluded using normalized Gaussian convolution. The signed floating-point
+result is preserved without absolute values, clipping, or automatic rescaling.
+This adapts Lowe (2004), Section 3, for preprocessing; it does not implement
+the complete SIFT detector or descriptor pipeline.
+
+Reference: Lowe (2004), https://doi.org/10.1023/B:VISI.0000029664.99615.94.
+
 The mask step supports NoData values and an optional user-provided custom mask.
 
 ### External image mask

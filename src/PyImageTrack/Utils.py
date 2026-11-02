@@ -1313,6 +1313,7 @@ def _abbr_enhancement_step(ep) -> str:
         "histogram_matching": "HM",
         "local_contrast_normalization": "LCN",
         "multi_scale_retinex": "MSR",
+        "difference_of_gaussians": "DOG",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

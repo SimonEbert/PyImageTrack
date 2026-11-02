@@ -15,7 +15,7 @@ from rasterio.warp import Resampling, reproject
 MASK_METHODS = {"mask"}
 FILTER_METHODS = {
     "clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching",
-    "local_contrast_normalization", "multi_scale_retinex",
+    "local_contrast_normalization", "multi_scale_retinex", "difference_of_gaussians",
 }
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
@@ -126,6 +126,13 @@ def _method_parameters(config, section, method_name, occurrence):
         if not isinstance(value, list):
             _invalid_enhancement_config(method_name)
         return {"gaussian_sigmas": _validate_retinex_sigmas(value)}
+    if method_name == "difference_of_gaussians":
+        value = section.get(method_name, [1.0, 1.6])
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+            value = value[0]
+        if not isinstance(value, list) or len(value) != 2:
+            _invalid_enhancement_config(method_name)
+        return _validate_dog_sigmas(value)
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -305,6 +312,15 @@ def apply_image_enhancement_step(state, enhancement_step):
         parameters = enhancement_step.get("parameters", {})
         sigmas = _validate_retinex_sigmas(parameters.get("gaussian_sigmas", []))
         state.image = _apply_multi_scale_retinex(state.image, state.valid_mask, sigmas)
+        return state
+    if method_name == "difference_of_gaussians":
+        parameters = enhancement_step.get("parameters", {})
+        sigma1 = parameters.get("sigma1", 1.0)
+        sigma2 = parameters.get("sigma2", 1.6)
+        sigma1, sigma2 = _validate_dog_sigmas([sigma1, sigma2]).values()
+        state.image = _apply_difference_of_gaussians(
+            state.image, state.valid_mask, sigma1, sigma2
+        )
         return state
     if method_name == "histogram_matching":
         raise ValueError("Histogram matching requires a pair of image processing states.")
@@ -495,6 +511,58 @@ def _apply_multi_scale_retinex(image_matrix, valid_mask, gaussian_sigmas):
             )
             accumulated += scale_result
         output[valid] = accumulated[valid] / len(gaussian_sigmas)
+    return result
+
+
+def _validate_dog_sigmas(sigmas):
+    """Validate the smaller and larger Gaussian scales used by DoG."""
+    if not isinstance(sigmas, (list, tuple)) or len(sigmas) != 2:
+        raise ValueError(
+            "Difference of Gaussians requires exactly two positive finite sigmas "
+            "with sigma2 greater than sigma1."
+        )
+    try:
+        sigma1, sigma2 = (float(sigma) for sigma in sigmas)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Difference of Gaussians sigmas must be positive finite numbers."
+        ) from None
+    if not np.isfinite(sigma1) or not np.isfinite(sigma2) or sigma1 <= 0 or sigma2 <= sigma1:
+        raise ValueError(
+            "Difference of Gaussians requires positive finite sigmas with sigma2 > sigma1."
+        )
+    return {"sigma1": sigma1, "sigma2": sigma2}
+
+
+def _apply_difference_of_gaussians(image_matrix, valid_mask, sigma1, sigma2):
+    """Apply mask-aware DoG independently to each band.
+
+    Gaussian filtering uses SciPy's reflected boundary mode and its default
+    four-standard-deviation kernel truncation. Both scales are filtered from
+    the original band, and invalid output pixels retain their input values.
+    """
+    from scipy.ndimage import gaussian_filter
+
+    image = np.asarray(image_matrix)
+    result = image.astype(np.float64, copy=True)
+    bands = [image] if image.ndim == 2 else image
+    outputs = [result] if result.ndim == 2 else result
+    grid_mask = np.asarray(valid_mask, dtype=bool)
+    for band, output in zip(bands, outputs):
+        valid = grid_mask & np.isfinite(band)
+        values = np.asarray(band, dtype=np.float64)
+        weights = valid.astype(np.float64)
+        prepared = np.where(valid, values, 0.0)
+        low_num = gaussian_filter(prepared, sigma=sigma1, mode="reflect")
+        low_den = gaussian_filter(weights, sigma=sigma1, mode="reflect")
+        high_num = gaussian_filter(prepared, sigma=sigma2, mode="reflect")
+        high_den = gaussian_filter(weights, sigma=sigma2, mode="reflect")
+        low = np.zeros_like(values)
+        high = np.zeros_like(values)
+        np.divide(low_num, low_den, out=low, where=low_den > 0)
+        np.divide(high_num, high_den, out=high, where=high_den > 0)
+        usable = valid & (low_den > 0) & (high_den > 0)
+        output[usable] = (high - low)[usable]
     return result
 
 

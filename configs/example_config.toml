@@ -160,6 +160,12 @@ local_contrast_normalization = [9] # arguments: kernel_size
 # Set the first value to about 1/3–1/2 of the smallest relevant structure; make the next values 3–5 times larger.
 multi_scale_retinex = [[15.0, 80.0, 250.0]] # arguments: gaussian_sigmas
 
+# Difference of Gaussians compares a finer blur (sigma1) with a coarser blur (sigma2).
+# Their difference emphasizes structures between these two spatial scales.
+# Both values are blur widths in pixels; start with sigma1 near half the smallest
+# relevant structure width and choose sigma2 about 1.5–2 times larger.
+difference_of_gaussians = [1.0, 1.6] # arguments: sigma1, sigma2
+
 # CLAHE: improves local contrast; parameters apply to one configured step.
 clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 
