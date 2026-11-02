@@ -1314,6 +1314,7 @@ def _abbr_enhancement_step(ep) -> str:
         "local_contrast_normalization": "LCN",
         "multi_scale_retinex": "MSR",
         "difference_of_gaussians": "DOG",
+        "unsharp_masking": "USM",
         "naof": "NAOF",
         "snowmask": "SM",
         "nodatamask": "ND",

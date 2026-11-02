@@ -910,6 +910,26 @@ independently smoothed image at the larger scale, per image band:
 [image_enhancement]
 steps = ["difference_of_gaussians"]
 difference_of_gaussians = [1.0, 1.6] # sigma1, sigma2 in pixels
+
+Classical Gaussian unsharp masking can be enabled explicitly with:
+
+```toml
+steps = ["unsharp_masking"]
+unsharp_masking = [1.0, 1.0] # sigma, amount
+```
+
+For each band, PyImageTrack computes `B = G_sigma * I` and reconstructs
+`I_USM = I + amount * (I - B)`. The defaults (`sigma = 1.0`, `amount = 1.0`)
+are implementation choices. Gaussian filtering uses reflected image
+boundaries; NoData, non-finite and custom-mask pixels are excluded through
+normalized weighted convolution and retain their original invalid values.
+RGB and multiband arrays are processed independently per band. The result is
+floating point and is not clipped or rescaled, so negative and above-range
+values are possible. USM differs from DoG because it adds the high-frequency
+residual back to the original image. Strong settings can amplify noise and
+halos and may affect image matching; accuracy improvements must be evaluated
+experimentally. The classical theoretical reference is Levi (1974),
+“Unsharp masking and related image enhancement techniques”.
 ```
 
 Both values must be positive and `sigma2` must be greater than `sigma1`.

@@ -172,6 +172,12 @@ naof = [] # arguments: none
 # relevant structure width and choose sigma2 about 1.5–2 times larger.
 difference_of_gaussians = [1.0, 1.6] # arguments: sigma1, sigma2
 
+
+# Unsharp Masking sharpens edges by adding a scaled residual from a Gaussian-blurred image.
+# Use smaller sigma values for fine details and larger values for broader structures;
+# increase amount gradually, since high values may amplify noise and produce halos.
+unsharp_masking = [1.0, 1.0] # arguments: sigma, amount
+
 # CLAHE: improves local contrast; parameters apply to one configured step.
 clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 

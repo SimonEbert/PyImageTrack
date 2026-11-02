@@ -1307,6 +1307,7 @@ class ImagePair:
                 "percentile_stretch", "adaptive_gamma", "histogram_matching",
                 "local_contrast_normalization",
                 "multi_scale_retinex", "difference_of_gaussians", "naof",
+                "unsharp_masking",
             }
             for step in self.image_enhancement
         )
@@ -1352,6 +1353,7 @@ class ImagePair:
             "local_contrast_normalization": "local contrast normalization",
             "multi_scale_retinex": "multi-scale Retinex",
             "difference_of_gaussians": "difference of Gaussians",
+            "unsharp_masking": "unsharp masking",
             "naof": "NAOF",
         }
         step_names = [step_labels.get(step.get("type"), step.get("type")) for step in self.image_enhancement]

@@ -208,6 +208,41 @@ def test_difference_of_gaussians_uses_independent_scales_and_preserves_signed_ou
     assert result.dtype == np.float64
 
 
+def test_unsharp_masking_matches_gaussian_reference_and_processes_bands_independently():
+    from scipy.ndimage import gaussian_filter
+    from PyImageTrack.DataProcessing.ImageEnhancement import (
+        apply_image_enhancement_state,
+        normalize_image_enhancement,
+    )
+
+    image = np.stack([np.arange(25, dtype=np.int16).reshape(5, 5), -np.ones((5, 5))])
+    config = {"image_enhancement": {"steps": ["unsharp_masking"], "unsharp_masking": [1.0, 1.5]}}
+    result = apply_image_enhancement_state(image, normalize_image_enhancement(config)).image
+    expected = image.astype(np.float64) + 1.5 * (
+        image.astype(np.float64) - np.stack([gaussian_filter(image[0], 1.0, mode="reflect"), image[1]])
+    )
+    np.testing.assert_allclose(result, expected)
+    assert result.dtype == np.float64
+
+
+def test_unsharp_masking_excludes_masked_extreme_values_and_validates_parameters():
+    from PyImageTrack.DataProcessing.ImageEnhancement import (
+        apply_image_enhancement_state,
+        normalize_image_enhancement,
+    )
+
+    image = np.zeros((5, 5), dtype=float)
+    image[2, 2] = 1e100
+    valid_mask = np.ones_like(image, dtype=bool)
+    valid_mask[2, 2] = False
+    config = {"image_enhancement": {"steps": ["unsharp_masking"], "unsharp_masking": [1.0, 1.0]}}
+    result = apply_image_enhancement_state(image, normalize_image_enhancement(config), valid_mask).image
+    assert np.all(result[valid_mask] == 0)
+    for parameters in ([0, 1], [1, -1], [np.inf, 1], [1, np.nan]):
+        with pytest.raises(ValueError):
+            normalize_image_enhancement({"image_enhancement": {"steps": ["unsharp_masking"], "unsharp_masking": parameters}})
+
+
 def test_difference_of_gaussians_is_bandwise_and_mask_aware():
     from PyImageTrack.DataProcessing.ImageEnhancement import apply_image_enhancement_state
 

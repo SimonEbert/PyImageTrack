@@ -16,7 +16,7 @@ MASK_METHODS = {"mask"}
 FILTER_METHODS = {
     "clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching",
     "local_contrast_normalization", "multi_scale_retinex", "difference_of_gaussians",
-    "naof",
+    "naof", "unsharp_masking",
 }
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
@@ -134,6 +134,13 @@ def _method_parameters(config, section, method_name, occurrence):
         if not isinstance(value, list) or len(value) != 2:
             _invalid_enhancement_config(method_name)
         return _validate_dog_sigmas(value)
+    if method_name == "unsharp_masking":
+        value = section.get(method_name, [1.0, 1.0])
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+            value = value[0]
+        if not isinstance(value, list) or len(value) != 2:
+            _invalid_enhancement_config(method_name)
+        return _validate_unsharp_masking_parameters(value)
     if method_name == "naof":
         value = section.get("naof", [])
         if value != []:
@@ -326,6 +333,15 @@ def apply_image_enhancement_step(state, enhancement_step):
         sigma1, sigma2 = _validate_dog_sigmas([sigma1, sigma2]).values()
         state.image = _apply_difference_of_gaussians(
             state.image, state.valid_mask, sigma1, sigma2
+        )
+        return state
+    if method_name == "unsharp_masking":
+        parameters = enhancement_step.get("parameters", {})
+        parameters = _validate_unsharp_masking_parameters([
+            parameters.get("sigma", 1.0), parameters.get("amount", 1.0)
+        ])
+        state.image = _apply_unsharp_masking(
+            state.image, state.valid_mask, parameters["sigma"], parameters["amount"]
         )
         return state
     if method_name == "naof":
@@ -575,6 +591,49 @@ def _apply_difference_of_gaussians(image_matrix, valid_mask, sigma1, sigma2):
         np.divide(high_num, high_den, out=high, where=high_den > 0)
         usable = valid & (low_den > 0) & (high_den > 0)
         output[usable] = (high - low)[usable]
+    return result
+
+
+def _validate_unsharp_masking_parameters(parameters):
+    """Validate Gaussian sigma and non-negative sharpening gain."""
+    if not isinstance(parameters, (list, tuple)) or len(parameters) != 2:
+        raise ValueError("Unsharp masking requires exactly [sigma, amount].")
+    try:
+        sigma, amount = (float(value) for value in parameters)
+    except (TypeError, ValueError):
+        raise ValueError("Unsharp masking sigma and amount must be finite numbers.") from None
+    if not np.isfinite(sigma) or sigma <= 0:
+        raise ValueError("Unsharp masking sigma must be finite and greater than zero.")
+    if not np.isfinite(amount) or amount < 0:
+        raise ValueError("Unsharp masking amount must be finite and non-negative.")
+    return {"sigma": sigma, "amount": amount}
+
+
+def _apply_unsharp_masking(image_matrix, valid_mask, sigma, amount):
+    """Apply classical Gaussian unsharp masking independently to each band.
+
+    Valid pixels use normalized Gaussian convolution of valid intensities and
+    weights. SciPy's reflected boundary mode is used for both convolutions;
+    invalid output pixels retain their original values.
+    """
+    from scipy.ndimage import gaussian_filter
+
+    image = np.asarray(image_matrix)
+    result = image.astype(np.float64, copy=True)
+    bands = [image] if image.ndim == 2 else image
+    outputs = [result] if result.ndim == 2 else result
+    grid_mask = np.asarray(valid_mask, dtype=bool)
+    for band, output in zip(bands, outputs):
+        valid = grid_mask & np.isfinite(band)
+        values = np.asarray(band, dtype=np.float64)
+        weights = valid.astype(np.float64)
+        prepared = np.where(valid, values, 0.0)
+        numerator = gaussian_filter(prepared, sigma=sigma, mode="reflect")
+        denominator = gaussian_filter(weights, sigma=sigma, mode="reflect")
+        blurred = np.zeros_like(values)
+        np.divide(numerator, denominator, out=blurred, where=denominator > 0)
+        usable = valid & (denominator > 0)
+        output[usable] = values[usable] + amount * (values[usable] - blurred[usable])
     return result
 
 
