@@ -922,6 +922,14 @@ the complete SIFT detector or descriptor pipeline.
 
 Reference: Lowe (2004), https://doi.org/10.1023/B:VISI.0000029664.99615.94.
 
+#### Near Anisotropic Orientation Filter (NAOF)
+
+Enable NAOF with `steps = ["naof"]`; it has no configurable parameters. The
+four fixed GIV directional orientation responses are summed independently for
+each image band. Invalid pixels and 3 x 3 neighbourhoods containing invalid
+pixels are excluded, while invalid input values remain unchanged. The signed
+floating-point result is preserved without clipping or rescaling.
+
 The mask step supports NoData values and an optional user-provided custom mask.
 
 ### External image mask

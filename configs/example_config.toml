@@ -144,6 +144,7 @@ mask = [["nodata", "custom"], [0], "exclude"] # arguments: types, nodata_values,
 
 # Adaptive gamma: add "adaptive_gamma" to steps to calculate gamma automatically
 # from each image's valid-pixel mean and maximum intensity.
+adaptive_gamma = [] # arguments: none
 
 # Percentile stretch: maps the lower/upper percentiles to 0/1 (defaults: 1 and 99).
 percentile_stretch = [1.0, 99.0] # arguments: lower_percentile, upper_percentile
@@ -159,6 +160,11 @@ local_contrast_normalization = [9] # arguments: kernel_size
 # MSR uses several blur sizes to remove uneven lighting from the image.
 # Set the first value to about 1/3–1/2 of the smallest relevant structure; make the next values 3–5 times larger.
 multi_scale_retinex = [[15.0, 80.0, 250.0]] # arguments: gaussian_sigmas
+
+# NAOF enhances trackable image features such as edges, cracks and snow patterns,
+# especially under changing illumination, shadows or cloud cover.
+# Add "naof" to image_enhancement_steps; no additional parameters are required.
+naof = [] # arguments: none
 
 # Difference of Gaussians compares a finer blur (sigma1) with a coarser blur (sigma2).
 # Their difference emphasizes structures between these two spatial scales.

@@ -16,6 +16,7 @@ MASK_METHODS = {"mask"}
 FILTER_METHODS = {
     "clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching",
     "local_contrast_normalization", "multi_scale_retinex", "difference_of_gaussians",
+    "naof",
 }
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
@@ -133,6 +134,11 @@ def _method_parameters(config, section, method_name, occurrence):
         if not isinstance(value, list) or len(value) != 2:
             _invalid_enhancement_config(method_name)
         return _validate_dog_sigmas(value)
+    if method_name == "naof":
+        value = section.get("naof", [])
+        if value != []:
+            _invalid_enhancement_config(method_name)
+        return {}
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -321,6 +327,12 @@ def apply_image_enhancement_step(state, enhancement_step):
         state.image = _apply_difference_of_gaussians(
             state.image, state.valid_mask, sigma1, sigma2
         )
+        return state
+    if method_name == "naof":
+        parameters = enhancement_step.get("parameters", {})
+        if parameters != {}:
+            _invalid_enhancement_config("naof")
+        state.image = _apply_naof(state.image, state.valid_mask)
         return state
     if method_name == "histogram_matching":
         raise ValueError("Histogram matching requires a pair of image processing states.")
@@ -563,6 +575,62 @@ def _apply_difference_of_gaussians(image_matrix, valid_mask, sigma1, sigma2):
         np.divide(high_num, high_den, out=high, where=high_den > 0)
         usable = valid & (low_den > 0) & (high_den > 0)
         output[usable] = (high - low)[usable]
+    return result
+
+
+def _naof_kernels():
+    """Return the four fixed GIV NAOF directional kernels.
+
+    Each kernel is antisymmetric and uses the eight neighbouring pixels. The
+    second kernel is the 90-degree rotation of the first; the remaining pair
+    supplies the interleaved 45-degree orientations used by GIV.
+    """
+    diagonal = np.array([
+        [-1.0, -1.0, 0.0],
+        [-1.0, 0.0, 1.0],
+        [0.0, 1.0, 1.0],
+    ])
+    axial = np.array([
+        [-1.0, -1.0, -1.0],
+        [0.0, 0.0, 0.0],
+        [1.0, 1.0, 1.0],
+    ])
+    return (diagonal, np.rot90(diagonal), axial, np.rot90(axial))
+
+
+def _apply_naof(image_matrix, valid_mask):
+    """Apply GIV's Near Anisotropic Orientation Filter independently per band.
+
+    Invalid pixels are excluded by strict 3x3 support masking, so they cannot
+    become artificial edges. The zero-response orientation is defined as zero.
+    Boundary convolution uses reflected samples, matching the other spatial
+    filters in this module; invalid output pixels retain their input values.
+    """
+    from scipy.ndimage import convolve
+
+    image = np.asarray(image_matrix)
+    result = image.astype(np.float64, copy=True)
+    bands = [image] if image.ndim == 2 else image
+    outputs = [result] if result.ndim == 2 else result
+    grid_mask = np.asarray(valid_mask, dtype=bool)
+    kernels = _naof_kernels()
+    support_kernel = np.ones((3, 3), dtype=np.float64)
+
+    for band, output in zip(bands, outputs):
+        valid = grid_mask & np.isfinite(band)
+        values = np.asarray(band, dtype=np.float64)
+        prepared = np.where(valid, values, 0.0)
+        support = convolve(valid.astype(np.float64), support_kernel, mode="reflect") == 9.0
+        accumulated = np.zeros(values.shape, dtype=np.float64)
+        for kernel in kernels:
+            first = convolve(prepared, kernel, mode="reflect")
+            second = convolve(prepared, np.rot90(kernel), mode="reflect")
+            denominator = np.hypot(first, second)
+            response = np.zeros_like(values)
+            np.divide(second, denominator, out=response, where=denominator > 0)
+            accumulated += response
+        usable = valid & support
+        output[usable] = accumulated[usable]
     return result
 
 

@@ -235,3 +235,37 @@ def test_difference_of_gaussians_rejects_invalid_sigmas(sigmas):
     }}
     with pytest.raises(ValueError, match="Difference of Gaussians"):
         normalize_image_enhancement(config)
+
+
+def test_naof_is_configured_without_parameters_and_preserves_shape():
+    image = np.arange(75, dtype=np.uint16).reshape(3, 5, 5)
+    config = {"image_enhancement": {"steps": ["naof"], "naof": []}}
+    steps = normalize_image_enhancement(config)
+    result = apply_image_enhancement_state(image, steps).image
+    assert result.shape == image.shape
+    assert result.dtype == np.float64
+    assert np.isfinite(result).all()
+    assert np.isfinite(result).all()
+
+
+def test_naof_is_bandwise_signed_and_mask_aware():
+    image = np.zeros((2, 7, 7), dtype=np.float32)
+    image[0, 3, 3] = 10.0
+    image[1, 3, 3] = -10.0
+    valid_mask = np.ones((7, 7), dtype=bool)
+    valid_mask[3, 3] = False
+    image[:, 3, 3] = np.nan
+    steps = normalize_image_enhancement({"image_enhancement": {"steps": ["naof"]}})
+    result = apply_image_enhancement_state(image, steps, valid_mask=valid_mask).image
+    assert result.shape == image.shape
+    assert np.isnan(result[:, 3, 3]).all()
+    neighborhood = result[:, 2:5, 2:5].copy()
+    neighborhood[:, 1, 1] = 0.0
+    assert np.all(neighborhood == 0.0)
+
+
+def test_naof_constant_band_has_zero_response():
+    image = np.full((9, 9), -4.5, dtype=np.float64)
+    steps = normalize_image_enhancement({"image_enhancement": {"steps": ["naof"]}})
+    result = apply_image_enhancement_state(image, steps).image
+    np.testing.assert_allclose(result, 0.0)
