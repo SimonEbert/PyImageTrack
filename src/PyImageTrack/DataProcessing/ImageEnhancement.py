@@ -17,6 +17,7 @@ FILTER_METHODS = {
     "clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching",
     "local_contrast_normalization", "multi_scale_retinex", "difference_of_gaussians",
     "naof", "unsharp_masking",
+    "gradient_magnitude",
 }
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
@@ -146,6 +147,17 @@ def _method_parameters(config, section, method_name, occurrence):
         if value != []:
             _invalid_enhancement_config(method_name)
         return {}
+    if method_name == "gradient_magnitude":
+        value = section.get("gradient_magnitude", [0.0])
+        if not isinstance(value, list) or len(value) != 1:
+            _invalid_enhancement_config(method_name)
+        try:
+            sigma = float(value[0])
+        except (TypeError, ValueError):
+            raise ValueError("Gradient magnitude gaussian_sigma must be finite and non-negative.") from None
+        if not np.isfinite(sigma) or sigma < 0:
+            raise ValueError("Gradient magnitude gaussian_sigma must be finite and non-negative.")
+        return {"gaussian_sigma": sigma}
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -349,6 +361,15 @@ def apply_image_enhancement_step(state, enhancement_step):
         if parameters != {}:
             _invalid_enhancement_config("naof")
         state.image = _apply_naof(state.image, state.valid_mask)
+        return state
+    if method_name == "gradient_magnitude":
+        parameters = enhancement_step.get("parameters", {})
+        sigma = parameters.get("gaussian_sigma", 0.0)
+        if not np.isfinite(sigma) or sigma < 0:
+            raise ValueError("Gradient magnitude gaussian_sigma must be finite and non-negative.")
+        state.image, state.valid_mask = _apply_gradient_magnitude(
+            state.image, state.valid_mask, sigma
+        )
         return state
     if method_name == "histogram_matching":
         raise ValueError("Histogram matching requires a pair of image processing states.")
@@ -607,6 +628,45 @@ def _validate_unsharp_masking_parameters(parameters):
     if not np.isfinite(amount) or amount < 0:
         raise ValueError("Unsharp masking amount must be finite and non-negative.")
     return {"sigma": sigma, "amount": amount}
+
+
+def _apply_gradient_magnitude(image_matrix, valid_mask, gaussian_sigma=0.0):
+    """Calculate per-band Euclidean magnitude using unnormalized Sobel kernels.
+
+    Invalid input pixels are excluded from Gaussian smoothing and from the
+    complete 3x3 Sobel support. Boundary pixels therefore become invalid.
+    """
+    from scipy.ndimage import convolve, gaussian_filter
+
+    image = np.asarray(image_matrix)
+    result = image.astype(np.float64, copy=True)
+    valid_mask = np.asarray(valid_mask, dtype=bool)
+    bands = [image] if image.ndim == 2 else image
+    outputs = [result] if result.ndim == 2 else result
+    sobel_x = np.array([[-1.0, 0.0, 1.0], [-2.0, 0.0, 2.0], [-1.0, 0.0, 1.0]])
+    sobel_y = np.array([[-1.0, -2.0, -1.0], [0.0, 0.0, 0.0], [1.0, 2.0, 1.0]])
+    support_kernel = np.ones((3, 3), dtype=np.float64)
+
+    for band, output in zip(bands, outputs):
+        valid = valid_mask & np.isfinite(band)
+        values = np.asarray(band, dtype=np.float64)
+        if gaussian_sigma > 0:
+            filled = np.where(valid, values, 0.0)
+            weights = gaussian_filter(valid.astype(np.float64), gaussian_sigma, mode="reflect")
+            smoothed = gaussian_filter(filled, gaussian_sigma, mode="reflect")
+            prepared = np.zeros_like(values)
+            np.divide(smoothed, weights, out=prepared, where=weights > 0)
+            filter_valid = valid & (weights > 0)
+        else:
+            prepared = np.where(valid, values, 0.0)
+            filter_valid = valid
+        support = convolve(filter_valid.astype(np.float64), support_kernel, mode="constant", cval=0.0) == 9
+        gx = convolve(prepared, sobel_x, mode="constant", cval=0.0)
+        gy = convolve(prepared, sobel_y, mode="constant", cval=0.0)
+        magnitude = np.hypot(gx, gy)
+        output[support] = magnitude[support]
+        output[~valid] = band[~valid]
+    return result, valid_mask & support
 
 
 def _apply_unsharp_masking(image_matrix, valid_mask, sigma, amount):

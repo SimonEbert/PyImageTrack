@@ -130,12 +130,12 @@ do_alignment = true      # Co-register image pairs
 do_tracking = true       # Detect movement between images
 do_filtering = true      # Remove outliers from tracking results
 
-# Optional image enhancement before alignment and tracking.
-# If enabled, methods are applied in the order listed in image_enhancement_steps.
-do_image_enhancement = false
-
 [image_enhancement]
-steps = ["clahe", "mask"]
+# Available enhancement steps: "mask", "clahe", "percentile_stretch", "adaptive_gamma",
+# "histogram_matching", "local_contrast_normalization", "multi_scale_retinex",
+# "difference_of_gaussians", "unsharp_masking", "naof", "gradient_magnitude".
+
+steps = []
 
 # Mask: excludes NoData pixels and applies the optional custom mask. A buffer
 # around custom masks remains without tracking results because
@@ -165,6 +165,10 @@ multi_scale_retinex = [[15.0, 80.0, 250.0]] # arguments: gaussian_sigmas
 # especially under changing illumination, shadows or cloud cover.
 # Add "naof" to image_enhancement_steps; no additional parameters are required.
 naof = [] # arguments: none
+# Gradient Magnitude can make edges and trackable structures more visible
+# before alignment and tracking. Start with 0.0; use 1.0–2.0 only when noise
+# causes problems, because stronger smoothing can remove fine image details.
+gradient_magnitude = [0.0] # arguments: gaussian_sigma
 
 # Difference of Gaussians compares a finer blur (sigma1) with a coarser blur (sigma2).
 # Their difference emphasizes structures between these two spatial scales.

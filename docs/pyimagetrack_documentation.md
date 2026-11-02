@@ -7,6 +7,40 @@ Date: 2026-02-18
 PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and output visualization.
 The main entry point is the CLI command `pyimagetrack-run`, configured via TOML files in `configs/`.
 
+## Gradient Magnitude Enhancement
+
+`gradient_magnitude` converts each image band independently to the Euclidean
+magnitude of its classical Sobel gradients. It emphasizes spatial intensity
+changes while discarding gradient direction and sign, and is intended as input
+to the existing alignment and tracking algorithms.
+
+The fixed, unnormalized kernels are:
+
+```text
+Kx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+Ky = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
+G = hypot(Kx * I, Ky * I)
+```
+
+The output remains floating point and is not rescaled. Optional Gaussian
+smoothing is configured by `gaussian_sigma` in pixels; `0.0` (the default)
+disables smoothing. Invalid pixels are excluded from smoothing, and only
+pixels with complete valid 3x3 support are marked valid, including at image
+boundaries. Grayscale and multiband images retain their shape and channel
+order. Smoothing can reduce noise but may also remove fine features.
+
+Enable it explicitly and keep it in the desired pipeline order:
+
+```toml
+steps = ["gradient_magnitude"]
+gradient_magnitude = [0.0] # arguments: gaussian_sigma
+```
+
+This operation is distinct from DoG, unsharp masking, NAOF and Canny edge
+detection. It follows the classical Sobel-Feldman operator described by Sobel
+and Feldman (1968); Ma et al. (2017) is relevant motivation for gradient-based
+remote-sensing registration, but does not define this preprocessing method.
+
 ## Running The Pipeline
 ```
 pyimagetrack-run --config configs/example_config.toml

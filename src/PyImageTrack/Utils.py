@@ -1316,6 +1316,7 @@ def _abbr_enhancement_step(ep) -> str:
         "difference_of_gaussians": "DOG",
         "unsharp_masking": "USM",
         "naof": "NAOF",
+        "gradient_magnitude": "GM",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

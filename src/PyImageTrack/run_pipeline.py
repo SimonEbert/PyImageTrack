@@ -588,7 +588,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
     do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
     do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
-    do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
+    legacy_do_image_enhancement = _get(cfg, "flags", "do_image_enhancement", None)
     display_plots = bool(_get(cfg, "output", "display_plots", False))
 
     use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True))
@@ -676,6 +676,13 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         raise ValueError("image_mask.mode must be either 'include' or 'exclude'.")
     configured_steps = _get(cfg, "image_enhancement", "image_enhancement_steps",
                              _get(cfg, "image_enhancement", "steps", []))
+    # New configurations use the enhancement step list as the activation switch.
+    # Keep the legacy flag when it is explicitly present for backward compatibility.
+    do_image_enhancement = (
+        bool(legacy_do_image_enhancement)
+        if legacy_do_image_enhancement is not None
+        else bool(configured_steps)
+    )
     mask_step_enabled = do_image_enhancement and "mask" in configured_steps
     if mask_step_enabled and image_mask_path:
         mask_identity = f"{Path(image_mask_path).resolve()}|{image_mask_mode}"
