@@ -156,6 +156,10 @@ histogram_matching = ["first"]
 # and divides by the local RMS with a mean-based normalization threshold.
 local_contrast_normalization = [9] # arguments: kernel_size
 
+# MSR uses several blur sizes to remove uneven lighting from the image.
+# Set the first value to about 1/3–1/2 of the smallest relevant structure; make the next values 3–5 times larger.
+multi_scale_retinex = [[15.0, 80.0, 250.0]] # arguments: gaussian_sigmas
+
 # CLAHE: improves local contrast; parameters apply to one configured step.
 clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 

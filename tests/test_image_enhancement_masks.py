@@ -160,3 +160,29 @@ def test_adaptive_gamma_rejects_negative_valid_intensities():
     }})
     with pytest.raises(ValueError, match="non-negative"):
         apply_image_enhancement_state(np.array([[-1.0, 2.0]]), steps)
+
+
+def test_multi_scale_retinex_supports_multiband_masks_and_signed_values():
+    image = np.array([
+        [[-2.0, 0.0, 2.0], [1.0, 3.0, 5.0]],
+        [[4.0, 4.0, 4.0], [4.0, np.nan, 4.0]],
+    ])
+    config = {"image_enhancement": {
+        "steps": ["multi_scale_retinex"],
+        "multi_scale_retinex": [[1.0, 2.0]],
+    }}
+    steps = normalize_image_enhancement(config)
+    result = apply_image_enhancement_state(image, steps).image
+    assert result.shape == image.shape
+    assert result.dtype == np.float64
+    assert np.isfinite(result[0]).all()
+    assert np.isnan(result[1, 1, 1])
+    np.testing.assert_allclose(result[1, 0, :], 0.0)
+
+
+@pytest.mark.parametrize("sigmas", [[], [0], [-1], [float("nan")], ["bad"]])
+def test_multi_scale_retinex_rejects_invalid_sigmas(sigmas):
+    config = {"image_enhancement": {"steps": ["multi_scale_retinex"],
+                                     "multi_scale_retinex": sigmas}}
+    with pytest.raises(ValueError, match="gaussian_sigmas"):
+        normalize_image_enhancement(config)

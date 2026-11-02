@@ -1312,6 +1312,7 @@ def _abbr_enhancement_step(ep) -> str:
         "adaptive_gamma": "AG",
         "histogram_matching": "HM",
         "local_contrast_normalization": "LCN",
+        "multi_scale_retinex": "MSR",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

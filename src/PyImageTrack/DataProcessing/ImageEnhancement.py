@@ -15,7 +15,7 @@ from rasterio.warp import Resampling, reproject
 MASK_METHODS = {"mask"}
 FILTER_METHODS = {
     "clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching",
-    "local_contrast_normalization",
+    "local_contrast_normalization", "multi_scale_retinex",
 }
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
@@ -119,6 +119,13 @@ def _method_parameters(config, section, method_name, occurrence):
         if kernel_size <= 0 or kernel_size % 2 == 0:
             raise ValueError("Local contrast normalization kernel_size must be a positive odd integer.")
         return {"kernel_size": int(kernel_size)}
+    if method_name == "multi_scale_retinex":
+        value = section.get(method_name, [15.0, 80.0, 250.0])
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+            value = value[0]
+        if not isinstance(value, list):
+            _invalid_enhancement_config(method_name)
+        return {"gaussian_sigmas": _validate_retinex_sigmas(value)}
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -294,6 +301,11 @@ def apply_image_enhancement_step(state, enhancement_step):
             state.image, state.valid_mask, parameters.get("kernel_size", 9)
         )
         return state
+    if method_name == "multi_scale_retinex":
+        parameters = enhancement_step.get("parameters", {})
+        sigmas = _validate_retinex_sigmas(parameters.get("gaussian_sigmas", []))
+        state.image = _apply_multi_scale_retinex(state.image, state.valid_mask, sigmas)
+        return state
     if method_name == "histogram_matching":
         raise ValueError("Histogram matching requires a pair of image processing states.")
     if method_name == "mask":
@@ -433,6 +445,56 @@ def _apply_local_contrast_normalization(image_matrix, valid_mask, kernel_size=9)
         normalized = np.zeros_like(centered)
         np.divide(centered, divisor, out=normalized, where=valid_rms)
         output[valid] = normalized[valid]
+    return result
+
+
+def _validate_retinex_sigmas(sigmas):
+    """Validate Gaussian standard deviations used by Multi-Scale Retinex."""
+    if not isinstance(sigmas, list) or not sigmas:
+        raise ValueError("Multi-Scale Retinex gaussian_sigmas must be a non-empty list of positive finite numbers.")
+    try:
+        values = [float(sigma) for sigma in sigmas]
+    except (TypeError, ValueError):
+        raise ValueError("Multi-Scale Retinex gaussian_sigmas must be a non-empty list of positive finite numbers.") from None
+    if any(not np.isfinite(sigma) or sigma <= 0 for sigma in values):
+        raise ValueError("Multi-Scale Retinex gaussian_sigmas must be a non-empty list of positive finite numbers.")
+    return values
+
+
+def _apply_multi_scale_retinex(image_matrix, valid_mask, gaussian_sigmas):
+    """Apply per-band MSR with Gaussian standard deviations measured in pixels."""
+    from scipy.ndimage import gaussian_filter
+
+    image = np.asarray(image_matrix)
+    result = image.astype(np.float64, copy=True)
+    bands = [image] if image.ndim == 2 else image
+    outputs = [result] if result.ndim == 2 else result
+    epsilon = np.finfo(np.float64).tiny
+    for band, output in zip(bands, outputs):
+        valid = np.isfinite(band) & np.asarray(valid_mask, dtype=bool)
+        if not np.any(valid):
+            continue
+        values = np.asarray(band, dtype=np.float64)
+        minimum = np.min(values[valid])
+        offset = -minimum if minimum < 0 else 0.0
+        prepared = np.zeros(values.shape, dtype=np.float64)
+        prepared[valid] = values[valid] + offset
+        local_epsilon = max(epsilon, np.max(prepared[valid]) * np.finfo(np.float64).eps)
+        central = np.maximum(prepared, local_epsilon)
+        accumulated = np.zeros(values.shape, dtype=np.float64)
+        mask_float = valid.astype(np.float64)
+        for sigma in gaussian_sigmas:
+            numerator = gaussian_filter(prepared, sigma=sigma, mode="reflect")
+            denominator = gaussian_filter(mask_float, sigma=sigma, mode="reflect")
+            surround = np.zeros_like(numerator)
+            np.divide(numerator, denominator, out=surround, where=denominator > 0)
+            usable = valid & (denominator > 0)
+            scale_result = np.zeros_like(values)
+            scale_result[usable] = np.log(np.maximum(central[usable], local_epsilon)) - np.log(
+                np.maximum(surround[usable], local_epsilon)
+            )
+            accumulated += scale_result
+        output[valid] = accumulated[valid] / len(gaussian_sigmas)
     return result
 
 

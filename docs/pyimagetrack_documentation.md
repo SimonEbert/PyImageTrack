@@ -880,6 +880,27 @@ subtractive/divisive normalization principle of Jarrett et al. (2009),
 originally described for neural-network feature maps, to independent image
 bands without neural-network-specific operations.
 
+#### Multi-Scale Retinex (MSR)
+
+MSR applies the classical Gaussian center/surround Retinex independently to
+each band and combines the results with equal weights. Enable it as follows:
+
+```toml
+[image_enhancement]
+steps = ["multi_scale_retinex"]
+multi_scale_retinex = [[15.0, 80.0, 250.0]] # Gaussian standard deviations in pixels
+```
+
+The values are standard deviations in pixels, using the same convention as
+`scipy.ndimage.gaussian_filter`; they are not the Retinex publication's space
+constants. The defaults are small, intermediate and large spatial scales and
+are not automatically adjusted to image dimensions. Invalid and masked pixels
+are excluded with normalized Gaussian convolution. Negative valid intensities
+receive a deterministic per-band offset before the logarithm, while the raw
+signed floating-point MSR result is preserved without display normalization,
+clipping or color restoration. The implementation follows Jobson, Rahman and
+Woodell (1997), https://doi.org/10.1109/83.597272.
+
 The mask step supports NoData values and an optional user-provided custom mask.
 
 ### External image mask
