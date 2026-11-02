@@ -70,7 +70,8 @@ def alignment_cache_paths(align_dir: str, year1: str, year2: str):
 
 def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
                          align_params: dict, filenames: dict, dates: dict,
-                         version: str = "v1", save_truecolor_aligned: bool = False):
+                         version: str = "v1", save_truecolor_aligned: bool = False,
+                         save_enhanced_master: bool = False):
     """
     Save alignment results to cache files.
 
@@ -97,6 +98,9 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         Script version identifier for cache validation. Default is "v1".
     save_truecolor_aligned : bool, optional
         If True, also save a true-color version of the aligned image. Default is False.
+    save_enhanced_master : bool, optional
+        If True, save the enhanced master image alongside the aligned cache image.
+        Default is False.
 
     Raises
     ------
@@ -146,6 +150,22 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
             dst.write(image_pair.image2_matrix, 1)
         else:
             dst.write(image_pair.image2_matrix)
+
+    if save_enhanced_master:
+        master_tif = os.path.join(align_dir, f"master_image_{year1}.tif")
+        master_profile = profile.copy()
+        master_profile.update({
+            "count": 1 if image_pair.image1_matrix.ndim == 2 else image_pair.image1_matrix.shape[0],
+            "width": image_pair.image1_matrix.shape[-1],
+            "height": image_pair.image1_matrix.shape[-2],
+            "transform": image_pair.image1_transform,
+            "dtype": str(image_pair.image1_matrix.dtype),
+        })
+        with rasterio.open(master_tif, "w", **master_profile) as dst:
+            if master_profile["count"] == 1:
+                dst.write(image_pair.image1_matrix, 1)
+            else:
+                dst.write(image_pair.image1_matrix)
 
     if image_pair.depth_image2 is not None:
         profile.update({"count": 1})

@@ -152,6 +152,10 @@ percentile_stretch = [1.0, 99.0] # arguments: lower_percentile, upper_percentile
 # valid-pixel intensity distribution.
 histogram_matching = ["first"]
 
+# Local Contrast Normalization: subtracts the Gaussian-weighted local mean
+# and divides by the local RMS with a mean-based normalization threshold.
+local_contrast_normalization = [9] # arguments: kernel_size
+
 # CLAHE: improves local contrast; parameters apply to one configured step.
 clahe = [50, 0.9] # arguments: kernel_size, clip_limit
 

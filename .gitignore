@@ -47,6 +47,4 @@ wsl
 # local configs (keep example template)
 configs/*.toml
 !configs/example_config.toml
-!configs/00_example_two_images.toml
-!configs/01_example_image_series.toml
-!configs/02_example_non_georeferenced.toml
+!configs/[0-9]*.toml

@@ -1311,6 +1311,7 @@ def _abbr_enhancement_step(ep) -> str:
         "percentile_stretch": "PS",
         "adaptive_gamma": "AG",
         "histogram_matching": "HM",
+        "local_contrast_normalization": "LCN",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

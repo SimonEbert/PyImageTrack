@@ -13,7 +13,10 @@ from rasterio.warp import Resampling, reproject
 
 # The category is an implementation detail. Users select method names only.
 MASK_METHODS = {"mask"}
-FILTER_METHODS = {"clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching"}
+FILTER_METHODS = {
+    "clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching",
+    "local_contrast_normalization",
+}
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
 
@@ -106,6 +109,16 @@ def _method_parameters(config, section, method_name, occurrence):
         if reference not in {"first", "second"}:
             raise ValueError("Histogram matching reference must be 'first' or 'second'.")
         return {"reference": reference}
+    if method_name == "local_contrast_normalization":
+        value = section.get(method_name, [9])
+        if not isinstance(value, list) or len(value) != 1:
+            _invalid_enhancement_config(method_name)
+        kernel_size = value[0]
+        if isinstance(kernel_size, bool) or not isinstance(kernel_size, (int, np.integer)):
+            raise ValueError("Local contrast normalization kernel_size must be a positive odd integer.")
+        if kernel_size <= 0 or kernel_size % 2 == 0:
+            raise ValueError("Local contrast normalization kernel_size must be a positive odd integer.")
+        return {"kernel_size": int(kernel_size)}
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -275,6 +288,12 @@ def apply_image_enhancement_step(state, enhancement_step):
             _invalid_enhancement_config("adaptive_gamma")
         state.image = _apply_adaptive_gamma(state.image, state.valid_mask)
         return state
+    if method_name == "local_contrast_normalization":
+        parameters = enhancement_step.get("parameters", {})
+        state.image = _apply_local_contrast_normalization(
+            state.image, state.valid_mask, parameters.get("kernel_size", 9)
+        )
+        return state
     if method_name == "histogram_matching":
         raise ValueError("Histogram matching requires a pair of image processing states.")
     if method_name == "mask":
@@ -360,6 +379,60 @@ def _apply_adaptive_gamma(image_matrix, valid_mask):
             result[valid] = transformed
         else:
             result[index][valid] = transformed
+    return result
+
+
+def _gaussian_kernel(kernel_size):
+    """Return a normalized symmetric Gaussian kernel for LCN.
+
+    The standard deviation is chosen as kernel_size / 6, placing about 99.7%
+    of the Gaussian mass inside the requested window.
+    """
+    if isinstance(kernel_size, bool) or not isinstance(kernel_size, (int, np.integer)):
+        raise ValueError("Local contrast normalization kernel_size must be a positive odd integer.")
+    if kernel_size <= 0 or kernel_size % 2 == 0:
+        raise ValueError("Local contrast normalization kernel_size must be a positive odd integer.")
+    radius = kernel_size // 2
+    sigma = kernel_size / 6.0
+    coordinates = np.arange(-radius, radius + 1, dtype=np.float64)
+    axis = np.exp(-(coordinates ** 2) / (2.0 * sigma ** 2))
+    kernel = np.outer(axis, axis)
+    return kernel / kernel.sum()
+
+
+def _masked_gaussian(image, valid_mask, kernel):
+    """Apply normalized Gaussian convolution without invalid-neighbor leakage."""
+    from scipy.ndimage import convolve
+
+    valid = np.asarray(valid_mask, dtype=bool) & np.isfinite(image)
+    values = np.where(valid, np.asarray(image, dtype=np.float64), 0.0)
+    weights = convolve(valid.astype(np.float64), kernel, mode="reflect")
+    filtered = convolve(values, kernel, mode="reflect")
+    result = np.zeros_like(filtered)
+    np.divide(filtered, weights, out=result, where=weights > 0)
+    return result, weights > 0
+
+
+def _apply_local_contrast_normalization(image_matrix, valid_mask, kernel_size=9):
+    """Apply Jarrett-style spatial LCN independently to every image band."""
+    kernel = _gaussian_kernel(kernel_size)
+    image = np.asarray(image_matrix)
+    result = image.astype(np.float64, copy=True)
+    bands = [image] if image.ndim == 2 else image
+    outputs = [result] if result.ndim == 2 else result
+    for band, output in zip(bands, outputs):
+        valid = np.isfinite(band) & valid_mask
+        mean, mean_valid = _masked_gaussian(band, valid, kernel)
+        centered = np.zeros_like(mean)
+        centered[valid] = np.asarray(band, dtype=np.float64)[valid] - mean[valid]
+        rms, rms_valid = _masked_gaussian(centered ** 2, valid, kernel)
+        rms = np.sqrt(np.maximum(rms, 0.0))
+        valid_rms = valid & mean_valid & rms_valid
+        c = float(np.mean(rms[valid_rms])) if np.any(valid_rms) else 0.0
+        divisor = np.maximum(np.maximum(c, rms), np.finfo(np.float64).eps)
+        normalized = np.zeros_like(centered)
+        np.divide(centered, divisor, out=normalized, where=valid_rms)
+        output[valid] = normalized[valid]
     return result
 
 

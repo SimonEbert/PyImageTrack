@@ -1303,7 +1303,10 @@ class ImagePair:
         console = get_console()
         mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
         enhancement_mask_required = any(
-            step.get("type") in {"percentile_stretch", "adaptive_gamma", "histogram_matching"}
+            step.get("type") in {
+                "percentile_stretch", "adaptive_gamma", "histogram_matching",
+                "local_contrast_normalization",
+            }
             for step in self.image_enhancement
         )
         enhancement_masks = (None, None)
@@ -1345,6 +1348,7 @@ class ImagePair:
             "percentile_stretch": "percentile stretch",
             "adaptive_gamma": "adaptive gamma",
             "histogram_matching": "histogram matching",
+            "local_contrast_normalization": "local contrast normalization",
         }
         step_names = [step_labels.get(step.get("type"), step.get("type")) for step in self.image_enhancement]
         if step_names:

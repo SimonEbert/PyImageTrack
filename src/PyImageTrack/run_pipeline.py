@@ -1066,6 +1066,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         filenames={year1: filename_1, year2: filename_2},
                         dates={year1: date_1, year2: date_2},
                         save_truecolor_aligned=write_truecolor_aligned,
+                        save_enhanced_master=do_image_enhancement,
                     )
                     console.cache_info("saved", align_dir, f"{date_token_1}->{date_token_2}", cache_type="alignment")
 

@@ -854,6 +854,32 @@ direction with `histogram_matching = ["first"]` or `histogram_matching =
 band. Invalid and masked pixels are excluded from the cumulative distributions
 and remain unchanged. The selected reference image is not transformed.
 
+#### Local contrast normalization (LCN)
+
+LCN is an image-independent enhancement applied independently to every band:
+
+```toml
+[image_enhancement]
+steps = ["local_contrast_normalization"]
+local_contrast_normalization = [9] # arguments: kernel_size
+```
+
+For each band, it subtracts the Gaussian-weighted local mean,
+`V = I - G * I`, then computes `sigma = sqrt(G * V^2)` from the centered
+values and divides by `max(c, sigma, epsilon)`. Here `c` is the mean of
+`sigma` over valid pixels. The default is a normalized symmetric 9 x 9
+Gaussian kernel with `sigma = kernel_size / 6`; kernel sizes must be positive
+odd integers. Invalid, NoData and custom-masked pixels are excluded using
+normalized convolution and remain unchanged. Results stay signed and are not
+clipped or rescaled.
+
+LCN reduces low-frequency brightness and contrast differences but changes the
+intensity distribution and does not necessarily improve tracking. Low-
+contrast regions can be sensitive to noise. This adapts the spatial
+subtractive/divisive normalization principle of Jarrett et al. (2009),
+originally described for neural-network feature maps, to independent image
+bands without neural-network-specific operations.
+
 The mask step supports NoData values and an optional user-provided custom mask.
 
 ### External image mask
