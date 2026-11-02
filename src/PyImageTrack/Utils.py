@@ -1074,6 +1074,68 @@ def ensure_dir(path: str):
     os.makedirs(path, exist_ok=True)
 
 
+HASH_VERSION = "1"
+
+
+def canonical_json(value) -> str:
+    """Serialize configuration values deterministically for hashing and metadata."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def processing_hash(step: str, parameters: dict, logic_version: str = "1") -> str:
+    """Return a stable full SHA-256 hash for one processing step."""
+    payload = {"hash_version": HASH_VERSION, "step": step,
+               "logic_version": logic_version, "parameters": parameters}
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def file_hash(path: str) -> str | None:
+    """Return a SHA-256 file hash, or ``None`` when no file is available."""
+    if not path or not Path(path).is_file():
+        return None
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def hash_directory_name(prefix: str, digest: str) -> str:
+    """Create the compact directory name while retaining the processing-step prefix."""
+    short_prefixes = {
+        "enhancement": "e",
+        "alignment": "a",
+        "tracking": "t",
+        "filter": "f",
+    }
+    return f"{short_prefixes.get(prefix, prefix)}_{digest[:12]}"
+
+
+def write_hash_metadata(directory: str, step: str, parameters: dict,
+                        digest: str, logic_version: str = "1") -> None:
+    """Create or validate the human-readable metadata for a hashed directory."""
+    metadata_path = Path(directory) / "config.json"
+    expected = {
+        "hash": digest,
+        "hash_version": HASH_VERSION,
+        "step": step,
+        "logic_version": logic_version,
+        "parameters": parameters,
+    }
+    expected = json.loads(canonical_json(expected))
+    if metadata_path.exists():
+        try:
+            with metadata_path.open(encoding="utf-8") as handle:
+                actual = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Invalid cache metadata: {metadata_path}") from exc
+        if actual != expected:
+            raise ValueError(f"Cache metadata does not match expected configuration: {metadata_path}")
+        return
+    with metadata_path.open("w", encoding="utf-8") as handle:
+        json.dump(expected, handle, indent=2, sort_keys=True, default=str)
+
+
 def float_compact(x):
     """
     Convert a float to a compact string without trailing zeros.

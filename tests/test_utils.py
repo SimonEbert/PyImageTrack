@@ -15,7 +15,26 @@ from PyImageTrack.Utils import (
     normalize_image_shape,
     parse_date,
     find_files_recursive_with_duplicates,
+    processing_hash,
+    hash_directory_name,
+    write_hash_metadata,
 )
+
+
+def test_processing_hash_is_canonical_and_step_specific(tmp_path):
+    first = processing_hash("tracking", {"b": 2, "a": [1, 2]})
+    second = processing_hash("tracking", {"a": [1, 2], "b": 2})
+    changed = processing_hash("tracking", {"a": [1, 3], "b": 2})
+    assert first == second
+    assert first != changed
+    assert hash_directory_name("tracking", first) == f"t_{first[:12]}"
+
+    directory = tmp_path / "tracking"
+    directory.mkdir()
+    write_hash_metadata(str(directory), "tracking", {"a": 1}, processing_hash("tracking", {"a": 1}))
+    write_hash_metadata(str(directory), "tracking", {"a": 1}, processing_hash("tracking", {"a": 1}))
+    with pytest.raises(ValueError, match="does not match"):
+        write_hash_metadata(str(directory), "tracking", {"a": 2}, processing_hash("tracking", {"a": 2}))
 
 
 @pytest.mark.parametrize(
