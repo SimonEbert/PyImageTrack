@@ -844,6 +844,16 @@ https://doi.org/10.1088/1742-6596/2400/1/012042. The publication also changes
 the matching pipeline, so its reported matching improvements cannot be
 attributed to gamma correction alone.
 
+#### Global histogram matching
+
+Global histogram matching transforms only the non-reference image in each
+image pair so that its valid-pixel intensity distribution follows the selected
+reference image. Add `"histogram_matching"` to `steps` and configure the
+direction with `histogram_matching = ["first"]` or `histogram_matching =
+["second"]`; the default is `"first"`. Matching is global and independent per
+band. Invalid and masked pixels are excluded from the cumulative distributions
+and remain unchanged. The selected reference image is not transformed.
+
 The mask step supports NoData values and an optional user-provided custom mask.
 
 ### External image mask

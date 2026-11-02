@@ -1310,6 +1310,7 @@ def _abbr_enhancement_step(ep) -> str:
         "clahe": "CL",
         "percentile_stretch": "PS",
         "adaptive_gamma": "AG",
+        "histogram_matching": "HM",
         "snowmask": "SM",
         "nodatamask": "ND",
         "gaussian": "G",

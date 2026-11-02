@@ -37,7 +37,7 @@ from ..DataProcessing.DataPostprocessing import (
 )
 
 # DataPreProcessing
-from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state, mask_for_grid
+from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state, apply_histogram_matching, mask_for_grid
 from ..DataProcessing.ImagePreprocessing import (
     undistort_camera_image,
     convert_to_float32,
@@ -1300,23 +1300,33 @@ class ImagePair:
         -------
         None
         """
+        console = get_console()
         mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
-        percentile_enabled = any(
-            step.get("type") in {"percentile_stretch", "adaptive_gamma"}
+        enhancement_mask_required = any(
+            step.get("type") in {"percentile_stretch", "adaptive_gamma", "histogram_matching"}
             for step in self.image_enhancement
         )
         enhancement_masks = (None, None)
-        if percentile_enabled:
+        if enhancement_mask_required:
             enhancement_masks = (
                 self._enhancement_valid_mask(self.image1_matrix, self.image1_transform),
                 self._enhancement_valid_mask(self.image2_matrix, self.image2_transform),
             )
-        state1 = apply_image_enhancement_state(
-            self.image1_matrix, self.image_enhancement, valid_mask=enhancement_masks[0]
-        )
-        state2 = apply_image_enhancement_state(
-            self.image2_matrix, self.image_enhancement, valid_mask=enhancement_masks[1]
-        )
+        state1 = apply_image_enhancement_state(self.image1_matrix, [], valid_mask=enhancement_masks[0])
+        state2 = apply_image_enhancement_state(self.image2_matrix, [], valid_mask=enhancement_masks[1])
+        for step in self.image_enhancement:
+            if step.get("type") == "histogram_matching":
+                if step["parameters"]["reference"] == "first":
+                    state2.image = apply_histogram_matching(
+                        state2.image, state1.image, state2.valid_mask, state1.valid_mask
+                    )
+                else:
+                    state1.image = apply_histogram_matching(
+                        state1.image, state2.image, state1.valid_mask, state2.valid_mask
+                    )
+            elif step.get("type") != "mask":
+                state1 = apply_image_enhancement_state(state1.image, [step], valid_mask=state1.valid_mask)
+                state2 = apply_image_enhancement_state(state2.image, [step], valid_mask=state2.valid_mask)
         self.image1_matrix = state1.image
         self.image2_matrix = state2.image
         self.image1_valid_mask = state1.valid_mask
@@ -1334,6 +1344,7 @@ class ImagePair:
             "clahe": "CLAHE",
             "percentile_stretch": "percentile stretch",
             "adaptive_gamma": "adaptive gamma",
+            "histogram_matching": "histogram matching",
         }
         step_names = [step_labels.get(step.get("type"), step.get("type")) for step in self.image_enhancement]
         if step_names:

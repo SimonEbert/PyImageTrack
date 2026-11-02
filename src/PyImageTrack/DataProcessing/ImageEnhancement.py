@@ -13,7 +13,7 @@ from rasterio.warp import Resampling, reproject
 
 # The category is an implementation detail. Users select method names only.
 MASK_METHODS = {"mask"}
-FILTER_METHODS = {"clahe", "percentile_stretch", "adaptive_gamma"}
+FILTER_METHODS = {"clahe", "percentile_stretch", "adaptive_gamma", "histogram_matching"}
 SUPPORTED_METHODS = MASK_METHODS | FILTER_METHODS
 
 
@@ -93,6 +93,19 @@ def _method_parameters(config, section, method_name, occurrence):
         if value is None or value is True:
             return {}
         _invalid_enhancement_config(method_name)
+    if method_name == "histogram_matching":
+        value = section.get("histogram_matching", ["first"])
+        if isinstance(value, list) and len(value) == 1:
+            reference = value[0]
+        else:
+            table = config.get("image_enhancement_histogram_matching")
+            if isinstance(table, list) and occurrence < len(table) and isinstance(table[occurrence], dict):
+                reference = table[occurrence].get("reference", "first")
+            else:
+                _invalid_enhancement_config(method_name)
+        if reference not in {"first", "second"}:
+            raise ValueError("Histogram matching reference must be 'first' or 'second'.")
+        return {"reference": reference}
     table = config.get(f"image_enhancement_{method_name}")
     if table is None and method_name == "clahe":
         compact = section.get("clahe")
@@ -262,6 +275,8 @@ def apply_image_enhancement_step(state, enhancement_step):
             _invalid_enhancement_config("adaptive_gamma")
         state.image = _apply_adaptive_gamma(state.image, state.valid_mask)
         return state
+    if method_name == "histogram_matching":
+        raise ValueError("Histogram matching requires a pair of image processing states.")
     if method_name == "mask":
         return state
     _invalid_enhancement_config(method_name)
@@ -345,6 +360,47 @@ def _apply_adaptive_gamma(image_matrix, valid_mask):
             result[valid] = transformed
         else:
             result[index][valid] = transformed
+    return result
+
+
+def apply_histogram_matching(source, reference, source_valid_mask=None, reference_valid_mask=None):
+    """Match each source band to the corresponding reference band globally.
+
+    The mapping uses empirical cumulative distribution functions built only from
+    finite, valid pixels. Invalid source pixels are left unchanged.
+    """
+    source = np.asarray(source)
+    reference = np.asarray(reference)
+    if source.ndim not in (2, 3) or reference.ndim not in (2, 3):
+        raise ValueError("Histogram matching supports only 2D or 3D image arrays.")
+    source_bands = 1 if source.ndim == 2 else source.shape[0]
+    reference_bands = 1 if reference.ndim == 2 else reference.shape[0]
+    if source_bands != reference_bands:
+        raise ValueError("Histogram matching requires compatible channel counts.")
+    source_mask = np.isfinite(source) if source.ndim == 2 else np.all(np.isfinite(source), axis=0)
+    reference_mask = np.isfinite(reference) if reference.ndim == 2 else np.all(np.isfinite(reference), axis=0)
+    if source_valid_mask is not None:
+        source_mask &= np.asarray(source_valid_mask, dtype=bool)
+    if reference_valid_mask is not None:
+        reference_mask &= np.asarray(reference_valid_mask, dtype=bool)
+    result = source.astype(np.result_type(source.dtype, np.float32), copy=True)
+    source_view = [source] if source.ndim == 2 else source
+    reference_view = [reference] if reference.ndim == 2 else reference
+    result_view = [result] if result.ndim == 2 else result
+    for source_band, reference_band, output_band in zip(source_view, reference_view, result_view):
+        source_values = source_band[source_mask]
+        reference_values = reference_band[reference_mask]
+        if source_values.size == 0:
+            continue
+        if reference_values.size == 0:
+            raise ValueError("Histogram matching requires valid pixels in the reference image.")
+        source_levels, source_counts = np.unique(source_values, return_counts=True)
+        reference_levels, reference_counts = np.unique(reference_values, return_counts=True)
+        source_cdf = np.cumsum(source_counts, dtype=np.float64) / source_values.size
+        reference_cdf = np.cumsum(reference_counts, dtype=np.float64) / reference_values.size
+        # Evaluate the inverse reference CDF at each source CDF value.
+        mapped = np.interp(source_cdf, reference_cdf, reference_levels)
+        output_band[source_mask] = np.interp(source_band[source_mask], source_levels, mapped)
     return result
 
 
