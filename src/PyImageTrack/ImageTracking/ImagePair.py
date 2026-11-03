@@ -37,7 +37,6 @@ from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_
 from ..DataProcessing.DataPostprocessing import (
     filter_lod_points,
     filter_outliers_full,
-    downsample_tracking_results
 )
 
 # DataPreProcessing
@@ -138,6 +137,8 @@ class ImagePair:
         self.depth_image1 = None
         self.depth_image2 = None
 
+        self.tracking_quality = None
+
         # Parameters
         self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
         self.filter_parameters = None
@@ -158,7 +159,6 @@ class ImagePair:
         self.coordinate_system_unit_name = parameter_dict.get("unit_name_distance", None)
         self.time_between_observations = None
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
-        self.downsample_tracking_results_resolution = parameter_dict.get("downsample_tracking_results_resolution", None)
         self.tracked_control_points = None
         self.tracking_results = None
         self.level_of_detection = None
@@ -187,10 +187,9 @@ class ImagePair:
 
         self.safe_image_bounds_tracking = None
         self.safe_image_bounds_alignment = None
-        self._validate()
+        self._validate_image_bands()
 
-# ToDo refactor as _validate_image_bands
-    def _validate(self):
+    def _validate_image_bands(self):
         # Validate image bands
         if self.image_bands is not None:
             # Accept both single integer and list/tuple of integers
@@ -1434,22 +1433,7 @@ class ImagePair:
                 driver="FlatGeobuf"
             )
 
-        if self.downsample_tracking_results_resolution is not None:
-            downsampled_tracking_results = downsample_tracking_results(self.tracking_results,
-                                                                       point_distance=self.downsample_tracking_results_resolution)
-            downsampled_tracking_results.to_file(
-                f"{folder_path}/tracking_results_downsampled_{save_datetime_part_user_string}.fgb",
-                driver="FlatGeobuf"
-            )
-            plot_movement_of_points(
-                self.image1_matrix_original,
-                self.image1_transform,
-                downsampled_tracking_results,
-                save_path=f"{folder_path}/tracking_results_downsampled_{save_datetime_part_user_string}.jpg",
-                unit_name_distance=self.coordinate_system_unit_name,
-                unit_name_time=self.output_units_mode[4:],
-                vmin=self.level_of_detection
-            )
+
 
         # --- Prepare common subsets and guards ---
         tr_all = self.tracking_results

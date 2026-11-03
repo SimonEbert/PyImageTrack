@@ -100,56 +100,6 @@ def mad(values: np.ndarray) -> float:
     return mad_val
 
 
-def calculate_lod_points(image1_matrix: np.ndarray, image2_matrix: np.ndarray, image_transform,
-                         points_for_lod_calculation: gpd.GeoDataFrame,
-                         tracking_parameters: TrackingParameters, crs, years_between_observations) -> gpd.GeoDataFrame:
-    """
-
-    Parameters
-    ----------
-    image1_matrix
-    image2_matrix
-    image_transform
-    points_for_lod_calculation
-    tracking_parameters
-    crs
-    years_between_observations
-
-    Returns
-    -------
-    tracked_points: gpd.GeoDataFrame
-        The random points which can be used for calculating the LoD.
-    """
-    points = points_for_lod_calculation
-    tracked_points = TrackMovement.track_movement_lsm(
-        image1_matrix=image1_matrix, image2_matrix=image2_matrix, image_transform=image_transform,
-        points_to_be_tracked=points, tracking_parameters=tracking_parameters, alignment_tracking=False,
-        save_columns=["movement_row_direction",
-                      "movement_column_direction",
-                      "movement_distance_pixels",
-                      "movement_bearing_pixels",
-                      ],
-        task_label="[~] Tracking points for LoD"
-    )
-    tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
-
-    if len(tracked_control_pixels_valid) == 0:
-        # Check if correlation_coefficient column exists before accessing it
-        if "correlation_coefficient" in tracked_points.columns:
-            cc_values = str(list(tracked_points["correlation_coefficient"]))
-        else:
-            cc_values = "N/A (column not available)"
-        raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
-                         "threshold. Cross-correlation values were " + cc_values +
-                         " (None-values may signify problems during tracking).")
-
-    console = get_console()
-    console.info(f"Used {len(tracked_control_pixels_valid)} pixels for LoD calculation.")
-
-    tracked_points = georeference_tracked_points(tracked_control_pixels_valid, image_transform, crs=crs,
-                                                 years_between_observations=years_between_observations)
-
-    return tracked_points
 
 
 def _ensure_bool_col(df, col):
@@ -186,7 +136,7 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
     level_of_detection: The value to filter for. Yearly movement rates below this value will be set to 0 and the
     corresponding movement bearing to NaN.
     displacement_column_name: The column name of the displacement column ('movement_distance_per_year' for georeferenced
-    images and '3d_displacement_distance_per_year' for non-georeferenced images, for which 3d displacements have been
+    images and '3d_displacement_distance_per_year' for non-georeferenced images) for which 3d displacements have been
     calculated.
     Returns
     -------
@@ -284,7 +234,7 @@ def filter_outliers_movement_bearing_difference(tracking_results: gpd.GeoDataFra
 def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.GeoDataFrame,
                                                         filter_parameters: FilterParameters) -> gpd.GeoDataFrame:
     """
-    Filters rotation outliers from the tracking results dataframe. All points that have neighbouring points such that
+    Filters rotation outliers from the tracking results dataframe. All points that have neighboring points such that
     the standard deviation of the movement bearing exceeds the given threshold (specified in filter_parameters), will be
     removed. The distance up to which surrounding points are being considered for the calculation of the average
     movement direction can be specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the
@@ -337,7 +287,7 @@ def filter_outliers_movement_bearing_standard_deviation(tracking_results: gpd.Ge
 def filter_outliers_movement_rate_difference(tracking_results: gpd.GeoDataFrame,
                                              filter_parameters: FilterParameters, displacement_column_name: str) -> gpd.GeoDataFrame:
     """
-    Filters movement rate outliers from the tracking results dataframe. All points that have neighbouring points whose
+    Filters movement rate outliers from the tracking results dataframe. All points that have neighboring points whose
      average movement rate deviates more than the given threshold (specified in filter_parameters), will be removed. The
     distance up to which surrounding points are being considered for the calculation of the average movement rate can be
     specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the average
@@ -395,7 +345,7 @@ def filter_outliers_movement_rate_standard_deviation(tracking_results: gpd.GeoDa
                                                      displacement_column_name: str) -> gpd.GeoDataFrame:
     """
     Filters movement rate outliers from the tracking results dataframe using a Z-score approach. All points that deviate
-    more than the specified number of standard deviations (threshold) from the mean of neighbouring points will be removed.
+    more than the specified number of standard deviations (threshold) from the mean of neighboring points will be removed.
     The distance up to which surrounding points are being considered for the calculation of the mean and standard deviation
     can be specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the
     mean and standard deviation all points (also those that are being removed as outliers) are being taken into account.
@@ -481,7 +431,7 @@ def filter_outliers_movement_rate_mad(tracking_results: gpd.GeoDataFrame,
                                        displacement_column_name: str) -> gpd.GeoDataFrame:
     """
     Filters movement rate outliers from the tracking results dataframe using a modified Z-score approach. All points that deviate
-    more than the specified number of MADs (threshold) from the median of neighbouring points will be removed.
+    more than the specified number of MADs (threshold) from the median of neighboring points will be removed.
     The distance up to which surrounding points are being considered for the calculation of the median and MAD
     can be specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the
     median and MAD all points (also those that are being removed as outliers) are being taken into account.
@@ -507,7 +457,7 @@ def filter_outliers_movement_rate_mad(tracking_results: gpd.GeoDataFrame,
         The changed GeoDataFrame
     """
     # --- safety: normalize index and ensure required columns exist ---
-    tracking_results = tracking_results.reset_index(drop=True)
+    tracking_results = gpd.GeoDataFrame(tracking_results.reset_index(drop=True),geometry="geometry",crs=tracking_results.crs)
     if "valid" not in tracking_results.columns:
         tracking_results["valid"] = True
 
@@ -563,7 +513,7 @@ def filter_outliers_movement_rate_mad(tracking_results: gpd.GeoDataFrame,
 #                                                      displacement_column_name: str) -> gpd.GeoDataFrame:
 #     """
 #     Filters movement rate outliers from the tracking results dataframe using a Z-score approach. All points that deviate
-#     more than the specified number of standard deviations (threshold) from the mean of neighbouring points will be removed.
+#     more than the specified number of standard deviations (threshold) from the mean of neighboring points will be removed.
 #     The distance up to which surrounding points are being considered for the calculation of the mean and standard deviation
 #     can be specified (in the unit of the crs of the GeoDataFrame tracking_results). Note that in the calculation of the
 #     mean and standard deviation all points (also those that are being removed as outliers) are being taken into account.
@@ -666,7 +616,7 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     gpd.GeoDataFrame
         GeoDataFrame with individual outlier flags and an aggregated `valid` column based on the OR-combined mask.
     """
-    base_df = tracking_results.reset_index(drop=True).copy()
+    base_df = gpd.GeoDataFrame(tracking_results.reset_index(drop=True), geometry="geometry", crs=tracking_results.crs)
     if "valid" not in base_df.columns:
         base_df["valid"] = True
     base_df["is_outlier"] = False
@@ -705,47 +655,3 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     base_df.loc[combined_outlier_mask, "is_outlier"] = True
 
     return base_df
-
-# ToDo: Downsampling is still buggy
-def downsample_tracking_results(tracking_results: gpd.GeoDataFrame,point_distance: float) -> gpd.GeoDataFrame:
-    xmin, ymin, xmax, ymax = tracking_results.total_bounds
-    xcoords = np.arange(xmin, xmax, point_distance)
-    ycoords = np.arange(ymin, ymax, point_distance)
-
-    xcoords_grid, ycoords_grid = np.meshgrid(xcoords, ycoords)
-
-    xcoords_grid = xcoords_grid.flatten()
-    ycoords_grid = ycoords_grid.flatten()
-
-    grid_polygons = box(xcoords_grid, ycoords_grid,
-                        xcoords_grid + point_distance, ycoords_grid + point_distance)
-
-    grid_polygons_gdf = gpd.GeoDataFrame(geometry=grid_polygons,crs=tracking_results.crs)
-
-    tracking_results = tracking_results[tracking_results["valid"]]
-    if len(tracking_results) == 0:
-        logging.warning("No valid points available in the tracking results. Returning non-downsampled tracking results.")
-        return tracking_results
-    for grid_cell in grid_polygons_gdf.itertuples():
-        polygon = grid_cell.geometry
-        points_inside = tracking_results[polygon.contains(tracking_results.geometry)]
-        if len(points_inside) == 0:
-            grid_polygons_gdf.drop(grid_cell.Index, inplace=True)
-            continue
-        # average_x_value = points_inside.get_coordinates().x.mean()
-        # average_y_value = points_inside.get_coordinates().y.mean()
-        # grid_polygons_gdf.at[grid_cell.Index, "average_x_value"] = average_x_value
-        # grid_polygons_gdf.at[grid_cell.Index, "average_y_value"] = average_y_value
-
-        # Get numeric columns for averaging
-        numeric_cols = points_inside.select_dtypes(include=[np.number]).columns.tolist()
-        for colname in numeric_cols:
-            average_value = points_inside[colname].mean()
-            grid_polygons_gdf.at[grid_cell.Index,colname] = average_value
-
-    grid_points_gdf = gpd.GeoDataFrame(grid_polygons_gdf, crs=tracking_results.crs,
-                                       geometry=gpd.points_from_xy(grid_polygons_gdf["column"],
-                                                                   -grid_polygons_gdf["row"],
-                                                                   crs=tracking_results.crs))
-
-    return grid_points_gdf
