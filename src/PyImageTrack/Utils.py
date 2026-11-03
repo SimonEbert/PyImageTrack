@@ -17,6 +17,8 @@ from datetime import datetime, timedelta
 from typing import Optional
 import numpy as np
 from pathlib import Path
+import dateutil.parser
+
 
 import pandas as pd
 from pyproj import CRS as PyprojCRS
@@ -168,15 +170,20 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
 #     except (ValueError, IndexError):
 #         return False
 
-import dateutil.parser
-def extract_datetime_from_token(s: str) -> tuple[datetime, str]:
+def extract_datetime_from_token(s: str) -> tuple[datetime, str] | None:
     """Gets a filename (part) and extracts the found datetime token as a datetime object and the respective string given by the user."""
     token_without_id = re.sub(r'id\d+','',s)
     token_without_id = token_without_id.replace(':', '')
     token_without_id = token_without_id.replace('T', '')
     token_without_id = token_without_id.replace('_', '')
     token_without_id = token_without_id.replace('-', '')
-    datetime_observation, unused_string_parts = dateutil.parser.parse(token_without_id,yearfirst=True,fuzzy_with_tokens=True,dayfirst=False)
+    try:
+        datetime_observation, unused_string_parts = dateutil.parser.parse(token_without_id,yearfirst=True,fuzzy_with_tokens=True,dayfirst=False)
+    except dateutil.parser.ParserError:
+        console = get_console()
+        console.warning("Was not able to parse the datetime from filename " + s)
+        return None
+
     # Obtain string that was used for parsing in the original cleaned format
     datetime_string_user_clean = re.sub(f"^{re.escape(unused_string_parts[0])}|{re.escape(unused_string_parts[-1])}$", "", token_without_id)
     datetime_string_user = re.search(r"(?:id\d+|[:T_-])*".join(map(re.escape, datetime_string_user_clean)), s).group()
@@ -469,8 +476,6 @@ def collect_pairs(input_folder: str,
                     # Skip files with invalid date tokens
                     console.warning(f"Could not extract datetime from token: {f}")
                     continue
-                if observation_datetime is None:
-                    continue
                 id_ = csv_id
                 id_to_file[id_] = path
                 id_to_identifier[id_] = file_identifier
@@ -543,8 +548,6 @@ def collect_pairs(input_folder: str,
 
     elif pairing_mode == "successive":
         # only neighbours: (t1,t2), (t2,t3), ...
-        def _successive_pairs(ids):
-            return [(ids[i], ids[i + 1]) for i in range(len(ids) - 1)]
         datetime_pairs = _successive_pairs(ordered_ids)
 
     elif pairing_mode == "first_to_all":

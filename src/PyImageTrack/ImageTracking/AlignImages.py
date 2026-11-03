@@ -3,7 +3,6 @@ import numpy as np
 import scipy
 import scipy.ndimage
 import sklearn
-import rasterio
 
 from ..CreateGeometries.HandleGeometries import grid_points_on_polygon_by_distance
 from .TrackMovement import move_indices_from_transformation_matrix

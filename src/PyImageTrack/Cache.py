@@ -246,8 +246,6 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
         # Spatial intersection (true georef)
         bounds_poly = box(*src.bounds)
         px_size = max(-src.transform[4], src.transform[0])# pixel size (>0)
-
-
     else:# non-orthophoto path: No crs given --> 'fake georeferencing'
 
         # Top-left crop to common size

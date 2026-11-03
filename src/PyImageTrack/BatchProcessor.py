@@ -21,7 +21,7 @@ For each configuration in Table A, the processor:
 import os
 import sys
 from pathlib import Path
-from typing import Optional, Dict, List, Tuple
+from typing import List, Tuple
 
 import pandas as pd
 import tomllib

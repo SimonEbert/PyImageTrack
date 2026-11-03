@@ -8,7 +8,8 @@ import geopandas as gpd
 import numpy as np
 import rasterio
 from rasterio.features import rasterize
-from rasterio.warp import Resampling, reproject
+from rasterio.warp import reproject
+from rasterio.enums import Resampling
 
 
 # The category is an implementation detail. Users select method names only.
@@ -380,7 +381,6 @@ def apply_image_enhancement_step(state, enhancement_step):
 
 def _apply_clahe(image_matrix, valid_mask, kernel_size, clip_limit, bands=None):
     """Apply Contrast Limited Adaptive Histogram Equalization."""
-    import skimage
 
     if image_matrix.ndim == 2:
         if bands not in (None, [], [0]):

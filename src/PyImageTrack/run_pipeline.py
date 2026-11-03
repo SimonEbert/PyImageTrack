@@ -50,10 +50,8 @@ from .Parameters.AlignmentParameters import AlignmentParameters
 from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
-    collect_pairs, ensure_dir, abbr_alignment,
-    abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units,
-    make_effective_extents_from_deltas,extract_datetime_from_token,
-    processing_hash, hash_directory_name, write_hash_metadata, file_hash,
+    collect_pairs, ensure_dir,abbr_enhancement, abbr_output_units,
+    make_effective_extents_from_deltas,processing_hash, hash_directory_name, write_hash_metadata, file_hash
 )
 
 from .Cache import (
@@ -897,25 +895,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             dt1 = id_to_date[token1]
             dt2 = id_to_date[token2]
 
-
-            # def _fmt_label(id_key, datetime: dt.datetime):
-            #     return datetime.strftime("%Y-%m-%d %H:%M:%S.%f") if id_hastime_from_filename.get(id_key, False) \
-            #         else datetime.strftime("%Y-%m-%d")
-            #
-            # label_1 = _fmt_label(token1, dt1)
-            # label_2 = _fmt_label(token2, dt2)
-
-            # Extract date tokens (years) from IDs for display and paths
-            # IDs are now in format "date_token_identifier" or "date_token"
-            # date_token_1 = token1.split('_')[0] if '_' in token1 else token1
-            # date_token_2 = token2.split('_')[0] if '_' in token2 else token2
-            
-            # Use the already-parsed dates for folder naming (guaranteed correct)
-            # This avoids malformed tokens from extraction issues
-            # folder_date_1 = dt1.strftime("%Y-%m-%d") if dt1.hour == 0 and dt1.minute == 0 and dt1.second == 0 else dt1.strftime("%Y-%m-%d-%H-%M")
-            # folder_date_2 = dt2.strftime("%Y-%m-%d") if dt2.hour == 0 and dt2.minute == 0 and dt2.second == 0 else dt2.strftime("%Y-%m-%d-%H-%M")
-            
-
             dt1_string = id_to_date_user_string[token1]
             dt2_string = id_to_date_user_string[token2]
 
@@ -931,7 +910,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             image_crs = None if use_no_georeferencing else _resolve_common_crs(polygons_crs, filename_1, filename_2)
 
             try:
-                # compute years_between (hour-precise)
+                # compute time between observations
                 time_between_observations = dt2 - dt1
                 console.info_verbose(f"Time between observations: {ConsoleOutput.format_duration(time_between_observations)}")
             except Exception as e:
@@ -953,7 +932,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "cross_correlation_threshold_alignment": alignment_params.cross_correlation_threshold_alignment,
                 "control_search_extent_px": base_align_deltas,
             }
-            align_code = abbr_alignment(alignment_params and pair_alignment_config_for_code)
 
             # movement: convert user-entered deltas -> effective extents
             base_track_deltas = tracking_params.search_extent_px
@@ -1219,12 +1197,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         for moving_id_value, moving_gdf in moving_groups:
                             try:
                                 tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
-                            except TrackingPointRatioError as exc:
+                            except TrackingPointRatioError as exception:
                                 console.warning(
                                     f"Tracking shape '{moving_id_value}' skipped: only "
-                                    f"{exc.accepted_count} of {exc.original_count} points passed "
-                                    f"threshold ({exc.accepted_ratio:.1%}; minimum required: "
-                                    f"{exc.minimum_ratio:.1%})."
+                                    f"{exception.accepted_count} of {exception.original_count} points passed "
+                                    f"threshold ({exception.accepted_ratio:.1%}; minimum required: "
+                                    f"{exception.minimum_ratio:.1%})."
                                 )
                                 continue
                             quality = dict(getattr(image_pair, "tracking_quality", {}))

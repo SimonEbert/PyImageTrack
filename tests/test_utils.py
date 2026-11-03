@@ -9,15 +9,14 @@ from PyImageTrack.DataProcessing.ImagePreprocessing import convert_to_uint16
 from PyImageTrack.DataProcessing.ImagePreprocessing import check_channels_compatible, harmonize_dtypes
 from PyImageTrack.Cache import alignment_cache_paths, lod_cache_paths, tracking_cache_paths
 from PyImageTrack.Utils import (
-    extract_date_token,
     extract_identifier,
     make_effective_extents_from_deltas,
     normalize_image_shape,
-    parse_date,
     find_files_recursive_with_duplicates,
     processing_hash,
     hash_directory_name,
     write_hash_metadata,
+    extract_datetime_from_token
 )
 
 
@@ -51,11 +50,11 @@ def test_processing_hash_is_canonical_and_step_specific(tmp_path):
     ],
 )
 def test_extract_and_parse_date(filename, token, identifier, expected_date):
-    extracted = extract_date_token(filename)
-
-    assert extracted == token
+    # extracted = extract_date_token(filename)
+    #
+    # assert extracted == token
     assert extract_identifier(filename) == identifier
-    assert parse_date(extracted) == expected_date
+    assert extract_datetime_from_token(filename) == expected_date
 
 
 @pytest.mark.parametrize(
@@ -63,7 +62,7 @@ def test_extract_and_parse_date(filename, token, identifier, expected_date):
         ["no_date.tif", "HS_nodate.tif"],
 )
 def test_extract_date_token_returns_none_without_date(filename):
-    assert extract_date_token(filename) is None
+    assert extract_datetime_from_token(filename) is None
 
 
 @pytest.mark.parametrize(
@@ -105,12 +104,12 @@ def test_convert_to_uint16_scales_uint8_and_handles_nan():
     ],
 )
 def test_parse_date_supported_and_invalid_parts(value, expected):
-    assert parse_date(value) == expected
+    assert extract_datetime_from_token(value) == expected
 
 
 def test_parse_date_rejects_input_without_year():
     with pytest.raises(ValueError, match="Invalid date format"):
-        parse_date("not-a-date")
+        extract_datetime_from_token("not-a-date")
 
 
 @pytest.mark.parametrize(

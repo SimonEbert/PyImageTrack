@@ -7,7 +7,7 @@ import rasterio.plot
 from pyproj import CRS as PyprojCRS
 
 
-def _prepare_raster_for_plotting(raster_matrix: np.ndarray, context_label: str = "plot"):
+def _prepare_raster_for_plotting(raster_matrix: np.ndarray | None, context_label: str = "plot"):
     """
     Prepare raster input for robust plotting with rasterio/matplotlib.
 
@@ -80,9 +80,9 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 
 
 def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, point_movement: gpd.GeoDataFrame,
-                            point_color: str = None, masking_polygon: gpd.GeoDataFrame = None, fig=None, ax=None,
-                            save_path: str = None, show_arrows: bool = True, unit_name_distance: str = None,
-                            unit_name_time: str = None,vmin=0,vmax=None):
+                            point_color: str | None = None, masking_polygon: gpd.GeoDataFrame | None = None, fig=None, ax=None,
+                            save_path: str | None = None, show_arrows: bool = True, unit_name_distance: str | None = None,
+                            unit_name_time: str | None = None,vmin: float | int | None=0.,vmax:str | None=None):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a

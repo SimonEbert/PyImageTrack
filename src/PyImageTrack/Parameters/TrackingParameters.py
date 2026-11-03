@@ -1,6 +1,5 @@
 # PyImageTrack/Parameters/TrackingParameters.py
 
-from ..Utils import make_effective_extents_from_deltas
 class TrackingParameters:
     """
     Container for tracking-related parameters (no alignment fields).

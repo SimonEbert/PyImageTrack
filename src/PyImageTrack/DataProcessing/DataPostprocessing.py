@@ -1,15 +1,10 @@
 import geopandas as gpd
 import numpy as np
-from shapely import box
-import logging
 import tqdm
 
 from ..ConsoleOutput import get_console
 from ..CreateGeometries.HandleGeometries import circular_std_deg
-from ..CreateGeometries.HandleGeometries import georeference_tracked_points
-from ..ImageTracking import TrackMovement
 from ..Parameters.FilterParameters import FilterParameters
-from ..Parameters.TrackingParameters import TrackingParameters
 
 
 _PROGRESS_BAR_FORMAT = "{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"

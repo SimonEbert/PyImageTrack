@@ -11,7 +11,6 @@ import shapely
 from shapely.geometry import box
 import scipy
 import sklearn
-from pathlib import Path
 import datetime as dt
 from pyproj import CRS as PyprojCRS
 
@@ -27,8 +26,7 @@ from .TrackMovement import track_movement_lsm, move_indices_from_transformation_
 from ..CreateGeometries.HandleGeometries import (
     crop_images_to_intersection,
     georeference_tracked_points,
-    grid_points_on_polygon_by_distance,
-    random_points_on_polygon_by_number, make_safe_bounds_from_buffer,
+    grid_points_on_polygon_by_distance, make_safe_bounds_from_buffer,
     crop_images_to_polygon
 )
 from ..CreateGeometries.DepthImageConversion import calculate_displacement_from_depth_images
@@ -53,7 +51,7 @@ from .AlignImages import align_images_lsm_scarce, move_image_matrix_from_transfo
 # Plotting
 from ..Plots.MakePlots import (
     plot_movement_of_points,
-    plot_movement_of_points_with_valid_mask, plot_raster_and_geometry, )
+    plot_movement_of_points_with_valid_mask)
 # Date Handling
 from ..ConsoleOutput import get_console
 
@@ -623,8 +621,7 @@ class ImagePair:
         self.image2_matrix_original, _ = crop_images_to_polygon(self.image2_matrix_original, transform2_before_cropping,
                                                                           self.crs,cropping_polygon, polygon_crs)
 
-
-    def align_images(self, reference_area: gpd.GeoDataFrame, polygon_inside: gpd.GeoDataFrame = None) -> None:
+    def align_images(self, reference_area: gpd.GeoDataFrame | None, polygon_inside: gpd.GeoDataFrame | None = None) -> None:
         """
         Align images by tracking control points in a stable reference area.
 
@@ -1363,9 +1360,9 @@ class ImagePair:
                 self.image_mask_path, image.shape[-2:], transform, self.crs,
                 mode=self.image_mask_mode,
             )
+
         return valid
 
-        console.success("Finished image enhancement.")
 
     def save_full_results(self, folder_path: str, save_files: list,min_cmap_value:float | None=None,max_cmap_value:float | None=None) -> None:
         """
@@ -1954,7 +1951,8 @@ class ImagePair:
                 self.image1_transform,
                 self.tracking_results,
                 save_path=f"{folder_path}/tracking_results_{save_datetime_part_user_string}.jpg",
-                unit_name=self.coordinate_system_unit_name,
+                unit_name_distance=self.coordinate_system_unit_name,
+                unit_name_time=self.output_units_mode,
                 vmin=min_cmap_value,vmax=max_cmap_value
             )
 
