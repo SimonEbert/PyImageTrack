@@ -9,6 +9,8 @@ This module provides helper functions for:
 - Directory management
 """
 import itertools
+import hashlib
+import json
 import os
 import re
 from datetime import datetime, timedelta
@@ -238,6 +240,35 @@ def _successive_pairs(sorted_years):
     return [(sorted_years[i], sorted_years[i + 1]) for i in range(len(sorted_years) - 1)]
 
 
+def _match_csv_image_key(filename_without_ext: str, filename: str, csv_keys) -> Optional[str]:
+    """
+    Resolve an image_dates.csv key for a filename.
+
+    Exact filename matches are preferred. If no exact match exists, allow a CSV
+    key to match the beginning of the filename stem when the next character is a
+    separator. This supports dataset IDs like "1953002" in filenames such as
+    "1953002_HS.tif" without treating "19530020.tif" as the same dataset.
+    """
+    for candidate in (filename_without_ext, filename):
+        if candidate in csv_keys:
+            return os.path.splitext(candidate)[0] if candidate == filename else candidate
+
+    prefix_matches = []
+    for key in csv_keys:
+        if not filename_without_ext.startswith(key):
+            continue
+        if len(filename_without_ext) == len(key) or filename_without_ext[len(key)] in ("_", "-", ".", " "):
+            prefix_matches.append(key)
+
+    if not prefix_matches:
+        return None
+
+    prefix_matches.sort(key=len, reverse=True)
+    if len(prefix_matches) > 1 and len(prefix_matches[0]) == len(prefix_matches[1]):
+        return None
+    return prefix_matches[0]
+
+
 def find_files_recursive_with_duplicates(base_folder: str, extensions: tuple):
     """
     Recursively find all files with specified extensions and check for duplicates.
@@ -325,12 +356,16 @@ def collect_pairs(input_folder: str,
       - id_hastime_from_filename: id -> bool (True if time came from filename)
       - id_to_identifier: id -> identifier (only if identifier parameter is provided)
     
-    Date extraction from filenames:
-      - Extracts leading numeric token (YY or YYYY followed by optional parts)
-      - Passes token directly to parse_date() for parsing
-      - CSV dates handled identically to filename dates
+    Date extraction:
+      - If image_dates.csv contains the filename without extension or image ID,
+        its date is used even when the filename has no date token.
+      - Otherwise, extracts a numeric token (YY or YYYY followed by optional parts)
+        from the filename and passes it directly to parse_date().
+      - CSV dates are parsed identically to filename dates.
     
     ID Generation:
+      - When image_dates.csv matches a filename without extension or image ID,
+        that CSV key becomes the image ID.
       - When an identifier is present in the filename, IDs are generated as "date_token_identifier"
         to ensure uniqueness when multiple files share the same date token (e.g., year).
       - When no identifier is present, IDs use only the date token.
@@ -363,10 +398,17 @@ def collect_pairs(input_folder: str,
     csv_year_to_date: dict[str, str] = {}
     if date_csv_path is not None and os.path.exists(date_csv_path):
         try:
-            date_df = pd.read_csv(date_csv_path)
-            date_df.columns = date_df.columns.str.strip()
-            # Check for either "file" or "year" column (or "file/year")
-            if "file" in date_df.columns:
+            date_df = pd.read_csv(date_csv_path, sep=None, engine="python", encoding="utf-8-sig")
+            date_df.columns = (
+                date_df.columns
+                .str.replace("\ufeff", "", regex=False)
+                .str.strip()
+                .str.lower()
+            )
+            # Check for either "dataset", "file", or legacy "year" columns.
+            if "dataset" in date_df.columns:
+                id_col = "dataset"
+            elif "file" in date_df.columns:
                 id_col = "file"
             elif "year" in date_df.columns:
                 id_col = "year"
@@ -377,11 +419,16 @@ def collect_pairs(input_folder: str,
             elif "file/datetime" in date_df.columns:
                 id_col = "file/datetime"
             else:
-                raise ValueError("image_dates.csv must contain a 'file', 'year', or 'file/year' column.")
+                raise ValueError("image_dates.csv must contain a 'dataset', 'file', 'year', or 'file/year' column.")
             if "date" not in date_df.columns:
                 raise ValueError("image_dates.csv must contain a 'date' column.")
-            date_df[id_col] = date_df[id_col].astype(str)
-            csv_year_to_date = dict(zip(date_df[id_col], date_df["date"]))
+            date_df[id_col] = date_df[id_col].astype(str).str.strip()
+            date_df["date"] = date_df["date"].astype(str).str.strip()
+            csv_year_to_date = {
+                key: value
+                for key, value in zip(date_df[id_col], date_df["date"])
+                if key and key.lower() != "nan" and value and value.lower() != "nan"
+            }
         except Exception as e:
             raise ValueError(f"Failed to read image_dates.csv at {date_csv_path}: {e}")
     elif date_csv_path is not None:
@@ -400,26 +447,45 @@ def collect_pairs(input_folder: str,
     id_to_date = {}
     id_to_date_user_string = {}
     id_hastime_from_filename = {}
+    id_to_identifier = {}
 
     for f in img_files:
-        # Parse the date token
-        if True:#try:
-            observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
-        else:#except ValueError:
-            # Skip files with invalid date tokens
-            console.warning(f"Could not extract datetime from token: {f}")
-            continue
-        if observation_datetime is None:
-            continue
-
-        # Use the full path from recursive search
+        filename_without_ext = os.path.splitext(f)[0]
         path = filename_to_path[f]
+        file_identifier = extract_identifier(f)
+
+        csv_date_str = None
+        csv_id = _match_csv_image_key(filename_without_ext, f, csv_year_to_date.keys())
+        # ToDo Check if this makes sense now
+        if csv_id is not None:
+            csv_date_str = csv_year_to_date[csv_id]
+
+        if csv_date_str is not None:
+            try:
+                try:
+                    # ToDo: Check if observation_datetime_user_string should be extracted somewhere here
+                    observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
+                except ValueError:
+                    # Skip files with invalid date tokens
+                    console.warning(f"Could not extract datetime from token: {f}")
+                    continue
+                if observation_datetime is None:
+                    continue
+                id_ = csv_id
+                id_to_file[id_] = path
+                id_to_identifier[id_] = file_identifier
+                id_hastime_from_filename[id_] = False
+                id_to_date[id_] = observation_datetime
+            except ValueError:
+                # Fall back to filename parsing below if the CSV date is invalid.
+                pass
 
 
+        
         # Extract identifier from filename to make ID unique
         file_identifier = extract_identifier(f)
         
-        # Use exact datetime as ID, but make it unique by appending identifier if present
+        # Use the original token as ID, but make it unique by appending identifier if present
         if file_identifier:
             id_ = f"{observation_datetime.strftime("%Y%m%dT%H%M%S%f")}_{file_identifier}"
         else:
@@ -427,15 +493,13 @@ def collect_pairs(input_folder: str,
 
 
         id_to_file[id_] = path
-        
-        # Check if this file has a date override in the CSV file
-        # First try to match by full filename (without extension), then by token
+        id_to_identifier[id_] = file_identifier
+
+        # Check if this parsed file ID or date token has a date override in the CSV file.
         csv_date_str = None
-        if f in csv_year_to_date:
-            csv_date_str = csv_year_to_date[f]
-        elif id_ in csv_year_to_date:
+        if id_ in csv_year_to_date:
             csv_date_str = csv_year_to_date[id_]
-        
+
         if csv_date_str is not None:
             # Use the date from CSV, parsing it with the same logic as filename dates
             try:
@@ -456,19 +520,10 @@ def collect_pairs(input_folder: str,
     ordered_ids = [k for k, _ in items]
 
     # 3.5) Filter by identifier if provided
-    id_to_identifier = {}
     if identifier is not None:
         # Build mapping of file IDs to their identifiers
         for id_ in list(id_to_file.keys()):
-            # Extract identifier from the ID (format: "date_token_identifier" or "date_token")
-            # The identifier is the part after the last underscore if it exists
-            parts = id_.rsplit('_', 1)
-            if len(parts) == 2 and parts[1].isalnum():
-                file_identifier = parts[1]
-            else:
-                # No identifier in ID, extract from filename
-                file_identifier = extract_identifier(os.path.basename(id_to_file[id_]))
-            
+            file_identifier = id_to_identifier.get(id_) or extract_identifier(os.path.basename(id_to_file[id_]))
             id_to_identifier[id_] = file_identifier
             # Filter out files that don't match the specified identifier
             if file_identifier != identifier:
@@ -507,7 +562,8 @@ def collect_pairs(input_folder: str,
             console.error("To fix this, you have two options:")
             console.error("  1. Provide a valid path to an image_pairs.csv file in your config:")
             console.error("     pairs_csv_path = '/path/to/image_pairs.csv'")
-            console.error("     The CSV must contain columns 'date_earlier' and 'date_later'.")
+            console.error("     The CSV must contain columns 'dataset_earlier' and 'dataset_later'")
+            console.error("     or the legacy columns 'date_earlier' and 'date_later'.")
             console.error("  2. Change the pairing mode to an automatic option:")
             console.error("     - 'all': Pair each image with every other image")
             console.error("     - 'successive': Pair consecutive images (1-2, 2-3, 3-4, ...)")
@@ -527,19 +583,26 @@ def collect_pairs(input_folder: str,
             .str.strip()
             .str.lower()
         )
-        if not {"date_earlier", "date_later"}.issubset(pairs_df.columns):
+        if {"dataset_earlier", "dataset_later"}.issubset(pairs_df.columns):
+            left_col, right_col = "dataset_earlier", "dataset_later"
+        elif {"date_earlier", "date_later"}.issubset(pairs_df.columns):
+            left_col, right_col = "date_earlier", "date_later"
+        else:
             raise ValueError(
-                "image_pairs.csv must contain columns 'date_earlier' and 'date_later'."
+                "image_pairs.csv must contain columns 'dataset_earlier' and 'dataset_later' "
+                "or legacy columns 'date_earlier' and 'date_later'."
             )
-
-        left_col, right_col = "date_earlier", "date_later"
 
         # Map CSV token -> ID used in id_to_file
         def _resolve_csv_token_to_id(raw: str) -> str:
+            raw_s = str(raw).strip()
+
+            if raw_s in id_to_file:
+                return raw_s
             lead = extract_datetime_from_token(raw)
             if lead is None:
                 raise ValueError(f"Unrecognized pair token: {raw!r}")
-            
+
             # Try exact match first
             if lead in id_to_file:
                 return lead
@@ -584,6 +647,68 @@ def ensure_dir(path: str):
         Path to the directory to create.
     """
     os.makedirs(path, exist_ok=True)
+
+
+HASH_VERSION = "1"
+
+
+def canonical_json(value) -> str:
+    """Serialize configuration values deterministically for hashing and metadata."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), default=str)
+
+
+def processing_hash(step: str, parameters: dict, logic_version: str = "1") -> str:
+    """Return a stable full SHA-256 hash for one processing step."""
+    payload = {"hash_version": HASH_VERSION, "step": step,
+               "logic_version": logic_version, "parameters": parameters}
+    return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
+
+
+def file_hash(path: str) -> str | None:
+    """Return a SHA-256 file hash, or ``None`` when no file is available."""
+    if not path or not Path(path).is_file():
+        return None
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def hash_directory_name(prefix: str, digest: str) -> str:
+    """Create the compact directory name while retaining the processing-step prefix."""
+    short_prefixes = {
+        "enhancement": "e",
+        "alignment": "a",
+        "tracking": "t",
+        "filter": "f",
+    }
+    return f"{short_prefixes.get(prefix, prefix)}_{digest[:12]}"
+
+
+def write_hash_metadata(directory: str, step: str, parameters: dict,
+                        digest: str, logic_version: str = "1") -> None:
+    """Create or validate the human-readable metadata for a hashed directory."""
+    metadata_path = Path(directory) / "config.json"
+    expected = {
+        "hash": digest,
+        "hash_version": HASH_VERSION,
+        "step": step,
+        "logic_version": logic_version,
+        "parameters": parameters,
+    }
+    expected = json.loads(canonical_json(expected))
+    if metadata_path.exists():
+        try:
+            with metadata_path.open(encoding="utf-8") as handle:
+                actual = json.load(handle)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"Invalid cache metadata: {metadata_path}") from exc
+        if actual != expected:
+            raise ValueError(f"Cache metadata does not match expected configuration: {metadata_path}")
+        return
+    with metadata_path.open("w", encoding="utf-8") as handle:
+        json.dump(expected, handle, indent=2, sort_keys=True, default=str)
 
 
 def float_compact(x):
@@ -710,6 +835,7 @@ def abbr_tracking(tp):
         f"DP{_get(tp, 'distance_of_tracked_points_px')}",
         f"MC{_get(tp, 'movement_cell_size')}",
         f"CC{float_compact(_get(tp, 'cross_correlation_threshold_movement'))}",
+        f"MPR{float_compact(_get(tp, 'minimum_valid_tracking_point_ratio', 0.0))}",
         _part("MPnb", _get(tp, 'nb_initial_estimate_peaks', None)),
         _part("MPth", _get(tp, 'correlation_threshold_initial_estimates', None)),
         _part("MPd", _get(tp, 'min_distance_initial_estimates', None)),    ]
@@ -789,39 +915,49 @@ def abbr_enhancement(ep) -> str:
     str
         Short code string starting with "E_".
     """
-    fc = float_compact
+    image_enhancement = _get(ep, "steps", ep)
+    if image_enhancement:
+        step_codes = [_abbr_enhancement_step(step) for step in image_enhancement]
+        canonical = json.dumps(
+            image_enhancement,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        config_hash = hashlib.sha256(canonical).hexdigest()[:8].upper()
+        return "E_" + "_".join(step_codes) + "_H" + config_hash
+
+    return "E_none"
+
+
+def _abbr_enhancement_step(ep) -> str:
+    """
+    Generate a short code fragment for one image enhancement step.
+
+    Parameters
+    ----------
+    ep : dict or object
+        Enhancement step parameters.
+    Returns a short method code without parameters.
+    """
     enhancement_type = _get(ep, "type", "none")
-    
-    if enhancement_type == "none" or not enhancement_type:
-        return "E_none"
-    
-    parts = []
-    
-    if enhancement_type == "clahe":
-        kernel_size = _get(ep, "kernel_size", 50)
-        clip_limit = _get(ep, "clip_limit", 0.9)
-        parts.append(f"clahe")
-        parts.append(f"K{kernel_size}")
-        parts.append(f"C{fc(clip_limit)}")
-    elif enhancement_type == "gamma":
-        gamma = _get(ep, "gamma", 1.0)
-        parts.append(f"gamma")
-        parts.append(f"G{fc(gamma)}")
-    elif enhancement_type == "histeq":
-        parts.append(f"histeq")
-    elif enhancement_type == "denoise":
-        denoise_type = _get(ep, "denoise_type", "gaussian")
-        strength = _get(ep, "strength", 1.0)
-        parts.append(f"denoise")
-        parts.append(f"D{denoise_type}")
-        parts.append(f"S{fc(strength)}")
-    else:
-        # Unknown enhancement type - just use the type name
-        parts.append(enhancement_type)
-    
-    # Drop empty/None/NA fragments
-    parts = [p for p in parts if p not in (None, "", "NA")]
-    return "E_" + "_".join(parts)
+    method_codes = {
+        "clahe": "CL",
+        "percentile_stretch": "PS",
+        "adaptive_gamma": "AG",
+        "histogram_matching": "HM",
+        "local_contrast_normalization": "LCN",
+        "multi_scale_retinex": "MSR",
+        "difference_of_gaussians": "DOG",
+        "unsharp_masking": "USM",
+        "naof": "NAOF",
+        "gradient_magnitude": "GM",
+        "snowmask": "SM",
+        "nodatamask": "ND",
+        "gaussian": "G",
+    }
+    if enhancement_type not in method_codes:
+        raise ValueError(f"Unsupported image enhancement type: {enhancement_type}")
+    return method_codes[enhancement_type]
 
 def _recompute_lod_from_points(image_pair, filter_params) -> bool:
     points = getattr(image_pair, "level_of_detection_points", None)

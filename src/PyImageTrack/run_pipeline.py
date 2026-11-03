@@ -17,6 +17,7 @@ specified in the configuration file.
 
 import argparse
 import csv
+import hashlib
 import os
 import sys
 import time
@@ -26,6 +27,7 @@ from typing import Optional
 import logging
 import warnings
 
+from PyImageTrack.DataProcessing.ImageEnhancement import normalize_image_enhancement
 from PyImageTrack.DataProcessing.ImagePreprocessing import undistort_polygon
 
 try:
@@ -42,14 +44,16 @@ import rasterio
 from pyproj import CRS as PyprojCRS
 
 from .ImageTracking.ImagePair import ImagePair
+from .ImageTracking.TrackMovement import TrackingPointRatioError
 from .Parameters.FilterParameters import FilterParameters
 from .Parameters.AlignmentParameters import AlignmentParameters
 from .Parameters.TrackingParameters import TrackingParameters
 
 from .Utils import (
     collect_pairs, ensure_dir, abbr_alignment,
-    abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units,  # parse_date,
-    make_effective_extents_from_deltas, extract_datetime_from_token,
+    abbr_tracking, abbr_filter, abbr_enhancement, abbr_output_units,
+    make_effective_extents_from_deltas,extract_datetime_from_token,
+    processing_hash, hash_directory_name, write_hash_metadata, file_hash,
 )
 
 from .Cache import (
@@ -319,6 +323,21 @@ def _resolve_input_path(value: str | None, input_folder: str, config_dir: Path) 
     return None
 
 
+def _read_polygon_vector(path: str | Path) -> gpd.GeoDataFrame:
+    """Read a stable or moving area from a supported vector file."""
+    vector_path = Path(path)
+    supported_extensions = {".shp", ".geojson", ".json", ".gpkg"}
+    if vector_path.suffix.lower() not in supported_extensions:
+        supported = ", ".join(sorted(supported_extensions))
+        raise ValueError(
+            f"Unsupported polygon vector format '{vector_path.suffix}'. "
+            f"Supported formats are: {supported}."
+        )
+    # GeoPackage layer selection is intentionally not exposed; geopandas uses
+    # the default layer when reading the file.
+    return gpd.read_file(vector_path)
+
+
 def _crs_label(crs) -> str:
     """
     Get a string label for a coordinate reference system.
@@ -571,13 +590,43 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     do_alignment = bool(_get(cfg, "flags", "do_alignment", True))
     do_tracking = bool(_get(cfg, "flags", "do_tracking", True))
     do_filtering = bool(_get(cfg, "flags", "do_filtering", True))
+    legacy_do_image_enhancement = _get(cfg, "flags", "do_image_enhancement", None)
     do_lod_calculation = bool(_get(cfg, "flags", "do_lod_calculation", True))
-    do_image_enhancement = bool(_get(cfg, "flags", "do_image_enhancement", False))
     display_plots = bool(_get(cfg, "output", "display_plots", False))
 
     use_alignment_cache = bool(_get(cfg, "cache", "use_alignment_cache", True) if do_alignment else False)
     use_tracking_cache = bool(_get(cfg, "cache", "use_tracking_cache", True) if do_tracking else False)
     use_lod_cache = bool(_get(cfg, "cache", "use_lod_cache", use_tracking_cache) if do_lod_calculation else False)
+
+    if not use_alignment_cache and (use_tracking_cache or use_lod_cache):
+        console.warning("Cache configuration may be inconsistent:")
+        console.warning(
+            "Alignment cache is disabled, but tracking and/or LoD cache is enabled.",
+            indent=4,
+        )
+        console.warning(
+            "Cached tracking and LoD results may have been calculated using a different alignment.",
+            indent=4,
+        )
+        console.warning(
+            "Consider enabling alignment cache or disabling the dependent caches.",
+            indent=4,
+        )
+
+    if not use_tracking_cache and use_lod_cache:
+        console.warning("Cache configuration may be inconsistent:")
+        console.warning(
+            "Tracking cache is disabled, but LoD cache is enabled.",
+            indent=4,
+        )
+        console.warning(
+            "Cached LoD results may have been calculated using different tracking results.",
+            indent=4,
+        )
+        console.warning(
+            "Consider enabling tracking cache or disabling the LoD cache.",
+            indent=4,
+        )
 
     # Suppress known Matplotlib clipping message emitted via logging (not warnings module).
     # Matplotlib emits this through logger 'matplotlib.image' at WARNING level.
@@ -613,10 +662,39 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # PARAMETERS (alignment, tracking, filter)
     # ==============================
-    # Get image_bands from tracking configuration (used by both alignment and tracking)
+    # Get image_bands from tracking configuration (used by both alignment and tracking).
+    # Older configs may still define this in [image], so keep that as a fallback.
     image_bands = _as_optional_value(_get(cfg, "image", "image_bands", None))
     unit_name_distance = _as_optional_value(_get(cfg, "image", "unit_name_distance", None))
-
+    image_mask_filename = _as_optional_value(_get(cfg, "paths", "image_mask_path", "none"))
+    image_mask_path = _resolve_input_path(image_mask_filename, input_folder, config_dir)
+    mask_config = _get(cfg, "image_enhancement", "mask", [["nodata"], [0], "none"])
+    try:
+        mask_types, nodata_values, custom_mode = mask_config
+        image_mask_mode = custom_mode if "custom" in mask_types else "none"
+    except (TypeError, ValueError):
+        raise ValueError("image_enhancement.mask must be [types, nodata_values, custom_mode].")
+    if image_mask_mode == "none":
+        image_mask_mode = "include"
+    image_mask_types = mask_types
+    image_mask_nodata_values = nodata_values
+    if image_mask_mode not in {"include", "exclude"}:
+        raise ValueError("image_mask.mode must be either 'include' or 'exclude'.")
+    configured_steps = _get(cfg, "image_enhancement", "image_enhancement_steps",
+                             _get(cfg, "image_enhancement", "steps", []))
+    # New configurations use the enhancement step list as the activation switch.
+    # Keep the legacy flag when it is explicitly present for backward compatibility.
+    do_image_enhancement = (
+        bool(legacy_do_image_enhancement)
+        if legacy_do_image_enhancement is not None
+        else bool(configured_steps)
+    )
+    mask_step_enabled = do_image_enhancement and "mask" in configured_steps
+    if mask_step_enabled and image_mask_path:
+        mask_identity = f"{Path(image_mask_path).resolve()}|{image_mask_mode}"
+        mask_code = "M_" + hashlib.sha256(mask_identity.encode("utf-8")).hexdigest()[:8].upper()
+    else:
+        mask_code = "M_none"
 
     alignment_params = AlignmentParameters({
         "number_of_control_points": _require(cfg, "alignment", "number_of_control_points"),
@@ -628,9 +706,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     })
 
     tracking_params = TrackingParameters({
+        "image_bands": image_bands,
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
         "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
+        "minimum_valid_tracking_point_ratio": _get(cfg, "tracking", "minimum_valid_tracking_point_ratio", 0.0),
         # search extent tuple: (right, left, down, up) in pixels around the movement cell
         # usually this refers to the offset in px between the images,
         # but if the adaptive mode is used, this means the expected offset in px per year
@@ -641,7 +721,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "correlation_threshold_initial_estimates": _get(cfg, "tracking", "correlation_threshold_initial_estimates",None),
         "min_distance_initial_estimates": _get(cfg, "tracking", "min_distance_initial_estimates", 1),
     })
-
 
     filter_params = FilterParameters({
         "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
@@ -654,7 +733,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "difference_movement_rate_moving_window_size": _require(cfg, "filter", "difference_movement_rate_moving_window_size"),
         "standard_deviation_movement_rate_threshold": _require(cfg, "filter", "standard_deviation_movement_rate_threshold"),
         "standard_deviation_movement_rate_moving_window_size": _require(cfg, "filter", "standard_deviation_movement_rate_moving_window_size"),
-        "maximal_fraction_depth_change_of_3d_displacement": _get(cfg,"filter", "maximal_fraction_depth_change_of_3d_displacement")
+        "maximal_fraction_depth_change_of_3d_displacement": _as_optional_value(
+            _get(cfg, "filter", "maximal_fraction_depth_change_of_3d_displacement", None)
+        ),
     })
     if not do_lod_calculation and not use_lod_cache:
         filter_params.level_of_detection_quantile = None
@@ -676,15 +757,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # ==============================
     # IMAGE ENHANCEMENT PARAMETERS
     # ==============================
-    enhancement_params = {
-        "type": _get(cfg, "image_enhancement", "type", "clahe"),
-        "kernel_size": _get(cfg, "image_enhancement", "kernel_size", 50),
-        "clip_limit": _get(cfg, "image_enhancement", "clip_limit", 0.9),
-    }
-    # If enhancement is disabled, force type to "none" for correct folder naming
-    if not do_image_enhancement:
-        enhancement_params["type"] = "none"
-    enhancement_code = abbr_enhancement(enhancement_params)
+    image_enhancement = normalize_image_enhancement(
+        cfg,
+        enabled=do_image_enhancement,
+    )
+    enhancement_code = abbr_enhancement(image_enhancement)
+    enhancement_code = enhancement_code + "_" + mask_code
     
     # Output units code (combined with enhancement for cache key)
     output_units_code = abbr_output_units(output_units_mode)
@@ -728,7 +806,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         # Resolve polygon path: check input_folder first, then support absolute paths
         poly_outside_path = _resolve_input_path(poly_outside_filename_resolved, input_folder, config_dir)
         try:
-            poly_outside = gpd.read_file(poly_outside_path)
+            poly_outside = _read_polygon_vector(poly_outside_path)
             if use_no_georeferencing:
                 poly_outside = poly_outside.set_crs(None, allow_override=True)
             # Allow multiple features: combine to one reference polygon
@@ -746,7 +824,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     polygon_inside_path = _resolve_input_path(poly_inside_filename, input_folder, config_dir)
     if not os.path.exists(polygon_inside_path):
         raise FileNotFoundError(f"Moving area polygon file does not exist: {polygon_inside_path}")
-    polygon_inside = gpd.read_file(polygon_inside_path)
+    polygon_inside = _read_polygon_vector(polygon_inside_path)
     if len(polygon_inside) == 0:
         raise ValueError(f"Moving area polygon file is empty: {polygon_inside_path}")
     if use_no_georeferencing:
@@ -802,6 +880,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     # track_code and filter_code may depend on pair-specific overrides, so they are computed per pair
 
     successes, skipped = [], []
+    result_paths = []
 
     # Start overall timer
     start_time = time.time()
@@ -825,7 +904,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             #
             # label_1 = _fmt_label(token1, dt1)
             # label_2 = _fmt_label(token2, dt2)
-            
+
             # Extract date tokens (years) from IDs for display and paths
             # IDs are now in format "date_token_identifier" or "date_token"
             # date_token_1 = token1.split('_')[0] if '_' in token1 else token1
@@ -893,6 +972,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
+                "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
                 "search_extent_px": base_track_deltas,  # user-entered deltas for folder code
             }
 
@@ -901,13 +981,61 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
                 "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
+                "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
                 "search_extent_deltas": base_track_deltas,
                 "search_extent_px_effective": adaptive_extents,
                 "use_adaptive_tracking_window": tracking_params.use_adaptive_tracking_window
             }
             
-            track_code  = abbr_tracking(pair_tracking_config_for_code)
-            filter_code = abbr_filter(filter_params)
+            enhancement_config = {
+                "enabled": do_image_enhancement,
+                "steps": image_enhancement,
+                "mask": {"path": image_mask_path, "mode": image_mask_mode,
+                         "types": image_mask_types, "nodata_values": image_mask_nodata_values,
+                         "content_hash": file_hash(image_mask_path) if "custom" in image_mask_types else None},
+            }
+            enhancement_digest = processing_hash("enhancement", enhancement_config)
+            enhancement_code = hash_directory_name("enhancement", enhancement_digest)
+
+            alignment_config = {
+                "parameters": alignment_params.to_dict(),
+                "effective_control_search_extent_px": effective_align_extents,
+                "image_bands": tracking_params.image_bands,
+                "enhancement": enhancement_config,
+                "use_no_georeferencing": bool(use_no_georeferencing),
+                "fake_pixel_size": fake_pixel_size,
+                "downsample_factor": int(downsample_factor),
+                "undistort_image": undistort_image,
+                "camera_intrinsics_matrix": camera_intrinsics_matrix,
+                "camera_distortion_coefficients": camera_distortion_coefficients,
+                "convert_to_3d_displacement": convert_to_3d_displacement,
+                "camera_to_3d_coordinates_transform": camera_to_3d_coordinates_transform,
+            }
+            alignment_digest = processing_hash("alignment", alignment_config)
+            align_code = hash_directory_name("alignment", alignment_digest) if do_alignment else "a_none"
+
+            tracking_config = {
+                "parameters": pair_tracking_config,
+                "use_adaptive_tracking_window": use_adaptive_tracking_window,
+                "initial_shift_values": tracking_params.initial_shift_values,
+                "initial_estimate_mode": tracking_params.initial_estimate_mode,
+                "nb_initial_estimate_peaks": tracking_params.nb_initial_estimate_peaks,
+                "correlation_threshold_initial_estimates": tracking_params.correlation_threshold_initial_estimates,
+                "min_distance_initial_estimates": tracking_params.min_distance_initial_estimates,
+                "convert_to_3d_displacement": convert_to_3d_displacement,
+                "camera_to_3d_coordinates_transform": camera_to_3d_coordinates_transform,
+                "output_units_mode": output_units_mode,
+            }
+            tracking_digest = processing_hash("tracking", tracking_config)
+            track_code = hash_directory_name("tracking", tracking_digest) if do_tracking else "t_none"
+
+            filter_config = {
+                "parameters": vars(filter_params),
+                "output_units_mode": output_units_mode,
+                "downsample_tracking_results_resolution": downsample_tracking_results_resolution,
+            }
+            filter_digest = processing_hash("filter", filter_config)
+            filter_code = hash_directory_name("filter", filter_digest) if do_filtering else "f_none"
 
             # Determine if alignment will be performed or loaded from cache
             will_do_alignment = do_alignment
@@ -921,13 +1049,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             will_do_filtering = do_filtering
 
             # Set alignment code to "A_none" if alignment is disabled and not loaded from cache
-            if not will_do_alignment:
-                align_code = "A_none"
-            
-            # Set filter code to "F_none" if filtering is disabled
-            if not will_do_filtering:
-                filter_code = "F_none"
-
             # Directories
             # Use formatted dates for directory names (guaranteed correct, handles all date formats)
             base_pair_dir = os.path.join(output_folder, f"{dt1_string.replace(" ","_")}_{dt2_string.replace(" ","_")}")
@@ -937,6 +1058,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             filter_dir = os.path.join(track_dir,     filter_code)
             for d in (enhancement_dir, align_dir, track_dir, filter_dir):
                 ensure_dir(d)
+            write_hash_metadata(enhancement_dir, "enhancement", enhancement_config, enhancement_digest)
+            write_hash_metadata(align_dir, "alignment", alignment_config, alignment_digest)
+            write_hash_metadata(track_dir, "tracking", tracking_config, tracking_digest)
+            write_hash_metadata(filter_dir, "filter", filter_config, filter_digest)
+            console.info_verbose(f"Results directory: {Path(filter_dir).resolve()}")
 
             # Params for ImagePair:
             #   - effective extents in the fields the algorithms read
@@ -959,9 +1085,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["convert_to_3d_displacement"]        = convert_to_3d_displacement
             param_dict["camera_to_3d_coordinates_transform"]= camera_to_3d_coordinates_transform
             # Image enhancement parameters
-            param_dict["enhancement_type"]                  = enhancement_params.get("type", "none")
-            param_dict["enhancement_kernel_size"]           = enhancement_params.get("kernel_size", 50)
-            param_dict["enhancement_clip_limit"]            = enhancement_params.get("clip_limit", 0.9)
+            param_dict["image_enhancement"]                = image_enhancement
+            param_dict["image_mask_path"]                 = image_mask_path
+            param_dict["image_mask_mode"]                 = image_mask_mode
+            param_dict["image_mask_types"]                = image_mask_types
+            param_dict["image_mask_nodata_values"]        = image_mask_nodata_values
             # Output units mode
             param_dict["output_units_mode"]                 = output_units_mode
             # Unit name (if specified, for plotting)
@@ -996,9 +1124,9 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
 
 
 
-            # optional image enhancement (CLAHE) before alignment/tracking
-            if do_image_enhancement and hasattr(image_pair, "equalize_adapthist_images"):
-                image_pair.equalize_adapthist_images()
+            # Optional image enhancement before alignment/tracking.
+            if do_image_enhancement and hasattr(image_pair, "enhance_images"):
+                image_pair.enhance_images()
 
             # alignment with cache
             if do_alignment:
@@ -1040,6 +1168,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         filenames={token1: filename_1, token2: filename_2},
                         dates={token1: dt1_string, token2: dt2_string},
                         save_truecolor_aligned=write_truecolor_aligned,
+                        save_enhanced_master=do_image_enhancement,
                     )
                     console.cache_info("saved", align_dir, f"{dt1_string}->{dt2_string}", cache_type="alignment")
 
@@ -1078,6 +1207,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         "Movement cell size": f"{tracking_params.movement_cell_size} px",
                         "Search extent": f"{tracking_params.search_extent_px} px",
                         "Cross-correlation threshold": tracking_params.cross_correlation_threshold_movement,
+                        "Minimum valid point ratio": f"{tracking_params.minimum_valid_tracking_point_ratio:.1%}",
                         "Adaptive tracking window": f"enabled{adaptive_info}"
                     })
 
@@ -1085,13 +1215,40 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                     # If images are not aligned, track_points() will issue a warning
                     with console.timer("Tracking", verbose=True):
                         tracked_points_list = []
+                        tracking_quality = []
                         for moving_id_value, moving_gdf in moving_groups:
-                            tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
+                            try:
+                                tracked_sub = image_pair.track_points(tracking_area=moving_gdf)
+                            except TrackingPointRatioError as exc:
+                                console.warning(
+                                    f"Tracking shape '{moving_id_value}' skipped: only "
+                                    f"{exc.accepted_count} of {exc.original_count} points passed "
+                                    f"threshold ({exc.accepted_ratio:.1%}; minimum required: "
+                                    f"{exc.minimum_ratio:.1%})."
+                                )
+                                continue
+                            quality = dict(getattr(image_pair, "tracking_quality", {}))
+                            quality["moving_id"] = moving_id_value
+                            tracking_quality.append(quality)
+                            console.success(
+                                f"Used {quality['accepted_point_count']} points for tracking "
+                                f"({quality['accepted_ratio']:.1%} of "
+                                f"{quality['original_point_count']} points passed threshold; "
+                                f"minimum required: {quality['minimum_ratio']:.1%})."
+                            )
                             tracked_sub[moving_id_column] = moving_id_value
                             tracked_points_list.append(tracked_sub)
                         if not tracked_points_list:
-                            raise ValueError("No tracking points found. track_points() returned empty results for all moving areas.")
+                            message = (
+                                "No tracking areas passed the minimum valid tracking point ratio. "
+                                "Skipping this pair."
+                            )
+                            console.error(f"Tracking failed for pair {dt1_string} -> {dt2_string}: {message}")
+                            console.error("Skipping this pair. Please check the tracking parameters or input data.")
+                            skipped.append((token1, token2, message))
+                            continue
                         tracked_points = pd.concat(tracked_points_list, ignore_index=True)
+                        image_pair.tracking_quality = tracking_quality
                     image_pair.tracking_results = tracked_points
                 
                 # Save tracking results only if not loaded from cache
@@ -1229,10 +1386,18 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             if '_' in token1:
                 identifier_from_id = token1.split('_')[1]
             successes.append((dt1_string, dt2_string, identifier_from_id))
+            result_paths.append(Path(filter_dir if do_tracking else align_dir).resolve())
 
     # Print summary with total elapsed time
     total_elapsed = time.time() - start_time
     console.print_summary(successes, skipped, total_elapsed=total_elapsed)
+    if successes:
+        console.print("\n==================================================")
+        console.print("PyImageTrack processing finished")
+        console.print("\nResults directories:")
+        for result_path in result_paths:
+            console.print(str(result_path))
+        console.print("==================================================")
 
 
 # CLI entry point

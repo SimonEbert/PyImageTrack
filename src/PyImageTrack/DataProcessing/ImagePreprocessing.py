@@ -1,48 +1,9 @@
-import skimage
 import numpy as np
 import scipy.ndimage
 import geopandas as gpd
 from shapely.geometry import Polygon
 
 from ..ConsoleOutput import get_console
-
-
-def equalize_adapthist_images(image_matrix, kernel_size, clip_limit):
-    """
-    Applies adaptive histogram equalization to enhance image contrast.
-    
-    This function uses Contrast Limited Adaptive Histogram Equalization (CLAHE)
-    to improve local contrast while limiting noise amplification.
-    
-    Parameters
-    ----------
-    image_matrix : np.ndarray
-        The input image matrix to be enhanced.
-    kernel_size : tuple or int
-        Defines the shape of contextual regions used for local contrast
-        enhancement. If tuple, should be (height, width). If int, a square
-        kernel of that size is used.
-    clip_limit : float
-        Contrast limiting threshold. Higher values allow more contrast
-        enhancement but may increase noise. Typical values are between 0.0
-        and 1.0.
-    
-    Returns
-    -------
-    np.ndarray
-        The contrast-enhanced image matrix.
-    """
-    # Skimage expects images in the format (x,y,c), i.e. channels in the last dimension
-    if len(image_matrix) == 3:
-        image_matrix_transposed = image_matrix.transpose((2,1,0))
-    else:
-        image_matrix_transposed = image_matrix
-    equalized_image = skimage.exposure.equalize_adapthist(image=image_matrix_transposed.astype(np.uint16), kernel_size=kernel_size,
-                                                          clip_limit=clip_limit)
-    # Retranspose to match the convention in the rest of the script
-    if len(image_matrix) == 3:
-        equalized_image = equalized_image.transpose((2,1,0))
-    return equalized_image
 
 
 def get_optimal_camera_model(image_matrix_shape: tuple, camera_intrinsic_matrix: np.ndarray,
@@ -150,6 +111,11 @@ def convert_float_to_uint(image_matrix: np.ndarray) -> np.ndarray:
         ``uint16`` image matrix.
     """
     return convert_to_uint16(image_matrix)
+
+
+def convert_to_float32(image_matrix: np.ndarray) -> np.ndarray:
+    """Convert an image to the internal float32 representation."""
+    return np.asarray(image_matrix, dtype=np.float32)
 
 
 def convert_to_uint16(image_matrix: np.ndarray) -> np.ndarray:
@@ -442,4 +408,3 @@ def undistort_polygon(polygon: gpd.GeoDataFrame, image_shape: tuple, camera_intr
     # Make_valid returns a Geoseries, so turn it to a GeoDataFrame
     undistorted_polygon = gpd.GeoDataFrame(geometry=undistorted_polygon, crs=polygon.crs)
     return undistorted_polygon
-

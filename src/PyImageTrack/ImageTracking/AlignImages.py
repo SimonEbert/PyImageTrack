@@ -100,7 +100,8 @@ def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformati
 
 def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, reference_area: gpd.GeoDataFrame,
                             alignment_parameters: AlignmentParameters,
-                            return_alignment_transformation_matrix: bool = False):
+                            return_alignment_transformation_matrix: bool = False,
+                            valid_mask1: np.ndarray = None, valid_mask2: np.ndarray = None):
     """
     Aligns two georeferenced images opened in rasterio by matching them in the area given by the reference area.
     Takes only those image sections into account that have a cross-correlation higher than the specified threshold
@@ -125,6 +126,9 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
         The alignment parameters used for alignment, e.g. control_search_size_px
     return_alignment_transformation_matrix:
         If true, the 3d homogeneous transformation matrix aligning image2 to image1 will be returned as a np.array
+    valid_mask1, valid_mask2 : np.ndarray, optional
+        Two-dimensional validity masks for the corresponding images. Control
+        points on invalid pixels are excluded from alignment.
     Returns
     -------
     list
@@ -167,6 +171,7 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     tracked_control_pixels = track_movement_lsm(image1_matrix, image2_matrix, image_transform,
                                                 points_to_be_tracked=reference_area_point_grid,
                                                 alignment_parameters=alignment_parameters, alignment_tracking=True,
+                                                valid_mask1=valid_mask1, valid_mask2=valid_mask2,
                                                 save_columns=["movement_row_direction",
                                                               "movement_column_direction",
                                                               "movement_distance_pixels",

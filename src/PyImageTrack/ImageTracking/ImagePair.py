@@ -41,10 +41,10 @@ from ..DataProcessing.DataPostprocessing import (
 )
 
 # DataPreProcessing
+from ..DataProcessing.ImageEnhancement import apply_image_enhancement_state, apply_histogram_matching, mask_for_grid
 from ..DataProcessing.ImagePreprocessing import (
-    equalize_adapthist_images,
     undistort_camera_image,
-    convert_float_to_uint,
+    convert_to_float32,
     harmonize_dtypes,
     harmonize_resolution,
     check_channels_compatible,
@@ -71,14 +71,14 @@ class ImagePair:
     - Save results (vector/raster products, masks, statistics)
 
     Supported modes include optional camera undistortion, fake georeferencing with
-    synthetic pixel size, CLAHE enhancement, downsampling, and 3D displacement from
+    synthetic pixel size, image enhancement, downsampling, and 3D displacement from
     depth images. Output units can be yearly or total.
 
     Parameters
     ----------
     parameter_dict : dict, optional
         Configuration for alignment, tracking, filtering, output units, georeferencing
-        mode (real vs fake), pixel size overrides, downsample factor, CLAHE settings,
+        mode (real vs fake), pixel size overrides, downsample factor, image enhancement settings,
         camera calibration, and 3D displacement.
 
     Attributes
@@ -118,10 +118,12 @@ class ImagePair:
 
         # Data
         self.image1_matrix = None
+        self.image1_valid_mask = None
         self.image1_transform = None
         self.image1_observation_date = None
         self.image1_observation_date_user_string = None
         self.image2_matrix = None
+        self.image2_valid_mask = None
         self.image2_transform = None
         self.image2_observation_date = None
         self.image2_observation_date_user_string = None
@@ -167,9 +169,11 @@ class ImagePair:
         self.camera_distortion_coefficients = parameter_dict.get("camera_distortion_coefficients", None)
         self.camera_to_3d_coordinates_transform = parameter_dict.get("camera_to_3d_coordinates_transform", None)
         # Image enhancement parameters
-        self.enhancement_type = parameter_dict.get("enhancement_type", "none")
-        self.enhancement_kernel_size = parameter_dict.get("enhancement_kernel_size", 50)
-        self.enhancement_clip_limit = parameter_dict.get("enhancement_clip_limit", 0.9)
+        self.image_enhancement = parameter_dict.get("image_enhancement", [])
+        self.image_mask_path = parameter_dict.get("image_mask_path")
+        self.image_mask_mode = parameter_dict.get("image_mask_mode", "include")
+        self.image_mask_types = parameter_dict.get("image_mask_types", [])
+        self.image_mask_nodata_values = parameter_dict.get("image_mask_nodata_values", [])
         # Image bands (delegates to tracking_parameters.image_bands)
         self.image_bands = parameter_dict.get("image_bands")
         # Adaptive tracking window
@@ -185,6 +189,7 @@ class ImagePair:
         self.safe_image_bounds_alignment = None
         self._validate()
 
+# ToDo refactor as _validate_image_bands
     def _validate(self):
         # Validate image bands
         if self.image_bands is not None:
@@ -269,14 +274,27 @@ class ImagePair:
         Parameters
         ----------
         selected_channels : int | list[int] | tuple[int] | None, optional
-            Channel index/indices to select. ``None`` defaults to ``[0, 1, 2]``.
+            Channel index/indices to select. ``None`` keeps the original channels.
             Only applied when images are 3D (bands, height, width).
         """
         if selected_channels is None:
-            selected_channels = [0, 1, 2]
-        if len(self.image1_matrix.shape) == 3:
-            self.image1_matrix = np.squeeze(self.image1_matrix[selected_channels, :, :])
-            self.image2_matrix = np.squeeze(self.image2_matrix[selected_channels, :, :])
+            return
+
+        def _select_channels(arr, label):
+            if arr.ndim == 3:
+                return arr[selected_channels, :, :]
+            if arr.ndim == 2:
+                channels = selected_channels
+                if isinstance(channels, int):
+                    channels = [channels]
+                if list(channels) == [0]:
+                    return arr
+            raise ValueError(
+                f"Cannot select channel(s) {selected_channels} from {label} with shape {arr.shape}."
+            )
+
+        self.image1_matrix = _select_channels(self.image1_matrix, "image 1")
+        self.image2_matrix = _select_channels(self.image2_matrix, "image 2")
 
 
     def make_safe_bounds(self,buffer_to_image_bounds: int):
@@ -383,6 +401,8 @@ class ImagePair:
 
             # Harmonize datatypes
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
+            self.image1_matrix = convert_to_float32(self.image1_matrix)
+            self.image2_matrix = convert_to_float32(self.image2_matrix)
 
             # Harmonize resolution if necessary
             self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
@@ -420,9 +440,6 @@ class ImagePair:
             # Store original matrices for true-color alignment output (before harmonization and dtype change)
             self.image1_matrix_original = arr1.copy()
             self.image2_matrix_original = arr2.copy()
-            # Automatically convert float images to uint16 for better alignment
-            arr1 = convert_float_to_uint(arr1)
-            arr2 = convert_float_to_uint(arr2)
 
             self.image1_matrix = arr1
             self.image2_matrix = arr2
@@ -474,7 +491,9 @@ class ImagePair:
 
             # Harmonize dtypes (may already be uint16, but verifies)
             self.image1_matrix, self.image2_matrix = harmonize_dtypes(self.image1_matrix, self.image2_matrix)
-            
+            self.image1_matrix = convert_to_float32(self.image1_matrix)
+            self.image2_matrix = convert_to_float32(self.image2_matrix)
+
             # Harmonize resolution if necessary (before applying downsample_factor)
             self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
                 self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform)
@@ -495,6 +514,26 @@ class ImagePair:
         # Set image_bounds for fallback alignment mode (when reference_area is None)
         # This is used by align_images() when stable_area_filename is "none"
         # Similar logic to load_images_from_matrix_and_transform()
+        # Keep a spatial validity mask even when image enhancement is disabled.
+        self.image1_valid_mask = np.isfinite(self.image1_matrix)
+        self.image2_valid_mask = np.isfinite(self.image2_matrix)
+        if self.image1_matrix.ndim == 3:
+            self.image1_valid_mask = np.all(self.image1_valid_mask, axis=0)
+            self.image2_valid_mask = np.all(self.image2_valid_mask, axis=0)
+        mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
+        if mask_enabled and "nodata" in self.image_mask_types:
+            for value in self.image_mask_nodata_values:
+                self.image1_valid_mask &= ~np.all(self.image1_matrix == value, axis=0) if self.image1_matrix.ndim == 3 else self.image1_matrix != value
+                self.image2_valid_mask &= ~np.all(self.image2_matrix == value, axis=0) if self.image2_matrix.ndim == 3 else self.image2_matrix != value
+        if mask_enabled and self.image_mask_path and "custom" in self.image_mask_types:
+            self.image1_valid_mask &= mask_for_grid(
+                self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs,
+                mode=self.image_mask_mode
+            )
+            self.image2_valid_mask &= mask_for_grid(
+                self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs,
+                mode=self.image_mask_mode
+            )
         px_size = safe_px_size_bounds
         ext = getattr(self.tracking_parameters, "search_extent_px", None)
         if not ext:
@@ -517,9 +556,13 @@ class ImagePair:
         # Calculate delta t between observations
         self.time_between_observations = self.image2_observation_date - self.image1_observation_date
 
+        # Use one numeric representation for enhancement, alignment, and tracking.
+        self.image1_matrix = convert_to_float32(self.image1_matrix)
+        self.image2_matrix = convert_to_float32(self.image2_matrix)
+
         if NA_value is not None:
-            self.image1_matrix[self.image1_matrix == NA_value] = 0
-            self.image2_matrix[self.image2_matrix == NA_value] = 0
+            self.image1_matrix[self.image1_matrix == NA_value] = np.nan
+            self.image2_matrix[self.image2_matrix == NA_value] = np.nan
 
 
         # Compute effective buffer if needed
@@ -558,10 +601,8 @@ class ImagePair:
             buffer_to_image_bounds=max(getattr(self.alignment_parameters, "control_search_extent_px", None))
             + getattr(self.alignment_parameters, "control_cell_size", None)/2)
 
-        # Select image bands
-        if self.image_bands is not None:
-            self.select_image_channels(selected_channels=self.image_bands)
-        elif self.image1_matrix.ndim == 3:
+        # Record selected image bands. Selection already happened before compatibility checks.
+        if self.image_bands is None and self.image1_matrix.ndim == 3:
             self.image_bands = self.image1_matrix.shape[0]
 
         if type(observation_date_1) is not dt.datetime:
@@ -678,7 +719,9 @@ class ImagePair:
                 image_transform=self.image1_transform,
                 reference_area=reference_area_safe_bounds,
                 alignment_parameters=self.alignment_parameters,
-                return_alignment_transformation_matrix=True
+                return_alignment_transformation_matrix=True,
+                valid_mask1=self.image1_valid_mask,
+                valid_mask2=self.image2_valid_mask,
             )
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
@@ -690,9 +733,14 @@ class ImagePair:
                 image2_matrix=self.image2_matrix,
                 image_transform=self.image1_transform,
                 reference_area=reference_area_safe_bounds,
-                alignment_parameters=self.alignment_parameters
+                alignment_parameters=self.alignment_parameters,
+                valid_mask1=self.image1_valid_mask,
+                valid_mask2=self.image2_valid_mask,
             )
 
+        # The aligned second image uses image 1's grid. Keep the user mask in
+        # that same grid for subsequent tracking.
+        self.image2_valid_mask = self.image1_valid_mask.copy()
         self.valid_alignment_possible = True
 
         self.time_between_observations = self.image2_observation_date - self.image1_observation_date
@@ -859,6 +907,7 @@ class ImagePair:
             distance_px=dp_px,
             pixel_size=px_size,
         )
+        original_point_count = len(points_to_be_tracked)
 
 
         if len(points_to_be_tracked) == 0:
@@ -868,7 +917,16 @@ class ImagePair:
                                             points_to_be_tracked=points_to_be_tracked,
                                             tracking_parameters=self.tracking_parameters,
                                             alignment_tracking=False,
+                                            valid_mask1=self.image1_valid_mask,
+                                            valid_mask2=self.image2_valid_mask,
                                             task_label="[~] Tracking points for movement tracking")
+        accepted_point_count = len(tracked_points)
+        self.tracking_quality = {
+            "original_point_count": original_point_count,
+            "accepted_point_count": accepted_point_count,
+            "accepted_ratio": accepted_point_count / original_point_count if original_point_count else 0.0,
+            "minimum_ratio": self.tracking_parameters.minimum_valid_tracking_point_ratio,
+        }
         # calculate the years between observations from the two given observation dates
 
         if self.convert_to_3d_displacement:
@@ -1052,7 +1110,9 @@ class ImagePair:
                           "movement_bearing_pixels",
                           "correlation_coefficient",
                           ],
-            task_label="[~] Tracking points for LoD"
+            task_label="[~] Tracking points for LoD",
+            valid_mask1=self.image1_valid_mask,
+            valid_mask2=self.image2_valid_mask,
         )
         tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
@@ -1184,8 +1244,6 @@ class ImagePair:
             return
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection,
                                                   self.displacement_column_name)
-
-
     # ToDO: Remove?
     # def full_filter(self, reference_area, filter_parameters: FilterParameters):
     #     """
@@ -1218,25 +1276,95 @@ class ImagePair:
     #     self.calculate_lod(points_for_lod_calculation, filter_parameters)
     #     self.filter_lod_points()
 
-    def equalize_adapthist_images(self):
+    def enhance_images(self):
         """
-        Apply Contrast Limited Adaptive Histogram Equalization (CLAHE) in-place.
+        Apply configured image enhancement steps in-place.
 
-        Uses ``enhancement_kernel_size`` and ``enhancement_clip_limit`` on
-        ``image1_matrix`` and ``image2_matrix``. Mutates the stored matrices.
+        Mutates ``image1_matrix`` and ``image2_matrix``.
 
         Returns
         -------
         None
         """
         console = get_console()
-        console.processing("Enhancing images using " + self.enhancement_type + " enhancement type. This may take a moment.")
-        self.image1_matrix = equalize_adapthist_images(self.image1_matrix,
-                                                       kernel_size=self.enhancement_kernel_size,
-                                                       clip_limit=self.enhancement_clip_limit)
-        self.image2_matrix = equalize_adapthist_images(self.image2_matrix,
-                                                       kernel_size=self.enhancement_kernel_size,
-                                                       clip_limit=self.enhancement_clip_limit)
+        mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
+        enhancement_mask_required = any(
+            step.get("type") in {
+                "percentile_stretch", "adaptive_gamma", "histogram_matching",
+                "local_contrast_normalization",
+                "multi_scale_retinex", "difference_of_gaussians", "naof",
+                "unsharp_masking",
+                "gradient_magnitude",
+            }
+            for step in self.image_enhancement
+        )
+        enhancement_masks = (None, None)
+        if enhancement_mask_required:
+            enhancement_masks = (
+                self._enhancement_valid_mask(self.image1_matrix, self.image1_transform),
+                self._enhancement_valid_mask(self.image2_matrix, self.image2_transform),
+            )
+        state1 = apply_image_enhancement_state(self.image1_matrix, [], valid_mask=enhancement_masks[0])
+        state2 = apply_image_enhancement_state(self.image2_matrix, [], valid_mask=enhancement_masks[1])
+        for step in self.image_enhancement:
+            if step.get("type") == "histogram_matching":
+                if step["parameters"]["reference"] == "first":
+                    state2.image = apply_histogram_matching(
+                        state2.image, state1.image, state2.valid_mask, state1.valid_mask
+                    )
+                else:
+                    state1.image = apply_histogram_matching(
+                        state1.image, state2.image, state1.valid_mask, state2.valid_mask
+                    )
+            elif step.get("type") != "mask":
+                state1 = apply_image_enhancement_state(state1.image, [step], valid_mask=state1.valid_mask)
+                state2 = apply_image_enhancement_state(state2.image, [step], valid_mask=state2.valid_mask)
+        self.image1_matrix = state1.image
+        self.image2_matrix = state2.image
+        self.image1_valid_mask = state1.valid_mask
+        self.image2_valid_mask = state2.valid_mask
+        if mask_enabled and "nodata" in self.image_mask_types:
+            for value in self.image_mask_nodata_values:
+                self.image1_valid_mask &= ~np.all(self.image1_matrix == value, axis=0) if self.image1_matrix.ndim == 3 else self.image1_matrix != value
+                self.image2_valid_mask &= ~np.all(self.image2_matrix == value, axis=0) if self.image2_matrix.ndim == 3 else self.image2_matrix != value
+        if mask_enabled and self.image_mask_path and "custom" in self.image_mask_types:
+            self.image1_valid_mask &= mask_for_grid(self.image_mask_path, self.image1_matrix.shape[-2:], self.image1_transform, self.crs, mode=self.image_mask_mode)
+            self.image2_valid_mask &= mask_for_grid(self.image_mask_path, self.image2_matrix.shape[-2:], self.image2_transform, self.crs, mode=self.image_mask_mode)
+
+        step_labels = {
+            "mask": "Mask",
+            "clahe": "CLAHE",
+            "percentile_stretch": "percentile stretch",
+            "adaptive_gamma": "adaptive gamma",
+            "histogram_matching": "histogram matching",
+            "local_contrast_normalization": "local contrast normalization",
+            "multi_scale_retinex": "multi-scale Retinex",
+            "difference_of_gaussians": "difference of Gaussians",
+            "unsharp_masking": "unsharp masking",
+            "naof": "NAOF",
+            "gradient_magnitude": "gradient magnitude",
+        }
+        step_names = [step_labels.get(step.get("type"), step.get("type")) for step in self.image_enhancement]
+        if step_names:
+            console.info(f"Image enhancement applied: {', '.join(step_names)}")
+            console.info_verbose("Image enhancement steps:")
+            for index, step_name in enumerate(step_names, start=1):
+                console.info_verbose(f"{index}. {step_name}", indent=2)
+
+    def _enhancement_valid_mask(self, image, transform):
+        """Build the existing image validity mask before percentile calculation."""
+        valid = np.isfinite(image)
+        valid = valid if image.ndim == 2 else np.all(valid, axis=0)
+        mask_enabled = any(step.get("type") == "mask" for step in self.image_enhancement)
+        if mask_enabled and "nodata" in self.image_mask_types:
+            for value in self.image_mask_nodata_values:
+                valid &= ~(image == value if image.ndim == 2 else np.all(image == value, axis=0))
+        if mask_enabled and self.image_mask_path and "custom" in self.image_mask_types:
+            valid &= mask_for_grid(
+                self.image_mask_path, image.shape[-2:], transform, self.crs,
+                mode=self.image_mask_mode,
+            )
+        return valid
 
         console.success("Finished image enhancement.")
 
@@ -1595,6 +1723,21 @@ class ImagePair:
                     else "NA"
                 )
                 statistics_file.write(f"Level of Detection (q{self.filter_parameters.level_of_detection_quantile}): {lod_str}\n")
+
+                quality = getattr(self, "tracking_quality", [])
+                if isinstance(quality, dict):
+                    quality = [quality]
+                statistics_file.write(
+                    "Minimum valid tracking point ratio: "
+                    f"{self.tracking_parameters.minimum_valid_tracking_point_ratio:.2%}\n"
+                )
+                for item in quality:
+                    statistics_file.write(
+                        f"Tracking area {item.get('moving_id', 'all')}: "
+                        f"{item.get('accepted_point_count', 0)} of "
+                        f"{item.get('original_point_count', 0)} points accepted "
+                        f"({item.get('accepted_ratio', 0.0):.2%})\n"
+                    )
 
                 statistics_file.write(
                     "Total number of points: " + str(total_number_of_points) + "\n"

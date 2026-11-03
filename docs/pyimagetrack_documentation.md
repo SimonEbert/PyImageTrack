@@ -36,6 +36,40 @@ Date: 2026-02-18
 PyImageTrack provides alignment and feature tracking for georeferenced imagery, with optional filtering and output visualization.
 The main entry point is the CLI command `pyimagetrack-run`, configured via TOML files in `configs/`.
 
+## Gradient Magnitude Enhancement
+
+`gradient_magnitude` converts each image band independently to the Euclidean
+magnitude of its classical Sobel gradients. It emphasizes spatial intensity
+changes while discarding gradient direction and sign, and is intended as input
+to the existing alignment and tracking algorithms.
+
+The fixed, unnormalized kernels are:
+
+```text
+Kx = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]]
+Ky = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]]
+G = hypot(Kx * I, Ky * I)
+```
+
+The output remains floating point and is not rescaled. Optional Gaussian
+smoothing is configured by `gaussian_sigma` in pixels; `0.0` (the default)
+disables smoothing. Invalid pixels are excluded from smoothing, and only
+pixels with complete valid 3x3 support are marked valid, including at image
+boundaries. Grayscale and multiband images retain their shape and channel
+order. Smoothing can reduce noise but may also remove fine features.
+
+Enable it explicitly and keep it in the desired pipeline order:
+
+```toml
+steps = ["gradient_magnitude"]
+gradient_magnitude = [0.0] # arguments: gaussian_sigma
+```
+
+This operation is distinct from DoG, unsharp masking, NAOF and Canny edge
+detection. It follows the classical Sobel-Feldman operator described by Sobel
+and Feldman (1968); Ma et al. (2017) is relevant motivation for gradient-based
+remote-sensing registration, but does not define this preprocessing method.
+
 ## Running The Pipeline
 ```
 pyimagetrack-run --config configs/example_config.toml
@@ -403,13 +437,38 @@ Configs are TOML files and share the same structure. Use `configs/example_config
 - `[no_georef]`: enable for non-ortho images (e.g., JPGs) and configure fake georeferencing and depth-image options.
 - `[downsampling]`: optional downsampling for fast smoke tests.
 - `[flags]`: alignment/tracking/filtering toggles.
-- `[image_enhancement]`: optional image enhancement (CLAHE) configuration.
+- `[image_enhancement]`: optional image enhancement (CLAHE or percentile stretch) configuration.
 - `[cache]`: caching and recompute flags.
 - `[output]`: optional outputs such as true-color alignment and interactive plot display.
 - `[output_units]`: **required** - specifies whether movement values are normalized per year or reported as total displacement.
 - `[adaptive_tracking_window]`: when enabled, search extent scales by time span between images. The `search_extent_px` parameter then represents the expected movement per year, and the actual search window is calculated as `search_extent_px * years_between_observations`.
 - `[alignment]`, `[tracking]`, `[filter]`: algorithm parameters.
 - `[save]`: list of output files to write.
+
+### Tracking point-ratio validation
+The `[tracking]` parameter `minimum_valid_tracking_point_ratio` defines the
+minimum fraction of points generated for a moving area that must pass the
+configured `cross_correlation_threshold_movement`:
+
+```toml
+[tracking]
+cross_correlation_threshold_movement = 0.1
+minimum_valid_tracking_point_ratio = 0.3
+```
+
+The value must be between `0.0` and `1.0`. A value of `0.3`, for example,
+requires at least 30% of the originally generated points to pass the
+correlation threshold. A value of `0.0` disables this check.
+
+The check is performed separately for each moving area, before LoD and outlier
+filtering. If one moving area does not reach the ratio, that area is skipped while
+other areas continue. If no moving area passes, the current image pair is skipped.
+In batch mode, processing continues with the remaining identifiers.
+
+For each moving area, the console reports the number and fraction of points that
+passed the correlation threshold. The configured ratio and the resulting point
+counts are also written to tracking cache metadata, parameter output, and
+statistical results.
 
 ### Stable Area Fallback Mode
 The `[polygons]` section supports an optional fallback mode for defining the stable area. If `stable_area_filename` is set to `"none"` or the specified file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable. The resulting stable area is treated like the merged reference area described above.
@@ -712,13 +771,17 @@ Builds image pairs from filenames and returns:
 
 #### Parameters
 ``input_folder`` : str
-    Folder containing images. Filenames must contain date tokens in ISO format (year-first).
+    Folder containing images. Filenames can contain date tokens in ISO format (year-first),
+    or they can be resolved through `date_csv_path` by filename/ID.
 
 ``date_csv_path`` : str or None
-    Optional CSV with `date` column for resolving dates from filenames. Dates in CSV use the same format as filename dates.
+    Optional CSV with `date` column for resolving dates from filenames, image IDs, or
+    arbitrary dataset IDs. Dates in CSV use the same format as filename dates.
 
 ``pairs_csv_path`` : str or None
-    Optional CSV specifying custom pairs (date_earlier/date_later).
+    Optional CSV specifying custom pairs. Preferred columns are
+    dataset_earlier/dataset_later; legacy date_earlier/date_later columns are
+    still accepted.
 
 ``pairing_mode`` : str
     all | successive | first_to_all | custom.
@@ -742,7 +805,10 @@ Builds image pairs from filenames and returns:
 
 #### Notes
 - Date tokens in filenames are extracted using the same `parse_date()` function as CSV dates.
-- All dates must start with year (YY or YYYY) and use ISO-standard format.
+- If an image matches `date_csv_path` by filename without extension or image ID, no date
+  token is required in the filename.
+- Custom pair CSVs can reference those dataset IDs directly.
+- All actual dates must start with year (YY or YYYY) and use ISO-standard format.
 - See `parse_date()` documentation for supported date formats.
 - When `identifier` is provided, only images with matching identifiers are paired.
 - See `extract_identifier()` documentation for identifier extraction pattern.
@@ -825,7 +891,9 @@ Builds a short filter code for output folders.
     Folder code.
 
 ### abbr_enhancement(ep)
-Builds a short enhancement code for output folders.
+Builds a compact, ordered enhancement code for output folders. Method
+parameters are represented by a short hash rather than being written into the
+folder name.
 
 #### Parameters
 ``ep`` : object or dict
@@ -833,7 +901,7 @@ Builds a short enhancement code for output folders.
 
 #### Returns
 ``code`` : str
-    Folder code (e.g., "E_none", "E_clahe_K50_C0.9").
+    Folder code (e.g., `E_none` or `E_CL_H9A8B0061`).
 
 ### _part(prefix: str, value: str | None) -> str | None
 Internal helper for compact code component creation.
@@ -846,7 +914,7 @@ Recomputes LoD from available points (cache/consistency helper).
 
 ## Image Enhancement Configuration
 
-The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations.
+The pipeline supports optional image enhancement before alignment and tracking. Enhancement is applied to both images and affects both subsequent operations. Steps are executed in the order listed in `image_enhancement_steps`.
 
 ### Configuration Section
 
@@ -857,22 +925,216 @@ The pipeline supports optional image enhancement before alignment and tracking. 
 do_image_enhancement = true
 
 [image_enhancement]
-# Enhancement type: "clahe", "none", or future types
-type = "clahe"
-# CLAHE-specific parameters (common defaults: kernel_size = 50, clip_limit = 0.9)
+image_enhancement_steps = ["clahe"]
+
+# CLAHE improves local contrast.
+[[image_enhancement_clahe]]
 kernel_size = 50
 clip_limit = 0.9
+# Optional zero-based band selection. Omit to process all bands.
+# bands = [0, 1, 2]
 ```
 
 ### Enhancement Types
 
 #### CLAHE (Contrast Limited Adaptive Histogram Equalization)
-- `type = "clahe"`
+- Add `"clahe"` to `image_enhancement_steps`
+- Configure one `[[image_enhancement_clahe]]` table for each occurrence of `clahe`
 - `kernel_size`: Size of the grid for histogram equalization
 - `clip_limit`: Contrast limiting threshold
+- `bands`: Optional zero-based list of bands; omitted means all bands
+
+#### Percentile Stretch
+
+Percentile stretch independently maps each band linearly to `[0, 1]`, clipping
+values below the lower percentile and above the upper percentile. The default
+percentiles are 1 and 99; invalid and NoData pixels remain invalid. It supports
+grayscale and arbitrary multiband images without 8-bit quantization.
+
+```toml
+[image_enhancement]
+steps = ["percentile_stretch"]
+percentile_stretch = [1.0, 99.0]
+```
+
+The transformation is `clip((I - P_low) / (P_high - P_low), 0, 1)` and follows
+the mathematical principle described by Lentz, Sevil & Fries (2025),
+https://doi.org/10.1038/s41598-025-94176-x. Percentiles are calculated with
+NumPy and may therefore not be pixel-identical to MATLAB implementations.
+
+#### Adaptive Gamma Correction
+
+Adaptive gamma correction calculates a separate gamma value for each image
+band from its valid-pixel mean and maximum intensity. Enable it without any
+numeric parameters:
+
+```toml
+[image_enhancement]
+steps = ["adaptive_gamma"]
+```
+
+Adding `"adaptive_gamma"` to `steps` is sufficient; the method has no
+additional parameters.
+
+For each image and band, PyImageTrack uses Wang et al. (2022), Section 3.1:
+`gamma = 1 / (2 ** (I_mean / I_max))` and
+`I_out = I_max * (I_in / I_max) ** gamma`.
+Only finite, valid and unmasked pixels contribute to the mean and maximum.
+Zero bands are left unchanged, invalid pixels retain their original values,
+and negative valid intensities are rejected. Grayscale and arbitrary
+multiband arrays are supported without 8-bit conversion; channels are
+processed independently. This is a PyImageTrack extension—the publication
+evaluates the method on grayscale images. For non-negative data with a
+positive maximum, gamma lies between 0.5 and 1, so this is a brightness
+enhancement rather than bidirectional exposure correction.
+
+Reference: Wang, J., Li, Y., Wang, Y., Lv, H. & Lu, X. (2022), *Video Sequence
+Image Matching Algorithm Based on Adaptive Gamma Correction*, Journal of
+Physics: Conference Series 2400, 012042,
+https://doi.org/10.1088/1742-6596/2400/1/012042. The publication also changes
+the matching pipeline, so its reported matching improvements cannot be
+attributed to gamma correction alone.
+
+#### Global histogram matching
+
+Global histogram matching transforms only the non-reference image in each
+image pair so that its valid-pixel intensity distribution follows the selected
+reference image. Add `"histogram_matching"` to `steps` and configure the
+direction with `histogram_matching = ["first"]` or `histogram_matching =
+["second"]`; the default is `"first"`. Matching is global and independent per
+band. Invalid and masked pixels are excluded from the cumulative distributions
+and remain unchanged. The selected reference image is not transformed.
+
+#### Local contrast normalization (LCN)
+
+LCN is an image-independent enhancement applied independently to every band:
+
+```toml
+[image_enhancement]
+steps = ["local_contrast_normalization"]
+local_contrast_normalization = [9] # arguments: kernel_size
+```
+
+For each band, it subtracts the Gaussian-weighted local mean,
+`V = I - G * I`, then computes `sigma = sqrt(G * V^2)` from the centered
+values and divides by `max(c, sigma, epsilon)`. Here `c` is the mean of
+`sigma` over valid pixels. The default is a normalized symmetric 9 x 9
+Gaussian kernel with `sigma = kernel_size / 6`; kernel sizes must be positive
+odd integers. Invalid, NoData and custom-masked pixels are excluded using
+normalized convolution and remain unchanged. Results stay signed and are not
+clipped or rescaled.
+
+LCN reduces low-frequency brightness and contrast differences but changes the
+intensity distribution and does not necessarily improve tracking. Low-
+contrast regions can be sensitive to noise. This adapts the spatial
+subtractive/divisive normalization principle of Jarrett et al. (2009),
+originally described for neural-network feature maps, to independent image
+bands without neural-network-specific operations.
+
+#### Multi-Scale Retinex (MSR)
+
+MSR applies the classical Gaussian center/surround Retinex independently to
+each band and combines the results with equal weights. Enable it as follows:
+
+```toml
+[image_enhancement]
+steps = ["multi_scale_retinex"]
+multi_scale_retinex = [[15.0, 80.0, 250.0]] # Gaussian standard deviations in pixels
+```
+
+The values are standard deviations in pixels, using the same convention as
+`scipy.ndimage.gaussian_filter`; they are not the Retinex publication's space
+constants. The defaults are small, intermediate and large spatial scales and
+are not automatically adjusted to image dimensions. Invalid and masked pixels
+are excluded with normalized Gaussian convolution. Negative valid intensities
+receive a deterministic per-band offset before the logarithm, while the raw
+signed floating-point MSR result is preserved without display normalization,
+clipping or color restoration. The implementation follows Jobson, Rahman and
+Woodell (1997), https://doi.org/10.1109/83.597272.
+
+#### Difference of Gaussians (DoG)
+
+DoG subtracts a Gaussian-smoothed image at the smaller scale from an
+independently smoothed image at the larger scale, per image band:
+
+```toml
+[image_enhancement]
+steps = ["difference_of_gaussians"]
+difference_of_gaussians = [1.0, 1.6] # sigma1, sigma2 in pixels
+
+Classical Gaussian unsharp masking can be enabled explicitly with:
+
+```toml
+steps = ["unsharp_masking"]
+unsharp_masking = [1.0, 1.0] # sigma, amount
+```
+
+For each band, PyImageTrack computes `B = G_sigma * I` and reconstructs
+`I_USM = I + amount * (I - B)`. The defaults (`sigma = 1.0`, `amount = 1.0`)
+are implementation choices. Gaussian filtering uses reflected image
+boundaries; NoData, non-finite and custom-mask pixels are excluded through
+normalized weighted convolution and retain their original invalid values.
+RGB and multiband arrays are processed independently per band. The result is
+floating point and is not clipped or rescaled, so negative and above-range
+values are possible. USM differs from DoG because it adds the high-frequency
+residual back to the original image. Strong settings can amplify noise and
+halos and may affect image matching; accuracy improvements must be evaluated
+experimentally. The classical theoretical reference is Levi (1974),
+“Unsharp masking and related image enhancement techniques”.
+```
+
+Both values must be positive and `sigma2` must be greater than `sigma1`.
+The boundary mode is SciPy's reflected mode and the Gaussian kernel uses
+SciPy's default four-standard-deviation truncation. Invalid and masked pixels
+are excluded using normalized Gaussian convolution. The signed floating-point
+result is preserved without absolute values, clipping, or automatic rescaling.
+This adapts Lowe (2004), Section 3, for preprocessing; it does not implement
+the complete SIFT detector or descriptor pipeline.
+
+Reference: Lowe (2004), https://doi.org/10.1023/B:VISI.0000029664.99615.94.
+
+#### Near Anisotropic Orientation Filter (NAOF)
+
+Enable NAOF with `steps = ["naof"]`; it has no configurable parameters. The
+four fixed GIV directional orientation responses are summed independently for
+each image band. Invalid pixels and 3 x 3 neighbourhoods containing invalid
+pixels are excluded, while invalid input values remain unchanged. The signed
+floating-point result is preserved without clipping or rescaling.
+
+The mask step supports NoData values and an optional user-provided custom mask.
+
+### External image mask
+
+An optional external mask can be configured with a Shapefile, GeoPackage,
+GeoJSON, or raster file:
+
+```toml
+[paths]
+image_mask_path = "mask.shp"  # use "none" to disable the custom mask
+
+[image_enhancement]
+steps = ["mask"]
+mask = [["nodata", "custom"], [0], "exclude"]
+```
+
+Vector geometries are rasterized onto each image grid. Raster masks are
+reprojected and resampled with nearest-neighbour interpolation. Non-zero mask
+The compact mask configuration contains ``types``, ``nodata_values``, and the
+custom-mask mode. NoData values are always excluded. With ``custom_mode =
+"include"`` (the third value), only the custom mask area is allowed; with
+``"exclude"``, the custom mask area is excluded. The external mask is combined
+with the technical NoData mask.
 
 #### None (no enhancement)
-- `type = "none"` or omit the section
+- Set `do_image_enhancement = false` or use `image_enhancement_steps = []`.
+
+### Internal image representation
+
+During enhancement, alignment, and tracking, images use `float32`. Rasterio
+multi-band input is treated as bands-first `(bands, height, width)`, while
+single-band input uses `(height, width)`. The persistent `valid_mask` is a
+two-dimensional `(height, width)` boolean array. `True` denotes a valid pixel.
+NoData values are represented internally as `NaN` and marked invalid.
 
 ### Output Path Structure
 
@@ -886,7 +1148,7 @@ output_folder / year1_year2 / enhancement_code / align_code / track_code / filte
 
 Each processing step generates a code that appears in the output path:
 
-- **Enhancement**: `E_none` (disabled) or `E_clahe_K50_C0.9` (with parameters)
+- **Enhancement**: `E_none` (disabled) or a compact code such as `E_CL_H9A8B0061`
 - **Alignment**: `A_none` (disabled) or `A_CP2000_CC5_CCa0.8` (with parameters)
 - **Tracking**: Always uses tracking parameters (e.g., `T_IB3_DP3_MC20_CC0.5`)
 - **Filtering**: `F_none` (disabled) or `F_LoDq0.5_N1000_...` (with parameters)
@@ -896,6 +1158,11 @@ Each processing step generates a code that appears in the output path:
 When certain processing steps are disabled and not loaded from cache, the output path uses special "none" codes:
 
 - **Enhancement**: If `do_image_enhancement = false`, the path uses `E_none`
+
+The enhancement code contains short method codes in processing order and a
+short hash of the complete normalized configuration. Therefore, parameter
+changes and order changes produce different paths without making folder names
+long.
 - **Alignment**: If `do_alignment = false`, the path uses `A_none`
 - **Filtering**: If `do_filtering = false`, the path uses `F_none`
 - **Tracking**: No "none" code is used for tracking, as tracking is required for meaningful output
@@ -1131,6 +1398,7 @@ Container for tracking parameters.
 - ``search_extent_deltas``
 - ``movement_cell_size``
 - ``cross_correlation_threshold_movement``
+- ``minimum_valid_tracking_point_ratio``
 
 #### Methods
 
@@ -1603,9 +1871,7 @@ Parameters are read from `parameter_dict`. Common keys:
 - ``camera_intrinsics_matrix``        # 3x3 matrix (if undistortion or 3D conversion is enabled)
 - ``camera_distortion_coefficients``  # 2- or 4-element array (OpenCV format)
 - ``camera_to_3d_coordinates_transform``  # optional 4x4 homogeneous transform for output coordinates
-- ``enhancement_type``                # image enhancement type ("clahe", "none")
-- ``enhancement_kernel_size``         # kernel size for CLAHE
-- ``enhancement_clip_limit``          # clip limit for CLAHE
+- ``image_enhancement``              # ordered image enhancement steps
 
 #### _effective_pixel_size() -> float
 Returns CRS units per pixel (assumes square pixels).
@@ -1782,8 +2048,8 @@ Runs outlier filtering, LoD calculation, and LoD filtering.
 #### Returns
 ``None``
 
-#### equalize_adapthist_images()
-Applies CLAHE to both images.
+#### enhance_images()
+Applies configured image enhancement steps to both images.
 
 #### Returns
 ``None``
@@ -1844,11 +2110,13 @@ Undistorts a camera image using OpenCV and returns the undistorted image cropped
 #### Returns
 ``image_matrix_undistorted`` : np.ndarray
     The undistorted image matrix, cropped to a rectangular shape where all pixels are valid.
-### equalize_adapthist_images(image_matrix, kernel_size, clip_limit)
-Applies CLAHE (adaptive histogram equalization) using scikit-image.
+### apply_image_enhancement_state(image_matrix, image_enhancement)
+Applies configured image enhancement steps and returns an
+`ImageProcessingState` containing the processed image and cumulative
+two-dimensional `valid_mask`.
 
-### convert_float_to_uint(image_matrix)
-Converts float arrays to unsigned integer representation for downstream processing.
+### convert_to_float32(image_matrix)
+Converts an image to the internal `float32` representation.
 
 ### convert_to_uint16(image_matrix)
 Converts images to uint16 where required.

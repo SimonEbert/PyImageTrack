@@ -35,7 +35,7 @@ def _prepare_raster_for_plotting(raster_matrix: np.ndarray, context_label: str =
     channel_axis = int(np.argmin(arr.shape))
     n_channels = int(arr.shape[channel_axis])
 
-    if n_channels > 3:
+    if n_channels not in (3, 4):
         get_console().warning(
             f"Raster for {context_label} has {n_channels} bands. Using band 1 in grayscale for visualization."
         )

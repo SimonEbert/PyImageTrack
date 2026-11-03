@@ -18,6 +18,48 @@ from .ImageInterpolator import ImageInterpolator
 from ..ConsoleOutput import get_console
 
 
+MINIMUM_VALID_TEMPLATE_FRACTION = 1.0
+
+
+class TrackingPointRatioError(ValueError):
+    """Raised when too few points pass the tracking correlation threshold."""
+
+    def __init__(self, original_count, accepted_count, minimum_ratio):
+        self.original_count = original_count
+        self.accepted_count = accepted_count
+        self.minimum_ratio = minimum_ratio
+        self.accepted_ratio = accepted_count / original_count if original_count else 0.0
+        super().__init__(
+            f"only {accepted_count} of {original_count} tracking points passed the "
+            f"cross-correlation threshold ({self.accepted_ratio:.1%}); the required "
+            f"minimum is {minimum_ratio:.1%}"
+        )
+
+
+def _points_with_valid_tracking_windows(rows, cols, masks, cell_size):
+    """Keep points whose template windows contain enough valid pixels."""
+    half_cell = int(np.ceil(float(cell_size) / 2.0))
+    row_radius = half_cell
+    col_radius = half_cell
+    valid = np.zeros(len(rows), dtype=bool)
+
+    for index, (row, col) in enumerate(zip(rows, cols)):
+        row_start = row - row_radius
+        row_stop = row + row_radius + 1
+        col_start = col - col_radius
+        col_stop = col + col_radius + 1
+        if row_start < 0 or col_start < 0:
+            continue
+        if any(row_stop > mask.shape[0] or col_stop > mask.shape[1] for mask in masks):
+            continue
+        valid[index] = all(
+            mask[row_start:row_stop, col_start:col_stop].mean()
+            >= MINIMUM_VALID_TEMPLATE_FRACTION
+            for mask in masks
+        )
+    return valid
+
+
 
 # def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):
 #     """
@@ -553,7 +595,8 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
 def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_be_tracked: gpd.GeoDataFrame,
                        tracking_parameters: TrackingParameters = None, alignment_parameters: AlignmentParameters = None,
                        alignment_tracking: bool = False,
-                       save_columns: list[str] = None, task_label: str = "Tracking points") -> pd.DataFrame:
+                       save_columns: list[str] = None, task_label: str = "Tracking points",
+                       valid_mask1: np.ndarray = None, valid_mask2: np.ndarray = None) -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)
     using the least-squares approach.
@@ -581,6 +624,10 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         The columns to be saved to the results dataframe. Default is None, which will save "movement_row_direction",
         "movement_column_direction", "movement_distance_pixels", and "movement_bearing_pixels".
         Possible further values are: "transformation_matrix" and "correlation_coefficient".
+    valid_mask1, valid_mask2 : np.ndarray, optional
+        Two-dimensional validity masks for the corresponding images. Points
+        whose complete template windows contain invalid pixels in either image
+        are excluded before tracking.
     Returns
     ----------
     tracked_pixels: A DataFrame containing one row for every tracked pixel, specifying the position of the tracked pixel
@@ -591,6 +638,38 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     if len(points_to_be_tracked) == 0:
         raise ValueError("No points provided in the points to be tracked GeoDataFrame. Please provide a GeoDataFrame"
                          "with  at least one element.")
+
+    original_point_count = len(points_to_be_tracked)
+
+    if (valid_mask1 is None) != (valid_mask2 is None):
+        raise ValueError("Both valid masks must be provided together.")
+    if valid_mask1 is not None:
+        expected_shape1 = image1_matrix.shape[-2:]
+        expected_shape2 = image2_matrix.shape[-2:]
+        if valid_mask1.shape != expected_shape1 or valid_mask2.shape != expected_shape2:
+            raise ValueError("Validity masks must match the spatial image dimensions.")
+        rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
+        in_bounds = (
+            (rows >= 0) & (rows < expected_shape1[0]) &
+            (cols >= 0) & (cols < expected_shape1[1]) &
+            (rows >= 0) & (rows < expected_shape2[0]) &
+            (cols >= 0) & (cols < expected_shape2[1])
+        )
+        if alignment_tracking:
+            cell_size = alignment_parameters.control_cell_size
+        else:
+            cell_size = tracking_parameters.movement_cell_size
+        valid_points = np.zeros(len(points_to_be_tracked), dtype=bool)
+        valid_indices = np.flatnonzero(in_bounds)
+        valid_points[valid_indices] = _points_with_valid_tracking_windows(
+            rows[valid_indices],
+            cols[valid_indices],
+            (valid_mask1, valid_mask2),
+            cell_size,
+        )
+        points_to_be_tracked = points_to_be_tracked.loc[valid_points].reset_index(drop=True)
+        if len(points_to_be_tracked) == 0:
+            raise ValueError("No points remain after applying the image validity masks.")
 
     # extract relevant parameters
     if alignment_tracking:
@@ -661,6 +740,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
     # create list of central indices in terms of the image matrix
     rows, cols = get_raster_indices_from_points(points_to_be_tracked, image_transform)
+    tracking_input_point_count = len(points_to_be_tracked)
     points_to_be_tracked_matrix_indices = np.array([rows, cols]).transpose()
     list_of_central_indices = points_to_be_tracked_matrix_indices.tolist()
     # build partial function
@@ -690,6 +770,7 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
                     desc=task_label,
                     unit="points",
                     smoothing=0.1,
+                    disable=get_console().quiet,
                     bar_format="{desc}: {percentage:3.0f}%|{bar}| {n_fmt}/{total_fmt} {unit}[{remaining}, {rate_fmt}]"
                 )
             )
@@ -792,6 +873,19 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
 
     if "correlation_coefficient" not in save_columns and "correlation_coefficient" in tracked_pixels_above_cc_threshold.columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
+
+    minimum_ratio = getattr(tracking_parameters, "minimum_valid_tracking_point_ratio", 0.0) if not alignment_tracking else 0.0
+    accepted_count = len(tracked_pixels_above_cc_threshold)
+    if minimum_ratio > 0.0 and (
+        original_point_count == 0 or accepted_count / original_point_count < minimum_ratio
+    ):
+        raise TrackingPointRatioError(original_point_count, accepted_count, minimum_ratio)
     
+    # Preserve counts for callers that need to report tracking quality. The returned
+    # dataframe is already filtered by the correlation threshold.
+    tracked_pixels_above_cc_threshold.attrs["original_point_count"] = original_point_count
+    tracked_pixels_above_cc_threshold.attrs["tracking_input_point_count"] = tracking_input_point_count
+    tracked_pixels_above_cc_threshold.attrs["accepted_point_count"] = accepted_count
+
     # Return the results
     return tracked_pixels_above_cc_threshold

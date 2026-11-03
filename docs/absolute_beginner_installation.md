@@ -32,6 +32,14 @@ Install the package in editable mode (installs all dependencies):
 pip install -e .
 ```
 
+Start with the example workflows described in [`docs/example_workflows.md`](example_workflows.md). The two examples are:
+
+- `00_example_two_images`: the smallest workflow with two images
+- `01_example_image_series`: several images with an `image_dates.csv` file
+- `02_example_non_georeferenced`: an advanced workflow for camera-based images
+
+The example files are placeholders and are not runnable until valid images, shapefiles, CSV content, and TOML settings have been added.
+
 Run the pipeline with a config:
 ```bash
 pyimagetrack-run --config configs/your_config.toml
@@ -73,6 +81,14 @@ Install the package in editable mode (installs all dependencies):
 pip install -e .
 ```
 
+Start with the example workflows described in [`docs/example_workflows.md`](example_workflows.md). The two examples are:
+
+- `00_example_two_images`: the smallest workflow with two images
+- `01_example_image_series`: several images with an `image_dates.csv` file
+- `02_example_non_georeferenced`: an advanced workflow for camera-based images
+
+The example files are placeholders and are not runnable until valid images, shapefiles, CSV content, and TOML settings have been added.
+
 Run the pipeline with a config:
 ```powershell
 pyimagetrack-run --config configs\your_config.toml
@@ -84,19 +100,29 @@ pyimagetrack-run --config configs\your_config.toml
 
 After installation, these are the steps you repeat each time you want to run PyImageTrack.
 
+For a first run, use a completed example configuration. The configuration, input folder, and output folder use matching names:
+
+```text
+configs/00_example_two_images.toml
+input/00_example_two_images/
+output/00_example_two_images/
+```
+
 Linux:
 ```bash
 cd ~/PyImageTrack
 source .venv/bin/activate
-pyimagetrack-run --config configs/your_config.toml
+pyimagetrack-run --config configs/00_example_two_images.toml
 ```
 
 Windows (PowerShell):
 ```powershell
 cd $env:USERPROFILE\Documents\PyImageTrack
 .\.venv\Scripts\activate
-pyimagetrack-run --config configs\your_config.toml
+pyimagetrack-run --config configs\00_example_two_images.toml
 ```
+
+For your own data, copy an example TOML file, change its input and output paths, and adjust the processing parameters as needed.
 
 ---
 
@@ -130,9 +156,9 @@ Check and update these entries:
 - `paths.input_folder`: folder that contains the input images
 - `paths.date_csv_path`: CSV file with image dates (or `"none"` if not used)
 - `paths.pairs_csv_path`: CSV file with image pairs (or `"none"` if not used)
-- `polygons.moving_area_filename` and `polygons.stable_area_filename`: shapefiles with moving / stable area
-- Stable-area shapefiles can contain one or multiple singlepart polygons; they are merged into one reference area for alignment.
-- Moving-area shapefiles can contain one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index. Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
+- `polygons.moving_area_filename` and `polygons.stable_area_filename`: vector files with moving / stable area (`.shp`, `.geojson`, `.json`, or `.gpkg`)
+- Stable-area vector files can contain one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area vector files can contain one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index. Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
 - **Optional fallback**: If `stable_area_filename` is set to `"none"` or the file doesn't exist, the system will automatically use `image_bounds minus moving_area` as the stable area. This assumes all areas outside the moving area are stable. Alignment quality may be slightly lower but can be improved by increasing `number_of_control_points`.
 
 Example (from `configs/example_config.toml`):
@@ -153,10 +179,10 @@ moving_area_filename = "moving_area.shp"
 
 ### image_dates.csv
 
-This CSV file maps abbreviated date tokens from image names to full dates. When provided, the dates from this file **override** the dates extracted from filenames. This is useful when the filename contains an abbreviated date (e.g., `2024`) but you need to specify the full date (e.g., `2024-06-15`). If this file is not provided or set to `"none"`, dates are extracted directly from the filenames.
+This CSV file maps image names, image IDs, or abbreviated date tokens to full dates. When provided, matching rows **override** the dates extracted from filenames. This is useful when the filename contains an abbreviated date (e.g., `2024`) but you need to specify the full date (e.g., `2024-06-15`), or when your filenames use arbitrary dataset IDs instead of date tokens. If this file is not provided or set to `"none"`, dates are extracted directly from the filenames.
 
 **Required columns:**
-- `file` or `year` or `file/year`: The filename (without extension) or the date token as it appears in the image filename
+- `dataset` or `file` or `year` or `file/year`: The filename without extension, the image ID, or the date token as it appears in the image filename. `year` and `file/year` are legacy aliases.
 - `date`: The date in any supported format (see "Supported Date Token Formats" below). Missing parts default to standard values (month=01, day=01, hour=00, minute=00, second=00).
 
 **Example:**
@@ -175,6 +201,13 @@ year;date
 2024;2024-06        # Will be parsed as 2024-06-01
 ```
 
+Or using arbitrary dataset IDs from filenames:
+```csv
+dataset;date
+1935002;2024-06-15
+1935003;2025-07-08
+```
+
 **Note:** The delimiter can be either comma (`,`) or semicolon (`;`).
 
 ### image_pairs.csv
@@ -182,20 +215,22 @@ year;date
 This CSV file defines custom image pairs for tracking. It is required when `pairing.mode` is set to `"custom"`.
 
 **Required columns:**
-- `date_earlier`: The date token of the earlier image
-- `date_later`: The date token of the later image
+- `dataset_earlier`: The dataset ID or date token of the earlier image
+- `dataset_later`: The dataset ID or date token of the later image
+
+Legacy fallback columns `date_earlier` and `date_later` are still accepted.
 
 **Example:**
 ```csv
-date_earlier;date_later
-2024_07;2025_06
-2024_07;2024_09
-2024_09;2025_06
+dataset_earlier;dataset_later
+1935002;1935003
+1935002;1935004
+1935003;1935004
 ```
 
 **Important notes:**
 - The delimiter can be either comma (`,`) or semicolon (`;`)
-- The date tokens must match the leading numeric tokens in your image filenames
+- Dataset IDs must match the IDs used in `image_dates.csv` or the internal image IDs; date tokens must match the leading numeric tokens in your image filenames
 - The system extracts the leading numeric token from filenames (e.g., `2024-06-09.tif` → `2024-06-09`)
 - You can use abbreviated tokens if they uniquely identify the images (e.g., `24` for `2024-06-09.tif` if there's only one image from 2024)
 
@@ -271,9 +306,9 @@ identifier,class
 
 The identifier can appear anywhere in the filename, but must be preceded by `id`. The date token is still extracted as usual (see "Supported Date Token Formats" above).
 
-### Shapefile Wildcards in Batch Mode
+### Vector File Wildcards in Batch Mode
 
-Configuration files support wildcard patterns for shapefile names. The `*` wildcard is replaced with the actual identifier during batch processing.
+Configuration files support wildcard patterns for vector file names. The `*` wildcard is replaced with the actual identifier during batch processing.
 
 **Example configuration:**
 ```toml
@@ -294,9 +329,9 @@ For identifier `9109`, this will load `stable_area_9109.shp` and `moving_area_91
    - Filters Table B to find all identifiers with that class
    - Filters identifiers to only those present in the input folder (by checking for filenames containing `id<identifier>`)
    - Processes each identifier separately using the configuration
-   - Replaces wildcards (`*`) in shapefile names with the identifier
+   - Replaces wildcards (`*`) in vector file names with the identifier
 
 **Stable / Moving Areas:**
-- Stable-area shapefiles can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
-- Moving-area shapefiles can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
+- Stable-area vector files can include one or multiple singlepart polygons; they are merged into one reference area for alignment.
+- Moving-area vector files can include one or multiple polygons. Provide an ID column to report stats per polygon; missing IDs are filled with the row index.
 - Use `polygons.moving_id_column` to choose the ID column name (default: `moving_id`).
