@@ -978,7 +978,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             alignment_config = {
                 "parameters": alignment_params.to_dict(),
                 "effective_control_search_extent_px": effective_align_extents,
-                "image_bands": tracking_params.image_bands,
+                "image_bands": image_bands,
                 "enhancement": enhancement_config,
                 "use_no_georeferencing": bool(use_no_georeferencing),
                 "fake_pixel_size": fake_pixel_size,
