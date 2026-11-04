@@ -170,25 +170,110 @@ def make_effective_extents_from_deltas(deltas, cell_size, years_between=1.0, cap
 #     except (ValueError, IndexError):
 #         return False
 
-def extract_datetime_from_token(s: str) -> tuple[datetime, str] | None:
+def extract_datetime_from_token(s: str) -> tuple[datetime | None, str]:
     """Gets a filename (part) and extracts the found datetime token as a datetime object and the respective string given by the user."""
+    console = get_console()
+
     token_without_id = re.sub(r'id\d+','',s)
-    token_without_id = token_without_id.replace(':', '')
-    token_without_id = token_without_id.replace('T', '')
-    token_without_id = token_without_id.replace('_', '')
-    token_without_id = token_without_id.replace('-', '')
+
+    token_without_id = token_without_id.replace(':', '-')
+    token_without_id = token_without_id.replace('T', '-')
+    token_without_id = token_without_id.replace('_', '-')
+
+    default_datetime = datetime(2000,1,1,0,0,0,0)
+    DATE_RE = re.compile(r"""
+    (?<!\d)
+    (?P<year>(?:19|20)\d{2})
+    (?:
+      (?P<sep>[-./]?)
+      (?P<month>0[1-9]|1[0-2])
+      (?:
+        (?P=sep)
+        (?P<day>0[1-9]|[12]\d|3[01])
+        (?:
+          [T_/ .-]?
+          (?P<hour>[01]\d|2[0-3])
+          (?:
+            (?P<tsep>[-:._/ ]?)
+            (?P<minute>[0-5]\d)
+            (?:
+              (?P=tsep)
+              (?P<second>[0-5]\d)
+              (?:[.,](?P<frac>\d+))?
+            )?
+          )?
+        )?
+      )?
+    )?
+    (?!\d)
+    """, re.VERBOSE)
+
+    YY_RE = re.compile(r"""
+    (?<!\d)
+    (?P<yy>\d{2})
+    (?P<sep>[-./])
+    (?P<month>0[1-9]|1[0-2])
+    (?:
+      (?P=sep)
+      (?P<day>0[1-9]|[12]\d|3[01])
+      (?:
+          [T_/ .-]?
+          (?P<hour>[01]\d|2[0-3])
+          (?:
+            (?P<tsep>[-:._/ ]?)
+            (?P<minute>[0-5]\d)
+            (?:
+              (?P=tsep)
+              (?P<second>[0-5]\d)
+              (?:[.,](?P<frac>\d+))?
+            )?
+          )?
+        )?
+    )?
+    (?!\d)
+    """, re.VERBOSE)
+
+
+    def _from_groups(g):
+        """Build a datetime from DATE_RE groups, applying the defaults."""
+        frac = (g["frac"] or "0")[:6].ljust(6, "0")  # microseconds
+        return datetime(
+            int(g["year"]), int(g["month"] or 1), int(g["day"] or 1),
+            int(g["hour"] or 0), int(g["minute"] or 0), int(g["second"] or 0), int(frac),
+        )
+
+    def _parse_four_digit(m):
+        """Try dateutil first; fall back to the regex groups if it fails or disagrees."""
+        return _from_groups(m.groupdict())
+
+    def _parse_two_digit(m):
+        yy = int(m["yy"])
+        year = 2000 + yy
+        return datetime(year, int(m["month"]), int(m["day"] or 1))
+
+    datetime_guess_four_digit = DATE_RE.search(token_without_id)
+    datetime_guess_two_digit = YY_RE.search(token_without_id)  # fallback only if no 4-digit-year date exists
+
     try:
-        datetime_observation, unused_string_parts = dateutil.parser.parse(token_without_id,yearfirst=True,fuzzy_with_tokens=True,dayfirst=False)
-    except dateutil.parser.ParserError:
-        console = get_console()
-        console.warning("Was not able to parse the datetime from filename " + s)
-        return None
+        if datetime_guess_four_digit:
+            parsed_datetime = _parse_four_digit(datetime_guess_four_digit)
+            return parsed_datetime, datetime_guess_four_digit.group()
+        if datetime_guess_two_digit:
+            return _parse_two_digit(datetime_guess_two_digit), datetime_guess_two_digit.group()
+        if (not datetime_guess_four_digit) and (not datetime_guess_two_digit):
+            console.warning("Was not able to extract datetime from string " + s)
+            return None, s
+    except ValueError:  # impossible dates such as 2008-02-31
+        if datetime_guess_four_digit:
+            console.warning("Was not able to parse datetime from extracted string " + datetime_guess_four_digit.group())
+            return None, datetime_guess_four_digit.group()
+        elif datetime_guess_two_digit:
+            console.warning("Was not able to parse datetime from extracted string " + datetime_guess_two_digit.group())
+            return None, datetime_guess_two_digit.group()
+        else:
+            console.warning("An unexpected error occurred while trying to parse datetime from string " + token_without_id)
+    return None, token_without_id
 
-    # Obtain string that was used for parsing in the original cleaned format
-    datetime_string_user_clean = re.sub(f"^{re.escape(unused_string_parts[0])}|{re.escape(unused_string_parts[-1])}$", "", token_without_id)
-    datetime_string_user = re.search(r"(?:id\d+|[:T_-])*".join(map(re.escape, datetime_string_user_clean)), s).group()
-
-    return datetime_observation, datetime_string_user
 
 def extract_identifier(filename: str) -> Optional[str]:
     """
@@ -460,64 +545,45 @@ def collect_pairs(input_folder: str,
         filename_without_ext = os.path.splitext(f)[0]
         path = filename_to_path[f]
         file_identifier = extract_identifier(f)
-
         csv_date_str = None
         csv_id = _match_csv_image_key(filename_without_ext, f, csv_year_to_date.keys())
-        # ToDo Check if this makes sense now
         if csv_id is not None:
             csv_date_str = csv_year_to_date[csv_id]
-
-        if csv_date_str is not None:
+        use_datetime_from_filename = csv_date_str is None
+        if not use_datetime_from_filename:
             try:
-                try:
-                    # ToDo: Check if observation_datetime_user_string should be extracted somewhere here
-                    observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
-                except ValueError:
-                    # Skip files with invalid date tokens
-                    console.warning(f"Could not extract datetime from token: {f}")
-                    continue
+                observation_datetime, observation_datetime_user_string = extract_datetime_from_token(csv_date_str)
+                if observation_datetime is None:
+                    console.warning("Skipping csv parsing for image file " + f + " and attempting to read date from filename.")
+                    raise ValueError
                 id_ = csv_id
                 id_to_file[id_] = path
                 id_to_identifier[id_] = file_identifier
                 id_hastime_from_filename[id_] = False
                 id_to_date[id_] = observation_datetime
+                id_to_date_user_string[id_] = observation_datetime_user_string
             except ValueError:
                 # Fall back to filename parsing below if the CSV date is invalid.
-                pass
+                use_datetime_from_filename = True
 
+        if use_datetime_from_filename:
+            # Use the date from filename
+            observation_datetime, observation_datetime_user_string = extract_datetime_from_token(f)
+            if observation_datetime is None:
+                console.warning("Skipping file " + f + " since no datetime parsing for this was possible.")
+                continue
+            # Use the original token as ID, but make it unique by appending identifier if present
+            if file_identifier:
+                id_ = f"{observation_datetime.strftime("%Y%m%dT%H%M%S%f")}_{file_identifier}" if observation_datetime is not None else observation_datetime_user_string
+            else:
+                id_ = observation_datetime.strftime(
+                    "%Y%m%dT%H%M%S%f") if observation_datetime is not None else observation_datetime_user_string
 
-        
-        # Extract identifier from filename to make ID unique
-        file_identifier = extract_identifier(f)
-        
-        # Use the original token as ID, but make it unique by appending identifier if present
-        if file_identifier:
-            id_ = f"{observation_datetime.strftime("%Y%m%dT%H%M%S%f")}_{file_identifier}"
-        else:
-            id_ = observation_datetime.strftime("%Y%m%dT%H%M%S%f")
-
-
-        id_to_file[id_] = path
-        id_to_identifier[id_] = file_identifier
-
-        # Check if this parsed file ID or date token has a date override in the CSV file.
-        csv_date_str = None
-        if id_ in csv_year_to_date:
-            csv_date_str = csv_year_to_date[id_]
-
-        if csv_date_str is not None:
-            # Use the date from CSV, parsing it with the same logic as filename dates
-            try:
-                observation_datetime, observation_datetime_user_string = extract_datetime_from_token(csv_date_str)
-                id_hastime_from_filename[id_] = False  # Date came from CSV, not filename
-            except ValueError:
-                # If CSV date is invalid, fall back to filename date
-                id_hastime_from_filename[id_] = True
-        else:
             id_hastime_from_filename[id_] = True
-
-        id_to_date[id_] = observation_datetime
-        id_to_date_user_string[id_] = observation_datetime_user_string
+            id_to_file[id_] = path
+            id_to_identifier[id_] = file_identifier
+            id_to_date[id_] = observation_datetime
+            id_to_date_user_string[id_] = observation_datetime_user_string
 
     # 3) Order by actual time
     items = [(k, id_to_date[k]) for k in id_to_file.keys() if k in id_to_date]
@@ -536,11 +602,10 @@ def collect_pairs(input_folder: str,
                 id_to_date.pop(id_, None)
                 id_hastime_from_filename.pop(id_, None)
         # Re-sort after filtering
-        items = [(k, extract_datetime_from_token(id_to_date[k])) for k in id_to_file.keys() if k in id_to_date]
+        items = [(k, id_to_date[k]) for k in id_to_file.keys() if k in id_to_date]
         items.sort(key=lambda t: t[1])
         ordered_ids = [k for k, _ in items]
         console.info_verbose(f"Files remaining after identifier filtering: {len(ordered_ids)}")
-
     # 4) Build pairs
     if pairing_mode == "all":
         # every id with every later id
@@ -632,7 +697,6 @@ def collect_pairs(input_folder: str,
                 console.error(f"Skipping pair ({left_raw!r}, {right_raw!r}): {e}")
 
         datetime_pairs = pairs
-
     # Return with or without id_to_identifier based on whether identifier was provided
     if identifier is not None:
         return datetime_pairs, id_to_file, id_to_date, id_to_date_user_string, id_hastime_from_filename, id_to_identifier

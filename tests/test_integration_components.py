@@ -6,6 +6,7 @@ import pytest
 import geopandas as gpd
 from affine import Affine
 from shapely.geometry import Point
+from datetime import datetime
 
 from PyImageTrack.DataProcessing.ImagePreprocessing import (
     check_channels_compatible,
@@ -29,13 +30,14 @@ def test_collect_pairs_builds_successive_pairs_from_real_files(tmp_path: Path):
     second.touch()
     unrelated.touch()
 
-    pairs, files, dates, has_filename_time, identifiers = collect_pairs(
+    pairs, files, dates, datetime_user_string, has_filename_time, identifiers = collect_pairs(
         str(tmp_path), pairing_mode="successive", identifier="9109"
     )
-
-    assert pairs == [("2008-08-17_9109", "2023-08-17_9109")]
-    assert set(files) == {"2008-08-17_9109", "2023-08-17_9109"}
-    assert dates["2008-08-17_9109"] == "2008-08-17"
+    assert pairs == [('20080817T000000000000_9109', '20230817T000000000000_9109')]
+    assert set(files) == {'20080817T000000000000_9109', '20230817T000000000000_9109'}
+    assert [files[pairs[0][0]],files[pairs[0][1]]] == [str(first), str(second)]
+    assert dates["20080817T000000000000_9109"] == datetime(2008,8,17)
+    assert datetime_user_string["20080817T000000000000_9109"] == "2008-08-17"
     assert all(has_filename_time.values())
     assert all(value == "9109" for value in identifiers.values())
 
@@ -49,13 +51,14 @@ def test_collect_pairs_uses_csv_dates_for_files_without_date_tokens(tmp_path: Pa
         encoding="utf-8",
     )
 
-    pairs, files, dates, has_filename_time = collect_pairs(
+    pairs, files, dates, date_user_string, has_filename_time = collect_pairs(
         str(tmp_path), date_csv_path=str(dates_csv), pairing_mode="successive"
     )
 
     assert pairs == [("survey_a", "survey_b")]
     assert set(files) == {"survey_a", "survey_b"}
-    assert dates == {"survey_a": "2019-04-05", "survey_b": "2020-04-05"}
+    assert date_user_string == {"survey_a": "2019-04-05", "survey_b": "2020-04-05"}
+    assert dates == {"survey_a": datetime(2019,4,5), "survey_b": datetime(2020,4,5)}
     assert has_filename_time == {"survey_a": False, "survey_b": False}
 
 

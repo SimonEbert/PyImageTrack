@@ -18,19 +18,20 @@ requires-python = ">=3.11"
 # ToDo: Adjust dependencies section
 dependencies = [
     "geocube>=0.7.1",
-    "geopandas>=1.0.1,<1.1",
+    "geopandas>=1.1.2",
     "matplotlib>=3.9.2",
     "numpy>=2.1.1",
-    "opencv-python>4.12,<4.13",
-    "pandas>=2.2.2,<2.3",
-    "rasterio>=1.4.3,<1.5",
+    "opencv-python>4.12",
+    "pandas>=2.2.2",
+    "rasterio>=1.4.3",
     "requests>=2.32.4",
-    "scipy>=1.14.1,<1.15",
-    "scikit-image>=0.25.2,<0.26",
+    "scipy>=1.14.1",
+    "scikit-image>=0.25.2",
     "scikit-learn>=1.6.1",
-    "shapely>=2.0.6,<2.1",
-    "tqdm>=4.67.1,<5",
+    "shapely>=2.0.6",
+    "tqdm>=4.67.1",
     "tomli>=2.0.1; python_version < \"3.11\"",
+    "pytest>=9.0.0"
     # Note: tomli is only needed for Python < 3.11, but kept for compatibility
 ]
 

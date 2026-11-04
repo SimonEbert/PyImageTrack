@@ -37,24 +37,25 @@ def test_processing_hash_is_canonical_and_step_specific(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("filename", "token", "identifier", "expected_date"),
+    ("filename", "datetime_user_string", "identifier", "expected_date"),
     [
-        ("2008_08_17_id9109_az315.tif", "2008-08-17", "9109", datetime(2008, 8, 17)),
-        ("HS_2008_08_17_id9109_az315.tif", "2008-08-17", "9109", datetime(2008, 8, 17)),
-        ("2008_08_17_IDつ12345_az315.tif", "2008-08-17", None, datetime(2008, 8, 17)),
-        ("2008_08_17_1430_id9109.tif", "2008-08-17", "9109", datetime(2008, 8, 17)),
+        ("2008_08_17_id9109_az315.tif", "2008_08_17", "9109", datetime(2008, 8, 17)),
+        ("HS_2008_08_17_id9109_az315.tif", "2008_08_17", "9109", datetime(2008, 8, 17)),
+        ("2008_08_17_IDつ12345_az315.tif", "2008_08_17", None, datetime(2008, 8, 17)),
+        ("2008_08_17_1430_id9109.tif", "2008_08_17", "9109", datetime(2008, 8, 17,14,30)),
         ("200803171430_id9109.tif", "200803171430", "9109", datetime(2008, 3, 17, 14, 30)),
-        ("2008_03_id9109.tif", "2008-03", "9109", datetime(2008, 3, 1)),
-        ("24_08_17_id9109.tif", "24-08-17", "9109", datetime(2024, 8, 17)),
-        ("2008_08_17.tif", "2008-08-17", None, datetime(2008, 8, 17)),
+        ("2008_03_id9109.tif", "2008_03", "9109", datetime(2008, 3, 1)),
+        ("24_08_17_id9109.tif", "24_08_17", "9109", datetime(2024, 8, 17)),
+        ("2008_08_17.tif", "2008_08_17", None, datetime(2008, 8, 17)),
+        ("2008-08-17T08:22:17.001.tif", "2008-08-17T08:22:17.001", None, datetime(2008, 8, 17, 8,22,17,1000)),
+        ("2008-08-17-08-22-13.tif", "2008-08-17-08-22_13", None, datetime(2008, 8, 17, 8,22,13)),
+        ("2008-08-32.tif","2008-08-32", None, datetime(2008, 8, 1)),
     ],
 )
-def test_extract_and_parse_date(filename, token, identifier, expected_date):
-    # extracted = extract_date_token(filename)
-    #
-    # assert extracted == token
+def test_extract_and_parse_date(filename, datetime_user_string, identifier, expected_date):
+
     assert extract_identifier(filename) == identifier
-    assert extract_datetime_from_token(filename) == expected_date
+    assert extract_datetime_from_token(filename)[0] == expected_date
 
 
 @pytest.mark.parametrize(
@@ -62,7 +63,8 @@ def test_extract_and_parse_date(filename, token, identifier, expected_date):
         ["no_date.tif", "HS_nodate.tif"],
 )
 def test_extract_date_token_returns_none_without_date(filename):
-    assert extract_datetime_from_token(filename) is None
+    assert extract_datetime_from_token(filename)[0] is None
+    assert extract_datetime_from_token(filename)[1] == filename
 
 
 @pytest.mark.parametrize(
@@ -97,19 +99,19 @@ def test_convert_to_uint16_scales_uint8_and_handles_nan():
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("24", datetime(2024, 1, 1)),
+        ("24-07", datetime(2024, 7, 1)),
             ("2024-09-03", datetime(2024, 9, 3)),
         ("2024-13-47", datetime(2024, 1, 1)),
         ("202409", datetime(2024, 9, 1)),
     ],
 )
 def test_parse_date_supported_and_invalid_parts(value, expected):
-    assert extract_datetime_from_token(value) == expected
+    assert extract_datetime_from_token(value)[0] == expected
 
 
-def test_parse_date_rejects_input_without_year():
-    with pytest.raises(ValueError, match="Invalid date format"):
-        extract_datetime_from_token("not-a-date")
+# def test_parse_date_rejects_input_without_year():
+#     with pytest.raises(ValueError, match="Invalid date format"):
+#         extract_datetime_from_token("not-a-date")
 
 
 @pytest.mark.parametrize(
