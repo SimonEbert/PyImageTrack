@@ -143,7 +143,7 @@ def _get(cfg: dict, section: str, key: str, default=None):
     return cfg[section][key]
 
 
-def _require(cfg: dict, section: str, key: str):
+def _require(cfg: dict, section: str, key: str) -> str:
     """
     Get a required configuration value.
 
@@ -717,6 +717,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "initial_estimate_mode": _get(cfg, "tracking", "initial_estimate_mode", "count"),
         "nb_initial_estimate_peaks": _get(cfg, "tracking", "nb_initial_estimate_peaks", 1),
         "correlation_threshold_initial_estimates": _get(cfg, "tracking", "correlation_threshold_initial_estimates",None),
+        "multi_scale_initialization_downsample_factors": _get(cfg, "tracking", "multi_scale_initialization_downsample_factors", [1]),
         "min_distance_initial_estimates": _get(cfg, "tracking", "min_distance_initial_estimates", 1),
     })
 
@@ -962,7 +963,12 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
                 "search_extent_deltas": base_track_deltas,
                 "search_extent_px_effective": adaptive_extents,
-                "use_adaptive_tracking_window": tracking_params.use_adaptive_tracking_window
+                "use_adaptive_tracking_window": tracking_params.use_adaptive_tracking_window,
+                "initial_estimate_mode": tracking_params.initial_estimate_mode,
+                "nb_initial_estimate_peaks": tracking_params.nb_initial_estimate_peaks,
+                "correlation_threshold_initial_estimates": tracking_params.correlation_threshold_initial_estimates,
+                "min_distance_initial_estimates": tracking_params.min_distance_initial_estimates,
+                "multi_scale_initialization_downsample_factors": tracking_params.multi_scale_initialization_downsample_factors
             }
             
             enhancement_config = {
@@ -1078,7 +1084,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["image_bands"]                      = image_bands
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column
-            param_dict["downsample_tracking_results_resolution"] = downsample_tracking_results_resolution
 
  
             image_pair = ImagePair(parameter_dict=param_dict)

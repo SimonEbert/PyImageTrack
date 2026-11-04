@@ -253,7 +253,6 @@ def extract_datetime_from_token(s: str) -> tuple[datetime | None, str]:
 
     datetime_guess_four_digit = DATE_RE.search(token_without_id)
     datetime_guess_two_digit = YY_RE.search(token_without_id)  # fallback only if no 4-digit-year date exists
-
     try:
         if datetime_guess_four_digit:
             parsed_datetime = _parse_four_digit(datetime_guess_four_digit)

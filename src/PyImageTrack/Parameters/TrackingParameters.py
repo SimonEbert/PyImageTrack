@@ -1,4 +1,6 @@
 # PyImageTrack/Parameters/TrackingParameters.py
+from numbers import Number
+
 
 class TrackingParameters:
     """
@@ -71,6 +73,7 @@ class TrackingParameters:
         self.nb_initial_estimate_peaks = parameter_dict.get("nb_initial_estimate_peaks", 1)
         self.correlation_threshold_initial_estimates = parameter_dict.get("correlation_threshold_initial_estimates", None)
         self.min_distance_initial_estimates = parameter_dict.get("min_distance_initial_estimates", 1)
+        self.multi_scale_initialization_downsample_factors = parameter_dict.get("multi_scale_initialization_downsample_factors", [1])
         self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
         
         # Validate parameters
@@ -106,6 +109,15 @@ class TrackingParameters:
                 raise ValueError(f"search_extent_px must be a tuple of 4 values (posx,negx,posy,negy), got {self.search_extent_px}")
             if any(v < 0 for v in self.search_extent_px):
                 raise ValueError(f"search_extent_px values must be non-negative, got {self.search_extent_px}")
+        if self.multi_scale_initialization_downsample_factors is not None:
+            if isinstance(self.multi_scale_initialization_downsample_factors, Number):
+                self.multi_scale_initialization_downsample_factors = [self.multi_scale_initialization_downsample_factors]
+
+            if not all(isinstance(v, Number) for v in self.multi_scale_initialization_downsample_factors):
+                raise ValueError(f"multi_scale_initialization_downsample_factors must be numeric, got {self.multi_scale_initialization_downsample_factors}")
+
+
+
         
 
     def __str__(self) -> str:
@@ -132,6 +144,7 @@ class TrackingParameters:
             f"\tnumber of initial estimates: {self.nb_initial_estimate_peaks}\n"
             f"\tcorrelation threshold initial estimates: {self.correlation_threshold_initial_estimates}\n"
             f"\tminimum distance initial estimates: {self.min_distance_initial_estimates}\n"
+            f"\tmulti scale initialization downsample factors: {self.multi_scale_initialization_downsample_factors}\n"
         )
 
     def to_dict(self) -> dict:
@@ -155,5 +168,7 @@ class TrackingParameters:
             "initial_estimate_mode": self.initial_estimate_mode,
             "nb_initial_estimate_peaks": self.nb_initial_estimate_peaks,
             "correlation_threshold_initial_estimates": self.correlation_threshold_initial_estimates,
-            "min_distance_initial_estimates": self.min_distance_initial_estimates
+            "min_distance_initial_estimates": self.min_distance_initial_estimates,
+            "multi_scale_initialization_downsample_factors": self.multi_scale_initialization_downsample_factors
+
         }

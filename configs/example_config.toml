@@ -281,6 +281,12 @@ nb_initial_estimate_peaks = 2
 # How far different initial estimates must be at least in order to trigger separate LSM calls
 min_distance_initial_estimates = 10
 
+#----------Multi-scale-initialization--------------
+# Optional value to initialize LSM also with downsampled cross-correlation matching. Defaults to [1], meaning that LSM
+# is only initialized with the original data. [1,2,4] would mean that LSM initialization is attempted with the original
+# data, a patch that is downsampled by a factor of 2 and one that is downsampled by a factor of 4.
+multi_scale_initialization_downsample_factors = [1,2,4]
+
 # Optional: Adjust the search window based on expected movement rate.
 # If true, the "search_extent_px" in tracking parameters relates to expected movement PER YEAR
 # The actual search window is scaled by the number of years between images

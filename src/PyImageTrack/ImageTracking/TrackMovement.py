@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import tqdm
 from skimage.feature import match_template, peak_local_max
+from skimage.transform import downscale_local_mean
 
 
 from ..CreateGeometries.HandleGeometries import get_raster_indices_from_points
@@ -58,222 +59,214 @@ def _points_with_valid_tracking_windows(rows, cols, masks, cell_size):
             for mask in masks
         )
     return valid
-
-
-
-# def track_cell_cc(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray, search_center=None):
-#     """
-#         Calculates the movement of an image section using the cross-correlation approach.
-#         Parameters
-#         ----------
-#         search_center: list
-#             A 2-element array containing the row (first entry) and column (second entry) of the respective search window
-#             center
-#         tracked_cell_matrix: np.ndarray
-#             An array (a section of the first image), which is compared to sections of the search_cell_matrix (a section
-#             of the second image).
-#         search_cell_matrix: np.ndarray
-#             An array, which delimits the area in which possible matching image sections are searched.
-#         Returns
-#         ----------
-#         tracking_results: TrackingResults
-#             An instance of the class TrackingResults containing the movement in row and column direction and the
-#             corresponding cross-correlation coefficient.
-#         """
-#     height_tracked_cell = tracked_cell_matrix.shape[-2]
-#     width_tracked_cell = tracked_cell_matrix.shape[-1]
-#     height_search_cell = search_cell_matrix.shape[-2]
-#     width_search_cell = search_cell_matrix.shape[-1]
-#     tracked_cell_matrix = get_submatrix_symmetric([np.ceil(height_tracked_cell / 2),
-#                                                    np.ceil(height_tracked_cell / 2)],
-#                                                   (tracked_cell_matrix.shape[-2], tracked_cell_matrix.shape[-1]),
-#                                                   tracked_cell_matrix)
 #
-#     best_correlation = 0
-#     # for multichannel images, flattening ensures that always the same band is being compared
-#     tracked_vector = tracked_cell_matrix.flatten()
+# def track_cell_cc(tracked_cell_matrix: np.ndarray,
+#                   search_cell_matrix: np.ndarray,
+#                   tracking_parameters: TrackingParameters = None,
+#                   search_center=None):
+#     # skimage expects float arrays
+#     tracked = tracked_cell_matrix.astype(np.float32)
+#     search = search_cell_matrix.astype(np.float32)
 #
-#     if tracked_vector.size == 0:
-#         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="cross-correlation",
-#                                cross_correlation_coefficient=np.nan,
-#                                tracking_success=False)
+#     # Guard against invalid/empty windows and dimensionality mismatches
+#     if tracked.size == 0 or search.size == 0:
+#         return None
+#     if tracked.ndim != search.ndim:
+#         return None
+#     if tracked.ndim not in (2, 3):
+#         return None
+#     if tracked.ndim == 3 and tracked.shape[0] != search.shape[0]:
+#         return None
 #
-#     # normalize the tracked vector
-#     tracked_vector = tracked_vector - np.mean(tracked_vector)
+#     # --- Normalized cross-correlation ---
+#     try:
+#         if search.ndim == 2:
+#             corr_map = match_template(
+#                 search,
+#                 tracked,
+#                 pad_input=False
+#             )
+#         else:
+#             corrs = []
+#             for c in range(search.shape[0]):
+#                 corr = match_template(
+#                     search[c],
+#                     tracked[c],
+#                     pad_input=False
+#                 )
+#                 corrs.append(corr)
 #
-#     if np.linalg.norm(tracked_vector) == 0:
-#         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="cross-correlation",
-#                                cross_correlation_coefficient=np.nan,
-#                                tracking_success=False)
-#     tracked_vector = tracked_vector / np.linalg.norm(tracked_vector)
-#     for i in np.arange(np.ceil(height_tracked_cell / 2), height_search_cell - np.ceil(height_tracked_cell / 2)):
-#         for j in np.arange(np.ceil(width_tracked_cell / 2), width_search_cell - np.ceil(width_tracked_cell / 2)):
-#             search_subcell_matrix = get_submatrix_symmetric([i, j],
-#                                                             (tracked_cell_matrix.shape[-2],
-#                                                              tracked_cell_matrix.shape[-1]),
-#                                                             search_cell_matrix)
-#             # flatten the comparison cell matrix
-#             search_subcell_vector = search_subcell_matrix.flatten()
-#             if search_subcell_vector.size == 0:
-#                 continue
-#             # if np.linalg.norm(search_subcell_vector) == 0:
-#             #     continue
+#             corr_map = np.mean(corrs, axis=0)
+#     except ValueError:
+#         return None
 #
-#             # Initialize correlation for the current central pixel (i, j)
-#             corr = None
+#     # match_template can return empty/degenerate maps near borders; reject safely
+#     if getattr(corr_map, "size", 0) == 0 or np.ndim(corr_map) != 2:
+#         return None
+#     if corr_map.shape[0] == 0 or corr_map.shape[1] == 0:
+#         return None
 #
-#             # Only compute correlation if the search vector has any non-zero elements
-#             if np.any(search_subcell_vector):
-#                 # Normalize search_subcell vector
-#                 search_subcell_vector = search_subcell_vector - np.mean(search_subcell_vector)
-#                 if np.linalg.norm(search_subcell_vector) == 0:
-#                     continue
-#                 search_subcell_vector = search_subcell_vector / np.linalg.norm(search_subcell_vector)
-#                 # np.correlate returns a 1-element ndarray for equal-length vectors
-#                 corr = np.correlate(tracked_vector, search_subcell_vector, mode="valid")
+#     if tracking_parameters is not None:
+#         min_distance_initial_estimates = getattr(tracking_parameters, "min_distance_initial_estimates", 1)
+#         nb_initial_estimates = getattr(tracking_parameters, "nb_initial_estimate_peaks", 1)
+#         initial_estimate_mode = getattr(tracking_parameters, "initial_estimate_mode", "count")
+#         correlation_threshold = getattr(tracking_parameters, "correlation_threshold_initial_estimates", None)
 #
-#             # If corr was not computed (e.g., all-zero window), skip this candidate
-#             if corr is None:
-#                 continue
-#             # corr is an ndarray here; take the scalar value safely
-#             corr_val = float(corr[0])
-#             if corr_val > best_correlation:
-#                 best_correlation = corr_val
-#                 best_correlation_coordinates = [i, j]
+#         if initial_estimate_mode == "count":
+#             peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
+#                                    min_distance=min_distance_initial_estimates)
+#         elif initial_estimate_mode == "threshold":
+#             peaks = peak_local_max(corr_map,
+#                                    threshold_abs=correlation_threshold,
+#                                    min_distance=min_distance_initial_estimates)
+#         else:
+#             raise ValueError("Unknown initial estimates mode " + str(initial_estimate_mode))
+#     else:  # Default fallback when tracking parameters are not given (this happens normally in alignment mode)
+#         peaks = peak_local_max(corr_map, num_peaks=1,
+#                                min_distance=1)
 #
-#     if best_correlation <= 0:
-#         logging.info("Found no matching with positive correlation. Skipping")
-#         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan,
-#                                tracking_method="cross-correlation",
-#                                cross_correlation_coefficient=np.nan,
-#                                tracking_success=False)
+#     if peaks is None or len(peaks) == 0:
+#         return None
 #
-#     # Use the provided logical center inside the search window if given (asymmetric windows)
+#     peaks = np.asarray(peaks)
+#     # Guard against rare malformed outputs under multiprocessing/error states
+#     if peaks.size == 0:
+#         return None
+#     if peaks.ndim == 1:
+#         if peaks.size != 2:
+#             return None
+#         peaks = np.expand_dims(peaks, axis=0)
+#     if peaks.ndim != 2 or peaks.shape[1] != 2:
+#         return None
+#
+#     # --- Convert top-left index to center coordinates ---
+#     template_center_row = tracked.shape[-2] // 2
+#     template_center_col = tracked.shape[-1] // 2
+#
+#     peaks_centered = peaks + np.array([template_center_row, template_center_col])
+#
+#     # --- Define search center ---
 #     if search_center is None:
 #         central_row = search_cell_matrix.shape[-2] / 2
 #         central_col = search_cell_matrix.shape[-1] / 2
 #     else:
 #         central_row, central_col = map(float, search_center)
 #
-#     movement_for_best_correlation = np.floor(
-#         np.subtract(best_correlation_coordinates, [central_row, central_col])
+#     # --- Movement ---
+#     movement = np.floor(
+#         peaks_centered -
+#         np.array([central_row, central_col])
 #     )
 #
-#     tracking_results = TrackingResults(
-#         movement_rows=movement_for_best_correlation[0],
-#         movement_cols=movement_for_best_correlation[1],
-#         tracking_method="cross-correlation",
-#         cross_correlation_coefficient=best_correlation,
-#         tracking_success=True
-#     )
-#     return tracking_results
+#     if movement.ndim == 1:
+#         movement = np.expand_dims(movement, axis=0)
+#     if movement.ndim != 2 or movement.shape[1] != 2:
+#         return None
+#
+#     return movement
 
+def _downsample(arr: np.ndarray, factor: int) -> np.ndarray:
+    if factor == 1:
+        return arr
+    h, w = arr.shape[-2:]
+    arr = arr[..., :(h // factor) * factor, :(w // factor) * factor]
+    factors = (1,) * (arr.ndim - 2) + (factor, factor)   # leave channel axis untouched
+    return downscale_local_mean(arr, factors).astype(np.float32)
 
-
-def track_cell_cc(tracked_cell_matrix: np.ndarray,
-                  search_cell_matrix: np.ndarray,
-                  tracking_parameters: TrackingParameters = None,
-                  search_center=None):
-    # skimage expects float arrays
-    tracked = tracked_cell_matrix.astype(np.float32)
-    search = search_cell_matrix.astype(np.float32)
-
-    # Guard against invalid/empty windows and dimensionality mismatches
+def _track_single_scale(tracked, search, tracking_parameters, search_center, factor: int | float = 1.):
+    """Your original body, operating on already-float32 (and possibly downsampled) arrays.
+    Returns movement in the *current* resolution, or None."""
     if tracked.size == 0 or search.size == 0:
         return None
-    if tracked.ndim != search.ndim:
-        return None
-    if tracked.ndim not in (2, 3):
+    if tracked.ndim != search.ndim or tracked.ndim not in (2, 3):
         return None
     if tracked.ndim == 3 and tracked.shape[0] != search.shape[0]:
         return None
 
-    # --- Normalized cross-correlation ---
     try:
         if search.ndim == 2:
-            corr_map = match_template(
-                search,
-                tracked,
-                pad_input=False
-            )
+            corr_map = match_template(search, tracked, pad_input=False)
         else:
-            corrs = []
-            for c in range(search.shape[0]):
-                corr = match_template(
-                    search[c],
-                    tracked[c],
-                    pad_input=False
-                )
-                corrs.append(corr)
-
-            corr_map = np.mean(corrs, axis=0)
+            corr_map = np.mean([match_template(search[c], tracked[c], pad_input=False)
+                                for c in range(search.shape[0])], axis=0)
     except ValueError:
         return None
 
-    # match_template can return empty/degenerate maps near borders; reject safely
     if getattr(corr_map, "size", 0) == 0 or np.ndim(corr_map) != 2:
-        return None
-    if corr_map.shape[0] == 0 or corr_map.shape[1] == 0:
         return None
 
     if tracking_parameters is not None:
-        min_distance_initial_estimates = getattr(tracking_parameters, "min_distance_initial_estimates", 1)
-        nb_initial_estimates = getattr(tracking_parameters, "nb_initial_estimate_peaks", 1)
-        initial_estimate_mode = getattr(tracking_parameters, "initial_estimate_mode", "count")
-        correlation_threshold = getattr(tracking_parameters, "correlation_threshold_initial_estimates", None)
-
-        if initial_estimate_mode == "count":
-            peaks = peak_local_max(corr_map, num_peaks=nb_initial_estimates,
-                                   min_distance=min_distance_initial_estimates)
-        elif initial_estimate_mode == "threshold":
-            peaks = peak_local_max(corr_map,
-                                   threshold_abs=correlation_threshold,
-                                   min_distance=min_distance_initial_estimates)
+        min_dist = getattr(tracking_parameters, "min_distance_initial_estimates", 1)
+        min_dist = max(1, min_dist // factor)
+        nb_est = getattr(tracking_parameters, "nb_initial_estimate_peaks", 1)
+        mode = getattr(tracking_parameters, "initial_estimate_mode", "count")
+        thr = getattr(tracking_parameters, "correlation_threshold_initial_estimates", None)
+        if mode == "count":
+            peaks = peak_local_max(corr_map, num_peaks=nb_est, min_distance=min_dist)
+        elif mode == "threshold":
+            peaks = peak_local_max(corr_map, threshold_abs=thr, min_distance=min_dist)
         else:
-            raise ValueError("Unknown initial estimates mode " + str(initial_estimate_mode))
-    else:  # Default fallback when tracking parameters are not given (this happens normally in alignment mode)
-        peaks = peak_local_max(corr_map, num_peaks=1,
-                               min_distance=1)
+            raise ValueError("Unknown initial estimates mode " + str(mode))
+    else:
+        peaks = peak_local_max(corr_map, num_peaks=1, min_distance=1)
 
     if peaks is None or len(peaks) == 0:
         return None
-
     peaks = np.asarray(peaks)
-    # Guard against rare malformed outputs under multiprocessing/error states
-    if peaks.size == 0:
-        return None
     if peaks.ndim == 1:
         if peaks.size != 2:
             return None
-        peaks = np.expand_dims(peaks, axis=0)
+        peaks = peaks[None, :]
     if peaks.ndim != 2 or peaks.shape[1] != 2:
         return None
 
-    # --- Convert top-left index to center coordinates ---
-    template_center_row = tracked.shape[-2] // 2
-    template_center_col = tracked.shape[-1] // 2
+    template_center = np.array([tracked.shape[-2] // 2, tracked.shape[-1] // 2])
+    peaks_centered = peaks + template_center
 
-    peaks_centered = peaks + np.array([template_center_row, template_center_col])
-
-    # --- Define search center ---
     if search_center is None:
-        central_row = search_cell_matrix.shape[-2] / 2
-        central_col = search_cell_matrix.shape[-1] / 2
+        center = np.array([search.shape[-2] / 2, search.shape[-1] / 2])
     else:
-        central_row, central_col = map(float, search_center)
+        center = np.array(list(map(float, search_center)))
 
-    # --- Movement ---
-    movement = np.floor(
-        peaks_centered -
-        np.array([central_row, central_col])
-    )
+    return np.floor(peaks_centered - center)
 
-    if movement.ndim == 1:
-        movement = np.expand_dims(movement, axis=0)
-    if movement.ndim != 2 or movement.shape[1] != 2:
+def track_cell_cc(tracked_cell_matrix: np.ndarray,
+                  search_cell_matrix: np.ndarray,
+                  tracking_parameters: TrackingParameters = None,
+                  search_center=None,
+                  min_template_size: int = 5):
+    tracked_full = tracked_cell_matrix.astype(np.float32)
+    search_full = search_cell_matrix.astype(np.float32)
+
+    if tracked_full.size == 0 or search_full.size == 0:
         return None
+    if tracking_parameters is not None:
+        downsampling_factors = tracking_parameters.multi_scale_initialization_downsample_factors
+    else:
+        downsampling_factors = [1]
+    all_movements = []
+    for f in downsampling_factors:
+        f = int(f)
 
-    return movement
+        # Skip scales where the template becomes too small to correlate meaningfully
+        if min(tracked_full.shape[-2:]) // f < min_template_size:
+            continue
+
+        tracked = _downsample(tracked_full, f)
+        search = _downsample(search_full, f)
+
+        sc = None if search_center is None else (float(search_center[0]) / f,
+                                                 float(search_center[1]) / f)
+
+        movement = _track_single_scale(tracked, search, tracking_parameters, sc, factor=f)
+        if movement is None:
+            continue
+
+        all_movements.append(movement * f)   # back to original resolution
+    if not all_movements:
+        return None
+    return np.vstack(all_movements)
+
 
 def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, indices: np.ndarray):
     """
