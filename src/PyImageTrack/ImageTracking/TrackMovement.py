@@ -538,7 +538,6 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
     # Get matrices from shared memory
     shm1 = multiprocessing.shared_memory.SharedMemory(name=shm1_name)
     shm2 = multiprocessing.shared_memory.SharedMemory(name=shm2_name)
-    # ToDo: Is this fallback needed here?
     try:
         shared_image_matrix1 = np.ndarray(shape1, dtype=dtype, buffer=shm1.buf)
         shared_image_matrix2 = np.ndarray(shape2, dtype=dtype, buffer=shm2.buf)
@@ -586,6 +585,9 @@ def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name,
                                            initial_shift_values=initial_shift_values,
                                           tracking_parameters=tracking_parameters)
         return tracking_results
+    except:
+        console = get_console()
+        console.warning("Error while performing LSM loop on shared memory. Skipping the current point. This is a bug and should be reported.")
     finally:
         # Close shared memory handles (don't unlink - only creator does that)
         shm1.close()

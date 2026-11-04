@@ -1240,37 +1240,7 @@ class ImagePair:
             return
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection,
                                                   self.displacement_column_name)
-    # ToDO: Remove?
-    # def full_filter(self, reference_area, filter_parameters: FilterParameters):
-    #     """
-    #     Perform complete filtering workflow.
-    #
-    #     This method:
-    #     1. Filters outliers from tracking results
-    #     2. Calculates the level of detection
-    #     3. Filters points below the level of detection
-    #
-    #     Parameters
-    #     ----------
-    #     reference_area : gpd.GeoDataFrame
-    #         Reference area for generating LoD calculation points.
-    #     filter_parameters : FilterParameters
-    #         Parameters for filtering and LoD calculation.
-    #
-    #     Returns
-    #     -------
-    #     None
-    #     """
-    #     if self.undistort_image:
-    #         reference_area = undistort_polygon(reference_area, self.image1_matrix_original.shape[-2:],
-    #                                            self.camera_intrinsics_matrix,
-    #                                            self.camera_distortion_coefficients)
-    #
-    #     points_for_lod_calculation = random_points_on_polygon_by_number(reference_area,
-    #                                                                     filter_parameters.number_of_points_for_level_of_detection)
-    #     self.filter_outliers(filter_parameters)
-    #     self.calculate_lod(points_for_lod_calculation, filter_parameters)
-    #     self.filter_lod_points()
+
 
     def enhance_images(self):
         """
