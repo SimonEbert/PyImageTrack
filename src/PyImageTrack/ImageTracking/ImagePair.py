@@ -1793,15 +1793,15 @@ class ImagePair:
                                     self.level_of_detection_points[moving_id_col] == id_val
                                 ]
                         if df_poly_lod is not None and len(df_poly_lod) > 0:
-                            used_lod_points = int(df_poly_lod["valid"].sum()) if "valid" in df_poly_lod.columns else len(df_poly_lod)
+                            df_used_lod_points_poly = df_poly_lod[df_poly_lod["valid"]] if "valid" in df_poly_lod.columns else df_poly_lod
                             statistics_file.write(
-                                f"    Movement ({unit_label}) of LoD points:\n"
-                                + f"      Mean: {_fmt(np.nanmean(df_poly_lod[self.displacement_column_name]))}\n"
-                                + f"      Median: {_fmt(np.nanmedian(df_poly_lod[self.displacement_column_name]))}\n"
-                                + f"      Standard deviation: {_fmt(np.nanstd(df_poly_lod[self.displacement_column_name]))}\n"
-                                + f"      Q90: {_fmt(np.nanquantile(df_poly_lod[self.displacement_column_name], 0.9))}\n"
-                                + f"      Q99: {_fmt(np.nanquantile(df_poly_lod[self.displacement_column_name], 0.99))}\n"
-                                + f"      Used points: {used_lod_points} points\n"
+                                f"    Movement ({unit_label}) of (valid) LoD points:\n"
+                                + f"      Mean: {_fmt(np.nanmean(df_used_lod_points_poly[self.displacement_column_name]))}\n"
+                                + f"      Median: {_fmt(np.nanmedian(df_used_lod_points_poly[self.displacement_column_name]))}\n"
+                                + f"      Standard deviation: {_fmt(np.nanstd(df_used_lod_points_poly[self.displacement_column_name]))}\n"
+                                + f"      Q90: {_fmt(np.nanquantile(df_used_lod_points_poly[self.displacement_column_name], 0.9))}\n"
+                                + f"      Q99: {_fmt(np.nanquantile(df_used_lod_points_poly[self.displacement_column_name], 0.99))}\n"
+                                + f"      Used points: {len(df_used_lod_points_poly)} points\n"
                             )
 
                         # Total movement between images
@@ -1846,14 +1846,16 @@ class ImagePair:
 
                 if hasattr(self, "level_of_detection_points") & (self.level_of_detection_points is not None
                 ) and len(self.level_of_detection_points) > 0:
+                    df_used_lod_points = self.level_of_detection_points[
+                        self.level_of_detection_points["valid"]] if "valid" in self.level_of_detection_points.columns else self.level_of_detection_points
                     statistics_file.write(
-                        f"  Movement ({unit_label}) of LoD points:\n"
-                        + f"    Mean: {_fmt(np.nanmean(self.level_of_detection_points[self.displacement_column_name]))}\n"
-                        + f"    Median: {_fmt(np.nanmedian(self.level_of_detection_points[self.displacement_column_name]))}\n"
-                        + f"    Standard deviation: {_fmt(np.nanstd(self.level_of_detection_points[self.displacement_column_name]))}\n"
-                        + f"    Q90: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.9))}\n"
-                        + f"    Q99: {_fmt(np.nanquantile(self.level_of_detection_points[self.displacement_column_name], 0.99))}\n"
-                        + f"    Used points: {valid_lod_points} points\n"
+                        f"    Movement ({unit_label}) of (valid) LoD points:\n"
+                        + f"      Mean: {_fmt(np.nanmean(df_used_lod_points[self.displacement_column_name]))}\n"
+                        + f"      Median: {_fmt(np.nanmedian(df_used_lod_points[self.displacement_column_name]))}\n"
+                        + f"      Standard deviation: {_fmt(np.nanstd(df_used_lod_points[self.displacement_column_name]))}\n"
+                        + f"      Q90: {_fmt(np.nanquantile(df_used_lod_points[self.displacement_column_name], 0.9))}\n"
+                        + f"      Q99: {_fmt(np.nanquantile(df_used_lod_points[self.displacement_column_name], 0.99))}\n"
+                        + f"      Used points: {len(df_used_lod_points)} points\n"
                     )
 
                 distance_series = ref_df2.get("movement_distance")

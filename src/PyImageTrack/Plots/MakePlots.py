@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import rasterio.plot
 from pyproj import CRS as PyprojCRS
+from datetime import datetime
 
 
 def _prepare_raster_for_plotting(raster_matrix: np.ndarray | None, context_label: str = "plot"):
@@ -82,7 +83,8 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str | None = None, masking_polygon: gpd.GeoDataFrame | None = None, fig=None, ax=None,
                             save_path: str | None = None, show_arrows: bool = True, unit_name_distance: str | None = None,
-                            unit_name_time: str | None = None,vmin: float | int | None=0.,vmax:str | None=None):
+                            unit_name_time: str | None = None,vmin: float | int | None=0.,vmax:str | None=None,
+                            observation_period: list[datetime] | None = None):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -113,18 +115,24 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         The file location, where the created plot is stored. When no path is given (the default), the figure is not
         saved.
     show_arrows: bool = True
-        Wether to show direction arrows on the resulting image
+        Whether to show direction arrows on the resulting image
     unit_name_distance: str = None
         Name of the unit for distances to display in the plot (e.g. cm, m, ...)
     unit_name_time: str = None
         Name of the unit for time to display in the plot (e.g. year, month, day, ...)
+    vmin: float | int | None=0.
+        Minimum value for the cmap. If None, inferred from the plotted data
+    vmax:str | None=None
+        Maximum value for the cmap. If None, inferred from the plotted data
+    observation_period: list[datetime] | None = None
+        Two-entry list with the first and second observation datetime to plot to the title
     Returns
     ----------
     None
     """
     if point_movement.empty:
         get_console().info(
-            "Plot layer skipped (empty GeoDataFrame). This usually occurs when a subset is empty after filtering or if filters are disabled."
+            "Plot layer skipped (empty GeoDataFrame). This usually occurs when a subset is empty after filtering."
         )
         if ax is None and fig is None:
             fig, ax = plt.subplots(dpi=200)
@@ -139,7 +147,11 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 
     # Fallback for None unit names
     if unit_name_distance is None:
-        unit_name_distance = "meter"
+        if point_movement.crs is not None:
+            crs_obj = PyprojCRS.from_user_input(point_movement.crs)
+            unit_name_distance = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
+        else:
+            unit_name_distance = "pixel"
     if unit_name_time is None:
         unit_name_time = "year"
 
@@ -181,13 +193,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
                 "'movement_distance_total', 'movement_distance_per_second',"
                 "'movement_distance_per_hour', 'movement_distance_per_year'")
     legend_title_part = "Point velocity in "
-
-    if unit_name_distance is None:
-        if point_movement.crs is not None:
-            crs_obj = PyprojCRS.from_user_input(point_movement.crs)
-            unit_name_distance = crs_obj.axis_info[0].unit_name if crs_obj.is_projected else "meter"
-        else:
-            unit_name_distance = "pixel"
 
 
     if point_color is None:
@@ -253,12 +258,14 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
                 zorder=5
             )
 
+
+    datetime_part_title = "\nPeriod: " + observation_period[0].isoformat() + " to " + observation_period[1].isoformat() if observation_period is not None else ""
     if displacement_column_name[0:2] == "3d":
-        plt.title("3d-displacement distance per " + unit_name_time)
+        plt.title("3d-displacement distance per " + unit_name_time + datetime_part_title)
         ax.set_xlabel("Pixel (columns)")
         ax.set_ylabel("Pixel (rows)")
     else:
-        plt.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time)
+        plt.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time + datetime_part_title)
 
 
     if show_figure:
