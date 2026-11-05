@@ -477,18 +477,18 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
                                tracking_success=False)
     tracked_cell_vector = tracked_cell_vector - np.mean(tracked_cell_vector)
     tracked_cell_norm = np.linalg.norm(tracked_cell_vector)
-    if tracked_cell_norm == 0:
+    if tracked_cell_norm == 0.:
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                tracking_success=False)
     tracked_cell_vector = tracked_cell_vector / tracked_cell_norm
-    corr = np.correlate(tracked_cell_vector, moved_cell_submatrix_vector, mode='valid')
+    corr = float(np.dot(tracked_cell_vector, moved_cell_submatrix_vector))
 
 
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
                                        tracking_method="least-squares", tracking_success=True,
-                                       cross_correlation_coefficient=float(corr),
+                                       cross_correlation_coefficient=corr,
                                        rmse=np.sqrt(np.mean(np.square(residuals))))
     return tracking_results
 
