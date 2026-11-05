@@ -8,6 +8,7 @@ import pandas as pd
 import tqdm
 from skimage.feature import match_template, peak_local_max
 from skimage.transform import downscale_local_mean
+import struct
 
 
 from ..CreateGeometries.HandleGeometries import get_raster_indices_from_points
@@ -383,7 +384,7 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
     # Point to check the stopping condition. If the distance between the previous and current central point is smaller
     # than 0.1 (pixels), the iteration halts. For the first comparison, this point is initialized as NaN which has
     # distance > 0.1 to the central point always
-    previous_moved_central_point = np.array([np.nan, np.nan])
+    previous_moved_central_point = np.array([central_row, central_column])
 
     while iteration < 50:
         moved_indices = move_indices_from_transformation_matrix(transformation_matrix=transformation_matrix,
@@ -440,6 +441,8 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
         new_moved_central_point = np.array([new_central_row, new_central_column])
         # if the adjustment results in less than 0.1 pixel adjustment between the considered points, stop the iteration
         if np.linalg.norm(previous_moved_central_point - np.array([new_central_row, new_central_column])) < 0.1:
+            # with open("numbers.bin", "ab") as f:
+            #     f.write(struct.pack("d", iteration))
             break
 
         # continue iteration and redefine the previous moved central point
