@@ -266,7 +266,6 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         ax.set_ylabel("Pixel (rows)")
     else:
         fig.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time + datetime_part_title)
-    fig.show()
 
     if show_figure:
         fig.show()
