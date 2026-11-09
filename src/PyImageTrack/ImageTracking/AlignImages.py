@@ -10,7 +10,6 @@ from .TrackMovement import track_movement_lsm
 from ..Parameters.AlignmentParameters import AlignmentParameters
 from ..ConsoleOutput import get_console
 from .ImageInterpolator import ImageInterpolator
-from ..Plots.MakePlots import plot_raster_and_geometry
 
 
 def move_image_matrix_from_transformation(image_matrix: np.ndarray, transformation: np.ndarray, target_shape=None):
