@@ -165,7 +165,7 @@ def _points_with_valid_tracking_windows(rows, cols, masks, cell_size):
 #         return None
 #
 #     return movement
-
+#
 def _downsample(arr: np.ndarray, factor: int) -> np.ndarray:
     if factor == 1:
         return arr
@@ -210,7 +210,6 @@ def _track_single_scale(tracked, search, tracking_parameters, search_center, fac
             raise ValueError("Unknown initial estimates mode " + str(mode))
     else:
         peaks = peak_local_max(corr_map, num_peaks=1, min_distance=1)
-
     if peaks is None or len(peaks) == 0:
         return None
     peaks = np.asarray(peaks)
@@ -233,7 +232,7 @@ def _track_single_scale(tracked, search, tracking_parameters, search_center, fac
 
 def track_cell_cc(tracked_cell_matrix: np.ndarray,
                   search_cell_matrix: np.ndarray,
-                  tracking_parameters: TrackingParameters = None,
+                  tracking_parameters: TrackingParameters | None = None,
                   search_center=None,
                   min_template_size: int = 5):
     tracked_full = tracked_cell_matrix.astype(np.float32)

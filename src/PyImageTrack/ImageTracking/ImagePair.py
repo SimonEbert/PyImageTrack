@@ -657,7 +657,6 @@ class ImagePair:
         # Harmonize resolution if necessary
         self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform = harmonize_resolution(
             self.image1_matrix, self.image2_matrix, self.image1_transform, self.image2_transform)
-        
         # Validate reference_area if provided
         if reference_area is not None:
             if len(reference_area) == 0:
@@ -1630,6 +1629,7 @@ class ImagePair:
         _write_reason_mask("is_movement_rate_standard_deviation_outlier", "mask_outlier_msd_tif", "mask_outlier_msd")
         _write_reason_mask("is_bearing_difference_outlier", "mask_outlier_bd_tif", "mask_outlier_bd")
         _write_reason_mask("is_bearing_standard_deviation_outlier", "mask_outlier_bsd_tif", "mask_outlier_bsd")
+        _write_reason_mask("is_depth_fraction_outlier", "mask_outlier_depth_fraction_tif", "mask_outlier_depth_fraction")
 
         # LoD points
         if "LoD_points_fgb" in save_files and self.level_of_detection_points is not None:
@@ -1915,7 +1915,8 @@ class ImagePair:
                 save_path=f"{folder_path}/tracking_results_{save_datetime_part_user_string}.jpg",
                 unit_name_distance=self.coordinate_system_unit_name,
                 unit_name_time=self.output_units_mode[4:],
-                vmin=min_cmap_value,vmax=max_cmap_value
+                vmin=min_cmap_value,vmax=max_cmap_value,
+                user_date_string = self.image1_observation_date_user_string + " to " + self.image2_observation_date_user_string
             )
         else:
             plot_movement_of_points(
@@ -1925,7 +1926,8 @@ class ImagePair:
                 save_path=f"{folder_path}/tracking_results_{save_datetime_part_user_string}.jpg",
                 unit_name_distance=self.coordinate_system_unit_name,
                 unit_name_time=self.output_units_mode,
-                vmin=min_cmap_value,vmax=max_cmap_value
+                vmin=min_cmap_value,vmax=max_cmap_value,
+                user_date_string = self.image1_observation_date_user_string + " to " + self.image2_observation_date_user_string
             )
 
     def load_results(self, file_path, reference_area):

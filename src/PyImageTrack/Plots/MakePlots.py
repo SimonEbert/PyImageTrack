@@ -83,8 +83,8 @@ def plot_raster_and_geometry(raster_matrix: np.ndarray, raster_transform, geomet
 def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, point_movement: gpd.GeoDataFrame,
                             point_color: str | None = None, masking_polygon: gpd.GeoDataFrame | None = None, fig=None, ax=None,
                             save_path: str | None = None, show_arrows: bool = True, unit_name_distance: str | None = None,
-                            unit_name_time: str | None = None,vmin: float | int | None=0.,vmax:str | None=None,
-                            observation_period: list[datetime] | None = None):
+                            unit_name_time: str | None = None,vmin: float | int | None=0.,vmax:float | int | None=None,
+                            user_date_string: str | None = None):
 
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
@@ -124,8 +124,8 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
         Minimum value for the cmap. If None, inferred from the plotted data
     vmax:str | None=None
         Maximum value for the cmap. If None, inferred from the plotted data
-    observation_period: list[datetime] | None = None
-        Two-entry list with the first and second observation datetime to plot to the title
+    user_date_string: str | None = None
+        Date of the observation in user format to include in the title of the plot
     Returns
     ----------
     None
@@ -259,14 +259,14 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
             )
 
 
-    datetime_part_title = "\nPeriod: " + observation_period[0].isoformat() + " to " + observation_period[1].isoformat() if observation_period is not None else ""
+    datetime_part_title = "\nPeriod: " + user_date_string if user_date_string is not None else ""
     if displacement_column_name[0:2] == "3d":
         plt.title("3d-displacement distance per " + unit_name_time + datetime_part_title)
         ax.set_xlabel("Pixel (columns)")
         ax.set_ylabel("Pixel (rows)")
     else:
-        plt.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time + datetime_part_title)
-
+        fig.title("Movement velocity in " + unit_name_distance + " per " + unit_name_time + datetime_part_title)
+    fig.show()
 
     if show_figure:
         fig.show()
@@ -279,7 +279,9 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
                                             save_path: str = None,
                                             unit_name_distance: str = None,
                                             unit_name_time: str = "year",
-                                            vmin=0,vmax=None):
+                                            vmin=0,vmax=None,
+                                            user_date_string: str | None = None
+                                            ):
     """
     Plots the movement of tracked points as a geometry on top of a given raster image matrix. Velocity is shown via a
     colour scale, while the movement direction is shown with arrows for selected pixels.
@@ -303,6 +305,8 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
         The unit name for time to label the plots
     vmin,vmax=0,None
         Bounds of the colorscale for showing velocities. If not supplied, default to minimum and maximum valid velocities
+    user_date_string: str | None = None
+        Date of the observation in user format to include in the title of the plot
     Returns
     ----------
     None
@@ -312,7 +316,7 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     point_movement_invalid = point_movement[~point_movement["valid"]]
 
     plot_movement_of_points(None, raster_transform, point_movement_invalid, point_color="gray",
-                            show_arrows=False, fig=fig, ax=ax)
+                            show_arrows=False, fig=fig, ax=ax,user_date_string=user_date_string)
     plot_movement_of_points(raster_matrix, raster_transform, point_movement_valid, fig=fig, ax=ax, save_path=None,
                             unit_name_distance=unit_name_distance,
                             unit_name_time=unit_name_time,
@@ -321,7 +325,7 @@ def plot_movement_of_points_with_valid_mask(raster_matrix: np.ndarray, raster_tr
     if save_path is None:
         fig.show()
     else:
-        fig.savefig(save_path, bbox_inches='tight')  #
+        fig.savefig(save_path, bbox_inches='tight')
 
 
 def plot_distribution_of_point_movement(moving_points: gpd.GeoDataFrame):
