@@ -44,7 +44,7 @@ def calculate_3d_position_from_depth_image(points: np.ndarray, depth_image: np.n
     """
 
     # Make sure the matrix follows the correct convention, used below and change if not:
-    if (camera_to_3d_coordinates_transform[3] != np.array([0,0,0,1])).any():
+    if (camera_to_3d_coordinates_transform is not None) & (camera_to_3d_coordinates_transform[3] != np.array([0,0,0,1])).any():
         logging.warning("Supplied transformation that does not follow the convention in this package ("
                         "left-multiplication of column vectors with matrices of the form [[R,t],[0,1]]). "
                         "Trying to convert the transformation matrix to this convention.")
