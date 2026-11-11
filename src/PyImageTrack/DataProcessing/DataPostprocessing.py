@@ -121,7 +121,8 @@ def _ensure_bool_col(df, col):
     return df[col].astype(bool).to_numpy()
 
 
-def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: float, displacement_column_name: str) -> gpd.GeoDataFrame:
+def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: float, displacement_column_name: str,
+                      velocity_unit: str | None = None) -> gpd.GeoDataFrame:
     """
     Sets the movement distance of all points that fall below the calculated level of detection to 0 and their
         movement bearing to NaN. Returns the respective changed GeoDataFrame.
@@ -140,7 +141,7 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
     """
 
     console = get_console()
-    console.info("Applying LoD filter.")
+    console.info("Applying LoD filter with level of detection " + str(np.round(level_of_detection,decimals=3)) + " " + velocity_unit)
 
     tracking_results["is_below_LoD"] = False
     tracking_results.loc[tracking_results[displacement_column_name] < level_of_detection, "is_below_LoD"] = True

@@ -52,7 +52,7 @@ class TrackingParameters:
         The correlation threshold that must be exceeded in order for the LSM to be performed if the initial_estimate_mode
         is "threshold"."""
 
-    def __init__(self, parameter_dict: dict):
+    def __init__(self, parameter_dict: dict | None = None):
         """
         Initialize TrackingParameters from a dictionary.
         
@@ -61,23 +61,24 @@ class TrackingParameters:
         parameter_dict : dict
             Dictionary containing tracking parameters.
         """
-        self.distance_of_tracked_points_px = parameter_dict.get("distance_of_tracked_points_px")
-        self.search_extent_px = parameter_dict.get("search_extent_px")  # e.g., (60, 20, 40, 10)
-        self.search_extent_deltas = parameter_dict.get("search_extent_deltas", self.search_extent_px)
-        self.search_extent_full_cell = None  # Will be computed during tracking
-        self.movement_cell_size = parameter_dict.get("movement_cell_size")
-        self.cross_correlation_threshold_movement = parameter_dict.get("cross_correlation_threshold_movement")
-        self.minimum_valid_tracking_point_ratio = parameter_dict.get("minimum_valid_tracking_point_ratio", 0.0)
-        self.initial_shift_values = parameter_dict.get("initial_shift_values")
-        self.initial_estimate_mode = parameter_dict.get("initial_estimate_mode", "count")
-        self.nb_initial_estimate_peaks = parameter_dict.get("nb_initial_estimate_peaks", 1)
-        self.correlation_threshold_initial_estimates = parameter_dict.get("correlation_threshold_initial_estimates", None)
-        self.min_distance_initial_estimates = parameter_dict.get("min_distance_initial_estimates", 1)
-        self.multi_scale_initialization_downsample_factors = parameter_dict.get("multi_scale_initialization_downsample_factors", [1])
-        self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
-        
-        # Validate parameters
-        self._validate()
+        if parameter_dict is not None:
+            self.distance_of_tracked_points_px = parameter_dict.get("distance_of_tracked_points_px")
+            self.search_extent_px = parameter_dict.get("search_extent_px")  # e.g., (60, 20, 40, 10)
+            self.search_extent_deltas = parameter_dict.get("search_extent_deltas", self.search_extent_px)
+            self.search_extent_full_cell = None  # Will be computed during tracking
+            self.movement_cell_size = parameter_dict.get("movement_cell_size")
+            self.cross_correlation_threshold_movement = parameter_dict.get("cross_correlation_threshold_movement")
+            self.minimum_valid_tracking_point_ratio = parameter_dict.get("minimum_valid_tracking_point_ratio", 0.0)
+            self.initial_shift_values = parameter_dict.get("initial_shift_values")
+            self.initial_estimate_mode = parameter_dict.get("initial_estimate_mode", "count")
+            self.nb_initial_estimate_peaks = parameter_dict.get("nb_initial_estimate_peaks", 1)
+            self.correlation_threshold_initial_estimates = parameter_dict.get("correlation_threshold_initial_estimates", None)
+            self.min_distance_initial_estimates = parameter_dict.get("min_distance_initial_estimates", 1)
+            self.multi_scale_initialization_downsample_factors = parameter_dict.get("multi_scale_initialization_downsample_factors", [1])
+            self.use_adaptive_tracking_window = parameter_dict.get("use_adaptive_tracking_window", False)
+
+            # Validate parameters
+            self._validate()
     
     def _validate(self):
         """

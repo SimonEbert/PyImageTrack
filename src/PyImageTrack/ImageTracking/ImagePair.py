@@ -137,10 +137,14 @@ class ImagePair:
 
         self.tracking_quality = None
 
-        # Parameters
-        self.tracking_parameters = TrackingParameters(parameter_dict=parameter_dict)
-        self.filter_parameters = None
+        # Parameters (check for distinct subsets in the parameter dict or
         self.alignment_parameters = AlignmentParameters(parameter_dict=parameter_dict)
+        # self.alignment_parameters = AlignmentParameters(parameter_dict=parameter_dict.get("alignment_parameters"))
+        self.tracking_parameters:TrackingParameters = TrackingParameters(parameter_dict=parameter_dict)
+        # self.tracking_parameters: TrackingParameters | None = TrackingParameters(parameter_dict=parameter_dict.get("tracking_parameters", None))
+        self.filter_parameters:FilterParameters | None = FilterParameters(parameter_dict=parameter_dict)
+        # self.filter_parameters:FilterParameters | None = FilterParameters(parameter_dict=parameter_dict.get("filter_parameters"))
+
         # Moving-area ID column name (propagated to outputs)
         self.moving_id_column = parameter_dict.get("moving_id_column", "moving_id") if parameter_dict else "moving_id"
         # Fake georef switches (fed via run_pipeline param_dict)
@@ -720,7 +724,7 @@ class ImagePair:
             )
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
-            console.success("Depth image resampled")
+            console.success("Depth image resampled.")
 
         else:
             _, new_image2_matrix, tracked_control_points = align_images_lsm_scarce(
@@ -1155,7 +1159,7 @@ class ImagePair:
             evenly-spaced grid used for alignment.
         filter_parameters_lod_points : FilterParameters, optional
             Filter parameters containing the quantile for LoD calculation.
-            If None, uses the filter_parameters already set on the object.
+            If None, uses the filter_parameters already set on the ImagePair.
 
         Returns
         -------
@@ -1175,7 +1179,6 @@ class ImagePair:
             self.safe_image_bounds_tracking = self.make_safe_bounds(
                 max(getattr(self.tracking_parameters, "search_extent_px", None))
                 + getattr(self.tracking_parameters, "movement_cell_size", None) / 2)
-
 
         points_for_lod_calculation = gpd.GeoDataFrame(
             points_for_lod_calculation[points_for_lod_calculation.geometry.intersects(self.safe_image_bounds_tracking.geometry.iloc[0])])
@@ -1238,7 +1241,7 @@ class ImagePair:
         if not self.valid_alignment_possible:
             return
         self.tracking_results = filter_lod_points(self.tracking_results, self.level_of_detection,
-                                                  self.displacement_column_name)
+                                                  self.displacement_column_name, velocity_unit = self.coordinate_system_unit_name + " " + self.output_units_mode.replace("_", " "))
 
 
     def enhance_images(self):

@@ -47,34 +47,35 @@ class FilterParameters:
         Maximal fraction (float between 0 and 1) of 3d displacement that can originate from changes in the underlying depth image.
     """
 
-    def __init__(self, parameter_dict):
-        # Level of Detection
-        self.level_of_detection_quantile = parameter_dict.get("level_of_detection_quantile")
-        self.number_of_points_for_level_of_detection = parameter_dict.get("number_of_points_for_level_of_detection")
+    def __init__(self, parameter_dict: dict | None = None):
+        if parameter_dict is not None:
+            # Level of Detection
+            self.level_of_detection_quantile = parameter_dict.get("level_of_detection_quantile")
+            self.number_of_points_for_level_of_detection = parameter_dict.get("number_of_points_for_level_of_detection")
 
-        # Outlier filtering
-        self.difference_movement_bearing_threshold = parameter_dict.get("difference_movement_bearing_threshold")
-        self.difference_movement_bearing_moving_window_size = parameter_dict.get(
-            "difference_movement_bearing_moving_window_size")
+            # Outlier filtering
+            self.difference_movement_bearing_threshold = parameter_dict.get("difference_movement_bearing_threshold")
+            self.difference_movement_bearing_moving_window_size = parameter_dict.get(
+                "difference_movement_bearing_moving_window_size")
 
-        self.standard_deviation_movement_bearing_threshold = parameter_dict.get(
-            "standard_deviation_movement_bearing_threshold")
-        self.standard_deviation_movement_bearing_moving_window_size = parameter_dict.get(
-            "standard_deviation_movement_bearing_moving_window_size")
+            self.standard_deviation_movement_bearing_threshold = parameter_dict.get(
+                "standard_deviation_movement_bearing_threshold")
+            self.standard_deviation_movement_bearing_moving_window_size = parameter_dict.get(
+                "standard_deviation_movement_bearing_moving_window_size")
 
-        self.difference_movement_rate_threshold = parameter_dict.get("difference_movement_rate_threshold")
-        self.difference_movement_rate_moving_window_size = parameter_dict.get(
-            "difference_movement_rate_moving_window_size")
+            self.difference_movement_rate_threshold = parameter_dict.get("difference_movement_rate_threshold")
+            self.difference_movement_rate_moving_window_size = parameter_dict.get(
+                "difference_movement_rate_moving_window_size")
 
-        self.standard_deviation_movement_rate_threshold = parameter_dict.get(
-            "standard_deviation_movement_rate_threshold")
-        self.standard_deviation_movement_rate_moving_window_size = parameter_dict.get(
-            "standard_deviation_movement_rate_moving_window_size")
-        self.maximal_fraction_depth_change_of_3d_displacement = parameter_dict.get(
-            "maximal_fraction_depth_change_of_3d_displacement")
+            self.standard_deviation_movement_rate_threshold = parameter_dict.get(
+                "standard_deviation_movement_rate_threshold")
+            self.standard_deviation_movement_rate_moving_window_size = parameter_dict.get(
+                "standard_deviation_movement_rate_moving_window_size")
+            self.maximal_fraction_depth_change_of_3d_displacement = parameter_dict.get(
+                "maximal_fraction_depth_change_of_3d_displacement")
 
-        # Validate parameters
-        self._validate()
+            # Validate parameters
+            self._validate()
     
     def _validate(self):
         """Validate filter parameters."""
@@ -116,3 +117,27 @@ class FilterParameters:
                 f'\tstandard deviation movement rate threshold: {self.standard_deviation_movement_rate_threshold}\n'
                 f'\tstandard deviation movement rate moving window size: {self.standard_deviation_movement_rate_moving_window_size}\n'
                 f'\tmaximal_fraction_depth_change_of_3d_displacement: {self.maximal_fraction_depth_change_of_3d_displacement}\n')
+
+    def to_dict(self) -> dict:
+        """
+        Convert parameters to dictionary format.
+
+        Returns
+        -------
+        dict
+            Dictionary with tracking parameters.
+        """
+        return {
+                "level_of_detection_quantile":self.level_of_detection_quantile,
+                "number_of_points_for_level_of_detection": self.number_of_points_for_level_of_detection,
+                "difference_movement_bearing_threshold": self.difference_movement_bearing_threshold,
+                "difference_movement_bearing_moving_window_size": self.difference_movement_bearing_moving_window_size,
+                "standard_deviation_movement_bearing_threshold": self.standard_deviation_movement_bearing_threshold,
+                "standard_deviation_movement_bearing_window_size": self.standard_deviation_movement_bearing_moving_window_size,
+                "difference_movement_rate_threshold": self.difference_movement_rate_threshold,
+                "difference_movement_rate_moving_window_size": self.difference_movement_rate_moving_window_size,
+                "standard_deviation_movement_rate_threshold": self.standard_deviation_movement_rate_threshold,
+                "standard_deviation_movement_rate_moving_window_size": self.standard_deviation_movement_rate_moving_window_size,
+                "maximal_fraction_depth_change_of_3d_displacement": self.maximal_fraction_depth_change_of_3d_displacement
+
+        }

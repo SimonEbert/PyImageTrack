@@ -1085,7 +1085,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
             param_dict["crs"]                               = image_crs
             param_dict["moving_id_column"]                  = moving_id_column
 
- 
+
+            param_dict.update(alignment_params.to_dict())
+            param_dict.update(tracking_params.to_dict())
+            param_dict.update(filter_params.to_dict())
+
             image_pair = ImagePair(parameter_dict=param_dict)
             image_pair.load_images_from_file(
                 filename_1=filename_1,

@@ -18,10 +18,16 @@ import numpy as np
 from shapely import box
 from rasterio.transform import array_bounds
 from affine import Affine
+import warnings
+
 from PyImageTrack.CreateGeometries.HandleGeometries import make_safe_bounds_from_buffer
+from PyImageTrack.ImageTracking.ImagePair import ImagePair
+from PyImageTrack.Parameters import FilterParameters, AlignmentParameters
 from PyImageTrack.Utils import normalize_image_shape
+from PyImageTrack.DataProcessing.DataPostprocessing import filter_outliers_full
 
 from PyImageTrack.ConsoleOutput import get_console
+from PyImageTrack.Parameters.TrackingParameters import TrackingParameters
 
 
 def _sha256(path: str) -> str:
@@ -204,6 +210,7 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         "alignment_params": align_params,
         "crs": str(image_pair.crs),
         "script_version": version,
+        "alignment_parameters": image_pair.alignment_parameters.to_dict(),
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
@@ -229,7 +236,7 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     bool
         True if cache was loaded successfully, False if cache files don't exist.
     """
-    aligned_tif, aligned_depth_tif, control_pts, _ = alignment_cache_paths(align_dir, year1, year2)
+    aligned_tif, aligned_depth_tif, control_pts, meta_json = alignment_cache_paths(align_dir, year1, year2)
     if not os.path.exists(aligned_tif):
         return False
     src = rasterio.open(aligned_tif, "r")
@@ -240,6 +247,12 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
+    if os.path.exists(meta_json):
+        with open(meta_json, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        alignment_parameters_dict = meta.get("alignment_parameters")
+        if alignment_parameters_dict is not None:
+            image_pair.alignment_parameters = AlignmentParameters(alignment_parameters_dict)
 
     # Calculate correct safe image bounds
     if image_pair.crs is not None:# correctly georeferenced path
@@ -375,6 +388,7 @@ def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
         "tracking_quality": getattr(image_pair, "tracking_quality", None),
         "crs": str(image_pair.crs),
         "script_version": version,
+        "tracking_parameters": image_pair.tracking_parameters.to_dict(),
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
@@ -409,6 +423,9 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
             with open(meta_json, "r", encoding="utf-8") as f:
                 meta = json.load(f)
             image_pair.tracking_quality = meta.get("tracking_quality", [])
+            tracking_parameters_dict = meta.get("tracking_parameters")
+            if tracking_parameters_dict is not None:
+                image_pair.tracking_parameters = TrackingParameters(tracking_parameters_dict)
         return True
     except Exception:
         return False
@@ -453,7 +470,7 @@ def save_lod_cache(image_pair, track_dir: str, year1: str, year2: str,
         json.dump(meta, f, indent=2)
 
 
-def load_lod_cache(image_pair, track_dir: str, year1: str, year2: str) -> bool:
+def load_lod_cache(image_pair: ImagePair, track_dir: str, year1: str, year2: str) -> bool:
     """
     Load level of detection (LoD) points from cache files.
 
@@ -477,12 +494,13 @@ def load_lod_cache(image_pair, track_dir: str, year1: str, year2: str) -> bool:
     if not os.path.exists(lod_geojson):
         return False
     try:
-        image_pair.level_of_detection_points = gpd.read_file(lod_geojson)
-        # Restore the level_of_detection value from metadata
-        if os.path.exists(meta_json):
-            with open(meta_json, "r", encoding="utf-8") as f:
-                meta = json.load(f)
-                image_pair.level_of_detection = meta.get("level_of_detection")
+        filtered_level_of_detection_points = gpd.read_file(lod_geojson)
+        # Recalculate the level of detection from the cached LoD points
+        image_pair.level_of_detection_points = filtered_level_of_detection_points
+        image_pair.level_of_detection = np.nanquantile(filtered_level_of_detection_points.loc[
+                                                     filtered_level_of_detection_points[
+                                                         "valid"], image_pair.displacement_column_name],
+                                                 image_pair.filter_parameters.level_of_detection_quantile)
         return True
     except Exception:
         return False
