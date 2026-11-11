@@ -210,7 +210,6 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         "alignment_params": align_params,
         "crs": str(image_pair.crs),
         "script_version": version,
-        "alignment_parameters": image_pair.alignment_parameters.to_dict(),
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
@@ -247,12 +246,6 @@ def load_alignment_cache(image_pair, align_dir: str, year1: str, year2: str) -> 
     image_pair.image2_transform = image_pair.image1_transform
     image_pair.images_aligned = True
     image_pair.valid_alignment_possible = True
-    if os.path.exists(meta_json):
-        with open(meta_json, "r", encoding="utf-8") as f:
-            meta = json.load(f)
-        alignment_parameters_dict = meta.get("alignment_parameters")
-        if alignment_parameters_dict is not None:
-            image_pair.alignment_parameters = AlignmentParameters(alignment_parameters_dict)
 
     # Calculate correct safe image bounds
     if image_pair.crs is not None:# correctly georeferenced path
@@ -388,7 +381,7 @@ def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
         "tracking_quality": getattr(image_pair, "tracking_quality", None),
         "crs": str(image_pair.crs),
         "script_version": version,
-        "tracking_parameters": image_pair.tracking_parameters.to_dict(),
+        "tracking_parameters": str(getattr(image_pair, "tracking_parameters", None)),
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)

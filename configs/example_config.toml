@@ -432,7 +432,8 @@ use_lod_cache = false         # Cache Level of Detection calculations, only used
 #     "mask_outlier_msd_tif"        - Outliers by mean standard deviation filter
 #     "mask_outlier_bd_tif"         - Outliers by bearing difference filter
 #     "mask_outlier_bsd_tif"        - Outliers by bearing standard deviation filter
-#     "mask_outlier_depth_fraction_tif" - Outliers by depth fraction filter (only for 3d displacements)
+#     "mask_outlier_depth_fraction_tif" - Invalid by depth fraction filter (only for 3d displacements)
+#     "mask_below_correlation_threshold_tif" - Invalid by too low correlation value during tracking
 #   Other diagnostic outputs:
 #     "parameters_txt"               - All configuration parameters (.txt)
 #     "first_image_matrix_jpg"       - Raw first image matrix (.jpg)

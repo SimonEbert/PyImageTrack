@@ -292,87 +292,6 @@ def move_indices_from_transformation_matrix(transformation_matrix: np.ndarray, i
     return moved_indices
 
 
-def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray,
-                   tracking_parameters: TrackingParameters = None,
-                   initial_shift_values: list = None, search_center=None) -> TrackingResults:
-    """
-    Tracks the movement of a given image section ('tracked_cell_matrix') within a given search cell
-    ('search_cell_matrix') using the least-squares approach. Initial shift values can be provided, otherwise the cross-
-    correlation approach is used to determine the optimal initial shift value.
-    Parameters
-    ----------
-    tracked_cell_matrix: np.ndarray
-        The array representing a section of the first image, which is compared to sections of the search_cell_matrix.
-    search_cell_matrix: np.ndarray
-        An array, which delimits the area in which possible matching image sections are searched.
-    initial_shift_values: np.array=None
-        Initial shift values in the format [initial_movement_rows, initial_movement_cols] to be used in the first step
-        of the least-squares optimization problem.
-    Returns
-    -------
-    tracking_results: TrackingResults
-        An instance of the class TrackingResults containing the results of the tracking, that is the shift of the rows
-        and columns at the central pixel respectively, as well as the corresponding extended transformation matrix. If
-        the tracking does not provide valid results (e.g. because no valid initial values were found or the optimization
-        problem did not converge after 50 iterations), the shift values and the transformation matrix are set to np.nan
-        and None, respectively.
-    """
-    # Assure the same number of channels for multi-channel image processing
-    if tracked_cell_matrix.ndim == 3:
-        if tracked_cell_matrix.shape[0] != search_cell_matrix.shape[0]:
-            raise ValueError("The tracked cell matrix and the search cell matrix contain different number of channels "
-                             "(Shape mismatch of the two matrices in axis 0).")
-
-    # assign indices in respect to indexing in the search cell matrix
-    if search_center is None:
-        central_row = np.round(search_cell_matrix.shape[-2] / 2)
-        central_column = np.round(search_cell_matrix.shape[-1] / 2)
-    else:
-        central_row = float(search_center[0])
-        central_column = float(search_center[1])
-
-    indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - tracked_cell_matrix.shape[-2] / 2),
-                                             np.ceil(central_row + tracked_cell_matrix.shape[-2] / 2)),
-                                   np.arange(np.ceil(central_column - tracked_cell_matrix.shape[-1] / 2),
-                                             np.ceil(central_column + tracked_cell_matrix.shape[-1] / 2)))
-                       ).T.reshape(-1, 2).T
-
-    if initial_shift_values is None:
-        initial_shift_values = track_cell_cc(
-            tracked_cell_matrix, search_cell_matrix, search_center=search_center,
-            tracking_parameters=tracking_parameters
-        )
-
-    if initial_shift_values is None or len(initial_shift_values) == 0:
-        initial_shift_values = [[0, 0]]
-
-    # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
-
-    # Interpolator for the image. If search_cell_matrix.ndim == 2, this is a direct wrapper for
-    # scipy.interpolate.RectBivariateSpline (and should behave exactly equivalently)
-    # If search_cell_matrix.ndim == 3, it expands the RectBivariateSpline functionality to apply interpolation only in
-    # the last two axes, while the first axis is treated as containing several (independent) image channels
-    search_cell_spline = ImageInterpolator(search_cell_matrix)
-
-
-    lsm_results = []
-    for initial_shift_value_estimate in initial_shift_values:
-        coefficients = [1, 0, initial_shift_value_estimate[0], 0, 1, initial_shift_value_estimate[1], 0, 1]
-        # calculate transformation matrix form of the coefficients
-        transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
-                                          [coefficients[3], coefficients[4], coefficients[5]]])
-        lsm_tracking_result = perform_lsm_loop(tracked_cell_matrix, search_cell_spline,indices,
-                                               coefficients, transformation_matrix, central_row,
-                                               central_column,)
-        if lsm_tracking_result.tracking_success:
-            lsm_results.append(lsm_tracking_result)
-    if len(lsm_results) == 0:
-        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
-                               tracking_success=False)
-    best_match_tracking_result = min(lsm_results, key=lambda x: x.rmse)
-    return best_match_tracking_result
-
-
 def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageInterpolator,
                      indices: np.ndarray,
                      coefficients: list[float | int],
@@ -466,7 +385,7 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
 
     moved_cell_submatrix_vector = moved_cell_submatrix_vector - np.mean(moved_cell_submatrix_vector)
     moved_cell_norm = np.linalg.norm(moved_cell_submatrix_vector)
-    if moved_cell_norm == 0:
+    if moved_cell_norm == 0.:
         return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
                                tracking_success=False)
     moved_cell_submatrix_vector = moved_cell_submatrix_vector / moved_cell_norm
@@ -491,10 +410,94 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
                                        rmse=np.sqrt(np.mean(np.square(residuals))))
     return tracking_results
 
+
+def track_cell_lsm(tracked_cell_matrix: np.ndarray, search_cell_matrix: np.ndarray,
+                   tracking_parameters: TrackingParameters| None = None,
+                   initial_shift_values: list | None = None, search_center=None) -> TrackingResults:
+    """
+    Tracks the movement of a given image section ('tracked_cell_matrix') within a given search cell
+    ('search_cell_matrix') using the least-squares approach. Initial shift values can be provided, otherwise the cross-
+    correlation approach is used to determine the optimal initial shift value.
+    Parameters
+    ----------
+    tracked_cell_matrix: np.ndarray
+        The array representing a section of the first image, which is compared to sections of the search_cell_matrix.
+    search_cell_matrix: np.ndarray
+        An array, which delimits the area in which possible matching image sections are searched.
+    initial_shift_values: np.array=None
+        Initial shift values in the format [initial_movement_rows, initial_movement_cols] to be used in the first step
+        of the least-squares optimization problem.
+    Returns
+    -------
+    tracking_results: TrackingResults
+        An instance of the class TrackingResults containing the results of the tracking, that is the shift of the rows
+        and columns at the central pixel respectively, as well as the corresponding extended transformation matrix. If
+        the tracking does not provide valid results (e.g. because no valid initial values were found or the optimization
+        problem did not converge after 50 iterations), the shift values and the transformation matrix are set to np.nan
+        and None, respectively.
+    """
+    # Assure the same number of channels for multi-channel image processing
+    if tracked_cell_matrix.ndim == 3:
+        if tracked_cell_matrix.shape[0] != search_cell_matrix.shape[0]:
+            raise ValueError("The tracked cell matrix and the search cell matrix contain different number of channels "
+                             "(Shape mismatch of the two matrices in axis 0).")
+
+    # assign indices in respect to indexing in the search cell matrix
+    if search_center is None:
+        central_row = np.round(search_cell_matrix.shape[-2] / 2)
+        central_column = np.round(search_cell_matrix.shape[-1] / 2)
+    else:
+        central_row = float(search_center[0])
+        central_column = float(search_center[1])
+
+    indices = np.array(np.meshgrid(np.arange(np.ceil(central_row - tracked_cell_matrix.shape[-2] / 2),
+                                             np.ceil(central_row + tracked_cell_matrix.shape[-2] / 2)),
+                                   np.arange(np.ceil(central_column - tracked_cell_matrix.shape[-1] / 2),
+                                             np.ceil(central_column + tracked_cell_matrix.shape[-1] / 2)))
+                       ).T.reshape(-1, 2).T
+
+    if initial_shift_values is None:
+        initial_shift_values = track_cell_cc(
+            tracked_cell_matrix, search_cell_matrix, search_center=search_center,
+            tracking_parameters=tracking_parameters
+        )
+
+    if initial_shift_values is None or len(initial_shift_values) == 0:
+        initial_shift_values = [[0, 0]]
+
+    # initialize the transformation with the given initial shift values and the identity matrix as linear transformation
+
+    # Interpolator for the image. If search_cell_matrix.ndim == 2, this is a direct wrapper for
+    # scipy.interpolate.RectBivariateSpline (and should behave exactly equivalently)
+    # If search_cell_matrix.ndim == 3, it expands the RectBivariateSpline functionality to apply interpolation only in
+    # the last two axes, while the first axis is treated as containing several (independent) image channels
+    search_cell_spline = ImageInterpolator(search_cell_matrix)
+
+
+    lsm_results = []
+    for initial_shift_value_estimate in initial_shift_values:
+        coefficients = [1, 0, initial_shift_value_estimate[0], 0, 1, initial_shift_value_estimate[1], 0, 1]
+        # calculate transformation matrix form of the coefficients
+        transformation_matrix = np.array([[coefficients[0], coefficients[1], coefficients[2]],
+                                          [coefficients[3], coefficients[4], coefficients[5]]])
+        lsm_tracking_result = perform_lsm_loop(tracked_cell_matrix, search_cell_spline,indices,
+                                               coefficients, transformation_matrix, central_row,
+                                               central_column,)
+        if lsm_tracking_result.tracking_success:
+            lsm_results.append(lsm_tracking_result)
+    if len(lsm_results) == 0:
+        return TrackingResults(movement_rows=np.nan, movement_cols=np.nan, tracking_method="least-squares",
+                               tracking_success=False)
+    best_match_tracking_result = min(lsm_results, key=lambda x: x.rmse)
+    return best_match_tracking_result
+
+
 def track_cell_lsm_parallelized(central_index: np.ndarray, shm1_name, shm2_name, shape1, shape2, dtype,
-                                 tracked_cell_size,
-                                 tracking_parameters: TrackingParameters = None, control_search_extents=None,
-                                 search_extents=None, initial_shift_values: list = None):
+                                tracked_cell_size,
+                                tracking_parameters: TrackingParameters | None= None,
+                                control_search_extents=None,
+                                search_extents=None,
+                                initial_shift_values: list | None = None) -> TrackingResults | None:
     """
     Helper function for letting the least-squares approach run parallelized. It takes only a np.ndarray that represents
     one central index that should be tracked. All the other tracking variables (tracked and search cell sizes and the
@@ -593,7 +596,8 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
                        tracking_parameters: TrackingParameters = None, alignment_parameters: AlignmentParameters = None,
                        alignment_tracking: bool = False,
                        save_columns: list[str] = None, task_label: str = "Tracking points",
-                       valid_mask1: np.ndarray = None, valid_mask2: np.ndarray = None) -> pd.DataFrame:
+                       valid_mask1: np.ndarray = None, valid_mask2: np.ndarray = None,
+                       cross_correlation_threshold: float | int | None = None) -> pd.DataFrame:
     """
     Calculates the movement of given points between two aligned raster image matrices (with the same transform)
     using the least-squares approach.
@@ -673,13 +677,16 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         if alignment_parameters is None:
             raise ValueError("alignment_tracking=True requires alignment_parameters.")
         movement_cell_size = alignment_parameters.control_cell_size
-        cross_correlation_threshold = alignment_parameters.cross_correlation_threshold_alignment
+        if cross_correlation_threshold is None:
+            cross_correlation_threshold = alignment_parameters.cross_correlation_threshold_alignment
+        elif alignment_parameters.cross_correlation_threshold_alignment is not None:
+            get_console().warning("Got cross-correlation threshold from function signature and alignment parameters."
+                                  "Using function signature threshold " + str(cross_correlation_threshold) + ".")
         initial_shift_values = getattr(alignment_parameters, "initial_shift_values", None)
     else:
         if tracking_parameters is None:
             raise ValueError("alignment_tracking=False requires tracking_parameters.")
         movement_cell_size = tracking_parameters.movement_cell_size
-        cross_correlation_threshold = tracking_parameters.cross_correlation_threshold_movement
         initial_shift_values = tracking_parameters.initial_shift_values
 
     if image1_matrix.ndim != image2_matrix.ndim:
@@ -877,12 +884,12 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
         original_point_count == 0 or accepted_count / original_point_count < minimum_ratio
     ):
         raise TrackingPointRatioError(original_point_count, accepted_count, minimum_ratio)
-    
+
     # Preserve counts for callers that need to report tracking quality. The returned
     # dataframe is already filtered by the correlation threshold.
-    tracked_pixels_above_cc_threshold.attrs["original_point_count"] = original_point_count
-    tracked_pixels_above_cc_threshold.attrs["tracking_input_point_count"] = tracking_input_point_count
-    tracked_pixels_above_cc_threshold.attrs["accepted_point_count"] = accepted_count
+    tracked_pixels.attrs["original_point_count"] = original_point_count
+    tracked_pixels.attrs["tracking_input_point_count"] = tracking_input_point_count
+    tracked_pixels.attrs["accepted_point_count"] = accepted_count
 
     # Return the results
-    return tracked_pixels_above_cc_threshold
+    return tracked_pixels_above_cc_threshold# tracked_pixels[~np.isnan(tracked_pixels["correlation_coefficient"])]

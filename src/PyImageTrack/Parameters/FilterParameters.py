@@ -49,6 +49,8 @@ class FilterParameters:
 
     def __init__(self, parameter_dict: dict | None = None):
         if parameter_dict is not None:
+
+            self.cross_correlation_threshold_movement = parameter_dict.get("cross_correlation_threshold_movement")
             # Level of Detection
             self.level_of_detection_quantile = parameter_dict.get("level_of_detection_quantile")
             self.number_of_points_for_level_of_detection = parameter_dict.get("number_of_points_for_level_of_detection")
@@ -79,6 +81,9 @@ class FilterParameters:
     
     def _validate(self):
         """Validate filter parameters."""
+        if self.cross_correlation_threshold_movement is not None:
+            if self.cross_correlation_threshold_movement > 1. or self.cross_correlation_threshold_movement < 0.:
+                raise ValueError(f"Cross-correlation threshold must be between 0 and 1, got {self.cross_correlation_threshold_movement}.")
         if self.level_of_detection_quantile is not None:
             if not 0 < self.level_of_detection_quantile < 1:
                 raise ValueError(f"level_of_detection_quantile must be between 0 and 1 (exclusive), got {self.level_of_detection_quantile}")
@@ -106,6 +111,7 @@ class FilterParameters:
 
     def __str__(self):
         return (f'FilterParameters:\n'
+                f'\tcross-correlation threshold: {self.cross_correlation_threshold_movement}\n'
                 f'\tlevel of detection quantile: {self.level_of_detection_quantile}\n'
                 f'\tnumber of points for level of detection: {self.number_of_points_for_level_of_detection}\n'
                 f'\tdifference movement bearing threshold: {self.difference_movement_bearing_threshold}\n'
@@ -128,6 +134,7 @@ class FilterParameters:
             Dictionary with tracking parameters.
         """
         return {
+                "cross_correlation_threshold_movement": self.cross_correlation_threshold_movement,
                 "level_of_detection_quantile":self.level_of_detection_quantile,
                 "number_of_points_for_level_of_detection": self.number_of_points_for_level_of_detection,
                 "difference_movement_bearing_threshold": self.difference_movement_bearing_threshold,

@@ -67,7 +67,6 @@ class TrackingParameters:
             self.search_extent_deltas = parameter_dict.get("search_extent_deltas", self.search_extent_px)
             self.search_extent_full_cell = None  # Will be computed during tracking
             self.movement_cell_size = parameter_dict.get("movement_cell_size")
-            self.cross_correlation_threshold_movement = parameter_dict.get("cross_correlation_threshold_movement")
             self.minimum_valid_tracking_point_ratio = parameter_dict.get("minimum_valid_tracking_point_ratio", 0.0)
             self.initial_shift_values = parameter_dict.get("initial_shift_values")
             self.initial_estimate_mode = parameter_dict.get("initial_estimate_mode", "count")
@@ -94,10 +93,7 @@ class TrackingParameters:
         
         if self.distance_of_tracked_points_px is not None and self.distance_of_tracked_points_px <= 0:
             raise ValueError(f"distance_of_tracked_points_px must be positive, got {self.distance_of_tracked_points_px}")
-        
-        if self.cross_correlation_threshold_movement is not None:
-            if not 0 <= self.cross_correlation_threshold_movement <= 1:
-                raise ValueError(f"cross_correlation_threshold_movement must be between 0 and 1, got {self.cross_correlation_threshold_movement}")
+
 
         if not 0 <= self.minimum_valid_tracking_point_ratio <= 1:
             raise ValueError(
@@ -133,7 +129,6 @@ class TrackingParameters:
         return (
             "TrackingParameters:\n"
             f"\tmovement cell size: {self.movement_cell_size}\n"
-            f"\tCC threshold (movement): {self.cross_correlation_threshold_movement}\n"
             f"\tminimum valid tracking point ratio: {self.minimum_valid_tracking_point_ratio} "
             f"({self.minimum_valid_tracking_point_ratio:.1%})\n"
             f"\tsearch (user deltas, posx,negx,posy,negy): {self.search_extent_deltas}\n"
@@ -159,7 +154,6 @@ class TrackingParameters:
         """
         return {
             "movement_cell_size": self.movement_cell_size,
-            "cross_correlation_threshold_movement": self.cross_correlation_threshold_movement,
             "minimum_valid_tracking_point_ratio": self.minimum_valid_tracking_point_ratio,
             "distance_of_tracked_points_px": self.distance_of_tracked_points_px,
             "search_extent_px": self.search_extent_px,

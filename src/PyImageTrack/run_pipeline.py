@@ -707,7 +707,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
         "image_bands": image_bands,
         "distance_of_tracked_points_px": _require(cfg, "tracking", "distance_of_tracked_points_px"),
         "movement_cell_size": _require(cfg, "tracking", "movement_cell_size"),
-        "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
         "minimum_valid_tracking_point_ratio": _get(cfg, "tracking", "minimum_valid_tracking_point_ratio", 0.0),
         # search extent tuple: (right, left, down, up) in pixels around the movement cell
         # usually this refers to the offset in px between the images,
@@ -722,6 +721,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
     })
 
     filter_params = FilterParameters({
+        "cross_correlation_threshold_movement": _require(cfg, "tracking", "cross_correlation_threshold_movement"),
         "level_of_detection_quantile": _require(cfg, "filter", "level_of_detection_quantile"),
         "number_of_points_for_level_of_detection": _require(cfg, "filter", "number_of_points_for_level_of_detection"),
         "difference_movement_bearing_threshold": _require(cfg, "filter", "difference_movement_bearing_threshold"),
@@ -946,20 +946,11 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 cap_per_side=None
             )
 
-            pair_tracking_config_for_code = {
-                "image_bands": image_bands,
-                "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
-                "movement_cell_size": tracking_params.movement_cell_size,
-                "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
-                "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
-                "search_extent_px": base_track_deltas,  # user-entered deltas for folder code
-            }
 
             pair_tracking_config = {
                 "image_bands": image_bands,
                 "distance_of_tracked_points_px": tracking_params.distance_of_tracked_points_px,
                 "movement_cell_size": tracking_params.movement_cell_size,
-                "cross_correlation_threshold_movement": tracking_params.cross_correlation_threshold_movement,
                 "minimum_valid_tracking_point_ratio": tracking_params.minimum_valid_tracking_point_ratio,
                 "search_extent_deltas": base_track_deltas,
                 "search_extent_px_effective": adaptive_extents,
@@ -1028,11 +1019,8 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 # We'll try to load from cache, but we don't know yet if it exists
                 # For directory structure, we assume alignment will be done
                 will_load_alignment_cache = True
-            
-            # Determine if filtering will be performed
-            will_do_filtering = do_filtering
 
-            # Set alignment code to "A_none" if alignment is disabled and not loaded from cache
+
             # Directories
             # Use formatted dates for directory names (guaranteed correct, handles all date formats)
             base_pair_dir = os.path.join(output_folder, f"{dt1_string.replace(" ","_")}_{dt2_string.replace(" ","_")}")
@@ -1193,7 +1181,6 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                         "Distance of tracked points": f"{tracking_params.distance_of_tracked_points_px} px",
                         "Movement cell size": f"{tracking_params.movement_cell_size} px",
                         "Search extent": f"{tracking_params.search_extent_px} px",
-                        "Cross-correlation threshold": tracking_params.cross_correlation_threshold_movement,
                         "Minimum valid point ratio": f"{tracking_params.minimum_valid_tracking_point_ratio:.1%}",
                         "Adaptive tracking window": f"enabled{adaptive_info}"
                     })
@@ -1261,6 +1248,7 @@ def run_from_config(config_path: str, verbose: bool = False, quiet: bool = False
                 if do_lod_calculation:
                     console.section_header("FILTERING", "Removing outliers from tracking results", f"({pair_id_short})", level=2)
                     console.parameter_summary({
+                        "Cross-correlation threshold": filter_params.cross_correlation_threshold_movement,
                         "LoD quantile": filter_params.level_of_detection_quantile,
                         "Number of points for LoD": filter_params.number_of_points_for_level_of_detection,
                         "Bearing difference threshold": filter_params.difference_movement_bearing_threshold,

@@ -203,8 +203,13 @@ def calculate_displacement_from_depth_images(tracked_points: pd.DataFrame, depth
     elif output_unit_mode == "per_day":
         georeferenced_tracked_pixels["3d_displacement_distance_per_day"] = (georeferenced_tracked_pixels["3d_displacement_distance"]
                                                                         / (time_between_observations.total_seconds() / 86400))
+
+    elif output_unit_mode == "per_hour":
+        georeferenced_tracked_pixels["3d_displacement_distance_per_hour"] = (
+                    georeferenced_tracked_pixels["3d_displacement_distance"] /
+                    time_between_observations.total_seconds() * 3600)
     else:
-        raise ValueError("Did not recognize output unit mode " + output_unit_mode + ". Expected 'total', 'per_year',"
+        raise ValueError("Did not recognize output unit mode " + output_unit_mode + ". Expected 'total', 'per_year', 'per_hour'"
                                                                                     " or 'per_second'.")
 
 

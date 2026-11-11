@@ -918,6 +918,7 @@ class ImagePair:
                                             alignment_tracking=False,
                                             valid_mask1=self.image1_valid_mask,
                                             valid_mask2=self.image2_valid_mask,
+                                            cross_correlation_threshold=self.filter_parameters.cross_correlation_threshold_movement if self.filter_parameters is not None else None,
                                             task_label="[~] Tracking points for movement tracking")
         accepted_point_count = len(tracked_points)
         self.tracking_quality = {
@@ -926,8 +927,6 @@ class ImagePair:
             "accepted_ratio": accepted_point_count / original_point_count if original_point_count else 0.0,
             "minimum_ratio": self.tracking_parameters.minimum_valid_tracking_point_ratio,
         }
-        # calculate the years between observations from the two given observation dates
-
         if self.convert_to_3d_displacement:
             georeferenced_tracked_points = calculate_displacement_from_depth_images(
                 tracked_points, depth_image_time1=self.depth_image1,
@@ -1091,7 +1090,6 @@ class ImagePair:
             crs=self.crs
         )
 
-
         points = points.rename(columns={0: 'geometry'})
         points.set_geometry('geometry', inplace=True)
 
@@ -1112,6 +1110,7 @@ class ImagePair:
             task_label="[~] Tracking points for LoD",
             valid_mask1=self.image1_valid_mask,
             valid_mask2=self.image2_valid_mask,
+            cross_correlation_threshold=self.filter_parameters.cross_correlation_threshold_movement if self.filter_parameters is not None else None,
         )
         tracked_control_pixels_valid = tracked_points[tracked_points["movement_row_direction"].notna()]
 
@@ -1632,7 +1631,8 @@ class ImagePair:
         _write_reason_mask("is_movement_rate_standard_deviation_outlier", "mask_outlier_msd_tif", "mask_outlier_msd")
         _write_reason_mask("is_bearing_difference_outlier", "mask_outlier_bd_tif", "mask_outlier_bd")
         _write_reason_mask("is_bearing_standard_deviation_outlier", "mask_outlier_bsd_tif", "mask_outlier_bsd")
-        _write_reason_mask("is_depth_fraction_outlier", "mask_outlier_depth_fraction_tif", "mask_outlier_depth_fraction")
+        _write_reason_mask("is_depth_fraction_invalid", "mask_outlier_depth_fraction_tif", "mask_outlier_depth_fraction")
+        _write_reason_mask("is_below_correlation_threshold", "mask_below_correlation_threshold_tif", "mask_below_correlation_threshold")
 
         # LoD points
         if "LoD_points_fgb" in save_files and self.level_of_detection_points is not None:
@@ -1728,7 +1728,7 @@ class ImagePair:
                     )
                 if (getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None) is not None) & (self.displacement_column_name == "3d_displacement_distance_per_year"):
                     statistics_file.write(
-                        "\t\t" + str(int(tr_all["is_depth_fraction_outlier"].sum())) + " depth fraction outliers\n"
+                        "\t\t" + str(int(tr_all["is_depth_fraction_invalid"].sum())) + " invalid due to high fraction of depth change\n"
                     )
 
                 statistics_file.write(
