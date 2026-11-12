@@ -409,7 +409,7 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
     raw_geojson, meta_json = tracking_cache_paths(track_dir, year1, year2)
     if not os.path.exists(raw_geojson):
         return False
-    if True:
+    try:
         image_pair.tracking_results = gpd.read_file(raw_geojson)
         image_pair.crs = image_pair.tracking_results.crs
         if os.path.exists(meta_json):
@@ -420,7 +420,7 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
             if tracking_parameters_dict is not None:
                 image_pair.tracking_parameters = TrackingParameters.from_dict(tracking_parameters_dict)
         return True
-    else:#except Exception:
+    except Exception:
         return False
 
 
