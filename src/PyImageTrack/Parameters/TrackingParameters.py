@@ -167,3 +167,7 @@ class TrackingParameters:
             "multi_scale_initialization_downsample_factors": self.multi_scale_initialization_downsample_factors
 
         }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "TrackingParameters":
+        return cls(d)

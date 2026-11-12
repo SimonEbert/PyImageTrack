@@ -622,7 +622,7 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
 
     no_outliers_series = pd.Series(False, index=base_df.index)
 
-    if False:# filter_parameters.cross_correlation_threshold_movement is not None:
+    if filter_parameters.cross_correlation_threshold_movement is not None:
         mask_correlation_threshold = base_df["correlation_coefficient"] < filter_parameters.cross_correlation_threshold_movement
 
     else:
@@ -665,37 +665,4 @@ def filter_outliers_full(tracking_results: gpd.GeoDataFrame, filter_parameters: 
     base_df.loc[dataframe_for_filtering.index[combined_outlier_mask], "is_outlier"] = True
     base_df.loc[base_df["is_outlier"] | prefiltered_mask, "valid"] = False
 
-    # if displacement_column_name == "3d_displacement_distance_per_year":
-    #     depth_fraction_df = filter_outliers_depth_change_fraction(base_df.copy(), filter_parameters,
-    #                                                               displacement_column_name)
-    #     mask_depth_fraction = _mask_from(depth_fraction_df, "is_depth_fraction_outlier")
-    #     # combined_outlier_mask = mask_depth_fraction | mask_bd | mask_bsd | mask_md | mask_msd
-    #     base_df["is_depth_fraction_outlier"] = mask_depth_fraction
-    #     filtered_depth_fraction_df = base_df.copy()
-    #     filtered_depth_fraction_df = gpd.GeoDataFrame(
-    #         filtered_depth_fraction_df.drop(columns=["is_depth_fraction_outlier"]))
-    # dataframe_for_filtering = filtered_depth_fraction_df if displacement_column_name == "3d_displacement_distance_per_year" else base_df
-    #
-    # bd_df = filter_outliers_movement_bearing_difference(dataframe_for_filtering.copy(), filter_parameters)
-    # bsd_df = filter_outliers_movement_bearing_standard_deviation(dataframe_for_filtering.copy(), filter_parameters)
-    # md_df = filter_outliers_movement_rate_difference(dataframe_for_filtering.copy(), filter_parameters,
-    #                                                  displacement_column_name)
-    # msd_df = filter_outliers_movement_rate_mad(dataframe_for_filtering.copy(), filter_parameters,
-    #                                            displacement_column_name)
-    #
-    # mask_bd = _mask_from(bd_df, "is_bearing_difference_outlier")
-    # mask_bsd = _mask_from(bsd_df, "is_bearing_standard_deviation_outlier")
-    # mask_md = _mask_from(md_df, "is_movement_rate_difference_outlier")
-    # mask_msd = _mask_from(msd_df, "is_movement_rate_standard_deviation_outlier")
-    #
-    # combined_outlier_mask = mask_bd | mask_bsd | mask_md | mask_msd | (
-    #     mask_depth_fraction if displacement_column_name == "3d_displacement_distance_per_year" else False)
-    #
-    # base_df["is_bearing_difference_outlier"] = mask_bd
-    # base_df["is_bearing_standard_deviation_outlier"] = mask_bsd
-    # base_df["is_movement_rate_difference_outlier"] = mask_md
-    # base_df["is_movement_rate_standard_deviation_outlier"] = mask_msd
-    #
-    # base_df.loc[combined_outlier_mask, "valid"] = False
-    # base_df.loc[combined_outlier_mask, "is_outlier"] = True
     return base_df

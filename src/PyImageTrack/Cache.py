@@ -381,7 +381,7 @@ def save_tracking_cache(image_pair, track_dir: str, year1: str, year2: str,
         "tracking_quality": getattr(image_pair, "tracking_quality", None),
         "crs": str(image_pair.crs),
         "script_version": version,
-        "tracking_parameters": str(getattr(image_pair, "tracking_parameters", None)),
+        "tracking_parameters": getattr(image_pair, "tracking_parameters", None).to_dict(),
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
@@ -409,18 +409,18 @@ def load_tracking_cache(image_pair, track_dir: str, year1: str, year2: str) -> b
     raw_geojson, meta_json = tracking_cache_paths(track_dir, year1, year2)
     if not os.path.exists(raw_geojson):
         return False
-    try:
+    if True:
         image_pair.tracking_results = gpd.read_file(raw_geojson)
         image_pair.crs = image_pair.tracking_results.crs
         if os.path.exists(meta_json):
             with open(meta_json, "r", encoding="utf-8") as f:
-                meta = json.load(f)
+                meta = dict(json.load(f))
             image_pair.tracking_quality = meta.get("tracking_quality", [])
             tracking_parameters_dict = meta.get("tracking_parameters")
             if tracking_parameters_dict is not None:
-                image_pair.tracking_parameters = TrackingParameters(tracking_parameters_dict)
+                image_pair.tracking_parameters = TrackingParameters.from_dict(tracking_parameters_dict)
         return True
-    except Exception:
+    else:#except Exception:
         return False
 
 

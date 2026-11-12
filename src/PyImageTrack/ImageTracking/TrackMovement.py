@@ -401,7 +401,6 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
     tracked_cell_vector = tracked_cell_vector / tracked_cell_norm
     corr = float(np.dot(tracked_cell_vector, moved_cell_submatrix_vector))
 
-
     [shift_rows, shift_columns] = [new_central_row - central_row, new_central_column - central_column]
 
     tracking_results = TrackingResults(movement_rows=shift_rows, movement_cols=shift_columns,
@@ -869,11 +868,18 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     ]
 
     # Filter by correlation threshold - handle case where column might not exist
-    if "correlation_coefficient" in tracked_pixels.columns:
+    if ("correlation_coefficient" in tracked_pixels.columns) and (cross_correlation_threshold is not None):
         tracked_pixels_above_cc_threshold = tracked_pixels[
             tracked_pixels["correlation_coefficient"] > cross_correlation_threshold]
     else:
         tracked_pixels_above_cc_threshold = tracked_pixels.copy()
+    if alignment_tracking:
+        if len(tracked_pixels_above_cc_threshold) == 0:
+            tracked_pixels.sort_values(by=["correlation_coefficient"], inplace=True, ascending=False)
+            raise ValueError(
+                "Was not able to track any points with a cross-correlation higher than the cross-correlation "
+                "threshold. The highest cross-correlation values were\n" + str(tracked_pixels[["row", "column","correlation_coefficient"]].head(10)) + "\n(None-values may signify problems during tracking).")
+        return tracked_pixels_above_cc_threshold
 
     if "correlation_coefficient" not in save_columns and "correlation_coefficient" in tracked_pixels_above_cc_threshold.columns:
         tracked_pixels_above_cc_threshold = tracked_pixels_above_cc_threshold.drop(columns="correlation_coefficient")
@@ -892,4 +898,4 @@ def track_movement_lsm(image1_matrix, image2_matrix, image_transform, points_to_
     tracked_pixels.attrs["accepted_point_count"] = accepted_count
 
     # Return the results
-    return tracked_pixels_above_cc_threshold# tracked_pixels[~np.isnan(tracked_pixels["correlation_coefficient"])]
+    return tracked_pixels[~np.isnan(tracked_pixels["correlation_coefficient"])]

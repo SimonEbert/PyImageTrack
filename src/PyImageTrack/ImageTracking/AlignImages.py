@@ -183,11 +183,6 @@ def align_images_lsm_scarce(image1_matrix, image2_matrix, image_transform, refer
     if maximal_alignment_movement is not None:
         tracked_control_pixels_valid = tracked_control_pixels_valid[
             tracked_control_pixels_valid["movement_distance_pixels"] <= maximal_alignment_movement]
-    if len(tracked_control_pixels_valid) == 0:
-        raise ValueError("Was not able to track any points with a cross-correlation higher than the cross-correlation "
-                         "threshold. Cross-correlation values were " + str(
-            list(tracked_control_pixels[
-                     "correlation_coefficient"])) + "\n(None-values may signify problems during tracking).")
 
     console = get_console()
     total_points = len(reference_area_point_grid)
