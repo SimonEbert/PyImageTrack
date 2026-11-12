@@ -222,9 +222,9 @@ control_cell_size = 50
 
 # Minimum cross-correlation threshold for accepting a control point match
 # Range: 0.0 to 1.0, higher = stricter matching
-cross_correlation_threshold_alignment = 0.3
+cross_correlation_threshold_alignment = 0.8
 
-# Maximum allowed alignment displacement in pixels
+# Maximum allowed displacement of alignment points in pixels
 # Used to filter out spurious control points
 # Set to "none" to disable this filter
 maximal_alignment_movement = "none"
