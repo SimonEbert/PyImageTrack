@@ -144,7 +144,7 @@ def filter_lod_points(tracking_results: gpd.GeoDataFrame, level_of_detection: fl
         velocity_unit = ""
 
     console = get_console()
-    console.info("Applying LoD filter with level of detection " + str(np.round(level_of_detection,decimals=3)) + " " + velocity_unit)
+    console.info("Applying LoD filter with level of detection " + str(np.round(level_of_detection,decimals=4)) + " " + velocity_unit)
 
     tracking_results["is_below_LoD"] = False
     tracking_results.loc[tracking_results[displacement_column_name] < level_of_detection, "is_below_LoD"] = True
