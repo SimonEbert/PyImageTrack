@@ -210,6 +210,7 @@ def save_alignment_cache(image_pair, align_dir: str, year1: str, year2: str,
         "alignment_params": align_params,
         "crs": str(image_pair.crs),
         "script_version": version,
+        "alignment_transformation_matrix": str(image_pair.alignment_transformation_matrix),
     }
     with open(meta_json, "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)

@@ -126,6 +126,8 @@ class ImagePair:
         self.image2_observation_date_user_string = None
         self.image_bounds = None
 
+        self.alignment_transformation_matrix = None
+
         # Optional: store original (true-color) matrices for writing aligned products
         self.image1_matrix_original = None
         self.image2_matrix_original = None
@@ -722,12 +724,13 @@ class ImagePair:
                 valid_mask1=self.image1_valid_mask,
                 valid_mask2=self.image2_valid_mask,
             )
+            self.alignment_transformation_matrix = alignment_transformation_matrix
             self.depth_image2 = move_image_matrix_from_transformation(self.depth_image2, alignment_transformation_matrix,
                                                   target_shape=self.depth_image1.shape[-2:])
             console.success("Depth image resampled.")
 
         else:
-            _, new_image2_matrix, tracked_control_points = align_images_lsm_scarce(
+            _, new_image2_matrix, tracked_control_points, alignment_transformation_matrix = align_images_lsm_scarce(
                 image1_matrix=self.image1_matrix,
                 image2_matrix=self.image2_matrix,
                 image_transform=self.image1_transform,
@@ -735,7 +738,9 @@ class ImagePair:
                 alignment_parameters=self.alignment_parameters,
                 valid_mask1=self.image1_valid_mask,
                 valid_mask2=self.image2_valid_mask,
+                return_alignment_transformation_matrix=True,
             )
+            self.alignment_transformation_matrix = alignment_transformation_matrix
 
         # The aligned second image uses image 1's grid. Keep the user mask in
         # that same grid for subsequent tracking.
