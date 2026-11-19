@@ -426,7 +426,7 @@ use_lod_cache = false         # Cache Level of Detection calculations, only used
 #
 # Diagnostics:
 #   Mask GeoTiffs (show which points passed/failed each filter):
-#     "mask_invalid_tif"            - Invalid points (failed cross-correlation)
+#     "mask_invalid_tif"            - Invalid points (failed any of the validity checks (low correlation, LoD, outlier, ...))
 #     "mask_LoD_tif"                - Points below Level of Detection
 #     "mask_outlier_md_tif"         - Outliers by mean difference filter
 #     "mask_outlier_msd_tif"        - Outliers by mean standard deviation filter

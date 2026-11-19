@@ -1733,7 +1733,7 @@ class ImagePair:
                     )
                 if (getattr(self.filter_parameters, "maximal_fraction_depth_change_of_3d_displacement", None) is not None) & (self.displacement_column_name == "3d_displacement_distance_per_year"):
                     statistics_file.write(
-                        "\t\t" + str(int(tr_all["is_depth_fraction_invalid"].sum())) + " invalid due to high fraction of depth change\n"
+                        "\t" + str(int(tr_all["is_depth_fraction_invalid"].sum())) + " invalid due to high fraction of depth change\n"
                     )
 
                 statistics_file.write(
