@@ -218,45 +218,53 @@ def plot_movement_of_points(raster_matrix: np.ndarray | None, raster_transform, 
 
     # Arrow plotting
     if show_arrows:
-        arrow_spacing = median_spacing * 7
-        arrow_length = median_spacing * 5
 
-        xmin, ymin, xmax, ymax = point_movement.total_bounds
 
-        ix = ((point_movement.geometry.x - xmin) // arrow_spacing).astype(int)
-        iy = ((point_movement.geometry.y - ymin) // arrow_spacing).astype(int)
+        # arrow_spacing = median_spacing * 7
+        # arrow_length = median_spacing * 5
 
-        pm = point_movement.assign(_ix=ix, _iy=iy)
+        point_location_rows = point_movement["row"].sort_values().unique()
+        point_location_columns = point_movement["column"].sort_values().unique()
 
-        # One arrow per grid cell
-        for (_, _), p in pm.groupby(["_ix", "_iy"]).first().iterrows():
+        arrow_spacing = len(point_location_rows) // 20 # in tracked points --> plot an arrow every that many tracked points
+        arrow_length = np.abs(np.diff(point_location_rows)).min() * arrow_spacing * 0.8 # in crs units / pixel
 
-            dx = p["movement_column_direction"]
-            dy = -p["movement_row_direction"]
+        for row in point_location_rows[::arrow_spacing]:
+            for column in point_location_columns[::arrow_spacing]:
+                arrow_point = point_movement[(point_movement["row"] == row) & (point_movement["column"] == column)]
+                if arrow_point.empty:
+                    continue
+                # Only plot arrows for valid tracking results
+                if not arrow_point["valid"].all():
+                    continue
+                arrow_x = float(arrow_point.geometry.x.iloc[0])
+                arrow_y = float(arrow_point.geometry.y.iloc[0])
+                dx = float(arrow_point["movement_column_direction"].values)
+                dy = float(-arrow_point["movement_row_direction"].values)
+                norm = np.hypot(dx, dy)
+                if norm == 0:
+                    continue
 
-            norm = np.hypot(dx, dy)
-            if norm == 0:
-                continue
+                dx /= norm
+                dy /= norm
 
-            dx /= norm
-            dy /= norm
+                # Check if arrow head would leave the image and don't plot arrow in this case
+                if ((arrow_x + (dx * arrow_length)) > raster_matrix.shape[-1]) or (arrow_y + (dy * arrow_length)) < -raster_matrix.shape[-2]:
+                    continue
+                ax.arrow(
+                    arrow_x,
+                    arrow_y,
+                    dx * arrow_length,
+                    dy * arrow_length,
+                    width = arrow_length * 0.12,
+                    head_width=arrow_length * 0.36,
+                    head_length=arrow_length * 0.25,
+                    color="black",
+                    alpha=1,
+                    length_includes_head=True,
+                    zorder=5
+                )
 
-            if (((p.geometry.x + (dx * arrow_length)) > raster_matrix.shape[-1]) or (p.geometry.y + (dy * arrow_length)) < -raster_matrix.shape[-2]) and point_movement.crs is None:
-                continue
-
-            ax.arrow(
-                p.geometry.x,
-                p.geometry.y,
-                dx * arrow_length,
-                dy * arrow_length,
-                width = arrow_length * 0.12,
-                head_width=arrow_length * 0.36,
-                head_length=arrow_length * 0.25,
-                color="black",
-                alpha=1,
-                length_includes_head=True,
-                zorder=5
-            )
 
 
     datetime_part_title = "\nPeriod: " + user_date_string if user_date_string is not None else ""
