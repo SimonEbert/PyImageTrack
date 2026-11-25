@@ -129,6 +129,7 @@ def test_alignment_cache_roundtrip(tmp_path: Path):
         depth_image2=None,
         tracked_control_points=None,
         crs=None,
+        alignment_transformation_matrix = np.array([[1, 0, 0], [0, 1, 0]])
     )
     save_alignment_cache(
         original,
