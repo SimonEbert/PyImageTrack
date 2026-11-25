@@ -307,12 +307,12 @@ def perform_lsm_loop(tracked_cell_matrix:np.ndarray, search_cell_spline: ImageIn
     while iteration < 50:
         moved_indices = move_indices_from_transformation_matrix(transformation_matrix=transformation_matrix,
                                                                 indices=indices)
-        moved_cell_matrix = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(
-            tracked_cell_matrix.shape)
-        moved_cell_matrix_dx = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :], dx=1).reshape(
-            tracked_cell_matrix.shape)
-        moved_cell_matrix_dy = search_cell_spline.ev(moved_indices[0, :], moved_indices[1, :], dy=1).reshape(
-            tracked_cell_matrix.shape)
+        # value and both first derivatives of the search cell at the moved indices, in one batched evaluation
+        moved_cell_matrix, moved_cell_matrix_dx, moved_cell_matrix_dy = search_cell_spline.ev_all(
+            moved_indices[0, :], moved_indices[1, :])
+        moved_cell_matrix = moved_cell_matrix.reshape(tracked_cell_matrix.shape)
+        moved_cell_matrix_dx = moved_cell_matrix_dx.reshape(tracked_cell_matrix.shape)
+        moved_cell_matrix_dy = moved_cell_matrix_dy.reshape(tracked_cell_matrix.shape)
 
         x = indices[0, :].reshape(tracked_cell_matrix.shape[-2:])
         y = indices[1, :].reshape(tracked_cell_matrix.shape[-2:])

@@ -23,6 +23,7 @@ from ..Parameters.AlignmentParameters import AlignmentParameters
 
 # Alignment and Tracking functions
 from .TrackMovement import track_movement_lsm, move_indices_from_transformation_matrix
+from .ImageInterpolator import ImageInterpolator
 from ..CreateGeometries.HandleGeometries import (
     crop_images_to_intersection,
     georeference_tracked_points,
@@ -834,25 +835,10 @@ class ImagePair:
         # warp the original second image (can be single- or multi-band)
         src = self.image2_matrix_original
 
-        if src.ndim == 2:
-            src_rows = np.arange(0, src.shape[0])
-            src_cols = np.arange(0, src.shape[1])
-            spline = scipy.interpolate.RectBivariateSpline(src_rows, src_cols, src.astype(float))
-            moved = spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(out_rows, out_cols)
-        else:
-            bands, src_rows_n, src_cols_n = src.shape
-            src_rows = np.arange(0, src_rows_n)
-            src_cols = np.arange(0, src_cols_n)
-            moved = np.zeros((bands, out_rows, out_cols), dtype=float)
-            for b in range(bands):
-                spline = scipy.interpolate.RectBivariateSpline(
-                    src_rows,
-                    src_cols,
-                    src[b, :, :].astype(float),
-                )
-                moved[b, :, :] = spline.ev(
-                    moved_indices[0, :], moved_indices[1, :]
-                ).reshape(out_rows, out_cols)
+        # ImageInterpolator squeezes singleton dimensions, so the output shape is set explicitly here to keep a
+        # (1, rows, cols) source as (1, rows, cols).
+        spline = ImageInterpolator(src)
+        moved = spline.ev(moved_indices[0, :], moved_indices[1, :]).reshape(src.shape[:-2] + (out_rows, out_cols))
 
         self.image2_matrix_truecolor = moved
 
